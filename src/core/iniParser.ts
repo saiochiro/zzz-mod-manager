@@ -1,6 +1,6 @@
 import { ParsedIniDocument, ParsedIniSection, SubToggle } from '../shared/types';
 
-export const VK_TO_READABLE: Record<string, string> = {
+const VK_KEY_MAP: Record<string, string> = {
   VK_OEM_4: '[',
   VK_OEM_6: ']',
   VK_OEM_5: '\\',
@@ -15,99 +15,118 @@ export const VK_TO_READABLE: Record<string, string> = {
   VK_DOWN: 'DOWN',
   VK_LEFT: 'LEFT',
   VK_RIGHT: 'RIGHT',
-  VK_PRIOR: 'PGUP',
-  VK_NEXT: 'PGDN',
-  VK_HOME: 'HOME',
-  VK_END: 'END',
-  VK_INSERT: 'INS',
-  VK_DELETE: 'DEL',
-  VK_NUMPAD0: 'NUM 0',
-  VK_NUMPAD1: 'NUM 1',
-  VK_NUMPAD2: 'NUM 2',
-  VK_NUMPAD3: 'NUM 3',
-  VK_NUMPAD4: 'NUM 4',
-  VK_NUMPAD5: 'NUM 5',
-  VK_NUMPAD6: 'NUM 6',
-  VK_NUMPAD7: 'NUM 7',
-  VK_NUMPAD8: 'NUM 8',
-  VK_NUMPAD9: 'NUM 9',
-  VK_MULTIPLY: 'NUM *',
-  VK_ADD: 'NUM +',
-  VK_SUBTRACT: 'NUM -',
-  VK_DECIMAL: 'NUM .',
-  VK_DIVIDE: 'NUM /',
-  VK_RETURN: 'ENTER',
-  VK_SPACE: 'SPACE',
-  VK_TAB: 'TAB',
-  VK_BACK: 'BACKSPACE',
 };
 
 export function formatReadableKey(rawKey: string): string {
   const trimmed = rawKey.trim();
-  const tokens = trimmed.split(/\s+/);
-  const mapped = tokens
-    .filter((t) => !t.toLowerCase().startsWith('no_'))
-    .map((token) => {
-      const upper = token.toUpperCase();
-      if (VK_TO_READABLE[upper]) return VK_TO_READABLE[upper];
-      if (upper.startsWith('VK_F') && /^VK_F\d+$/.test(upper)) {
-        return upper.replace('VK_', '');
-      }
-      if (upper === 'VK_CONTROL' || upper === 'CTRL') return 'CTRL';
-      if (upper === 'VK_MENU' || upper === 'ALT') return 'ALT';
-      if (upper === 'VK_SHIFT' || upper === 'SHIFT') return 'SHIFT';
-      return upper;
-    });
-  return mapped.join(' + ') || trimmed.toUpperCase();
+  const upper = trimmed.toUpperCase();
+  if (VK_KEY_MAP[upper]) {
+    return VK_KEY_MAP[upper];
+  }
+  if (upper.startsWith('VK_NUMPAD')) {
+    return `NUM ${upper.replace('VK_NUMPAD', '')}`;
+  }
+  if (upper.startsWith('VK_')) {
+    return upper.replace(/^VK_/, '');
+  }
+  return trimmed;
 }
 
-export function inferToggleLabel(sectionName: string, variableName: string): string {
-  const cleanSection = sectionName
-    .replace(/^Key(Toggle|Swap|Cycle|Switch|Change)?/i, '')
-    .replace(/_/g, ' ')
-    .trim();
-  if (cleanSection.length > 0) {
-    return cleanSection.replace(/([a-z])([A-Z])/g, '$1 $2').trim();
-  }
-  const cleanVar = variableName
-    .replace(/^\$+/, '')
-    .replace(/_/g, ' ')
-    .trim();
-  if (cleanVar.length > 0) {
-    return cleanVar.charAt(0).toUpperCase() + cleanVar.slice(1);
-  }
-  return 'Sub-Part';
+function classifySectionType(name: string): ParsedIniSection['type'] {
+  if (/^TextureOverride/i.test(name)) return 'TextureOverride';
+  if (/^ShaderOverride/i.test(name)) return 'ShaderOverride';
+  if (/^Key/i.test(name)) return 'Key';
+  if (/^Constants/i.test(name)) return 'Constants';
+  if (/^Resource/i.test(name)) return 'Resource';
+  if (/^CommandList/i.test(name)) return 'CommandList';
+  return 'Other';
 }
 
-export function classifyStandardKeySlot(label: string, variable: string): 'J' | 'K' | 'L' {
+function formatReadableToggleLabel(sectionName: string, variable: string): string {
+  const cleanedSection = sectionName
+    .replace(/^Key(Swap|Toggle|Cycle)?_?/i, '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/_/g, ' ')
+    .trim();
+
+  if (cleanedSection.length > 1) {
+    return cleanedSection;
+  }
+  return variable.replace(/^\$/, '');
+}
+
+export function classifyStandardKeySlot(label: string, variable: string): string {
   const combined = `${label} ${variable}`.toLowerCase();
-  if (/(weapon|sword|katana|blade|gun|shield|fx|glow|scabbard|sheath)/.test(combined)) {
-    return 'L';
+  if (/jacket|coat|hood|cape|vest|trench|haori|shirt|dress|outfit/i.test(combined)) {
+    return 'J';
   }
-  if (/(glass|glasses|mask|hat|hair|ear|ears|visor|horn|ribbon|choker|tail|acc|head)/.test(combined)) {
+  if (/glass|mask|hat|hair|visor|horn|monocle|ear|headphone|ribbon|tail/i.test(combined)) {
     return 'K';
   }
-  // Default primary accessory (Jacket, Coat, Cape, Top, Skirt, Shorts, Stockings, Suit)
+  if (/weapon|blade|sword|katana|glow|fx|shield|scissor|gun|stinger|flame/i.test(combined)) {
+    return 'L';
+  }
   return 'J';
 }
 
-export function parseIniContent(rawContent: string, filePath = 'mod.ini'): ParsedIniDocument {
+const PART_CLASSIFIER_RULES: Array<{ part: string; regex: RegExp }> = [
+  { part: 'Hair', regex: /hair|bangs|ponytail|braid|twintail/i },
+  { part: 'Head', regex: /head|hat|helmet|ears|horns|halo|crown/i },
+  { part: 'Face', regex: /face|eyes|visor|mask|glasses|sunglasses|eyepatch|blush/i },
+  { part: 'Dress', regex: /dress|skirt|gown|kimono|haori|maid|apron/i },
+  { part: 'Body', regex: /body|torso|chest|jacket|coat|shirt|top|pants|shorts|legs|shoes|boots|stockings|socks|gloves|suit|outfit/i },
+  { part: 'Weapon', regex: /weapon|sword|katana|blade|scissors|gun|pistol|rifle|shield|hammer|flamethrower|stinger|dagger/i },
+  { part: 'Accessories', regex: /acc|accessory|accessories|ribbon|bow|tail|wings|bag|pouch|jewelry|necklace|ring|chains/i },
+];
+
+export function classifyMeshPartsFromTokens(tokens: string[]): string[] {
+  const combined = tokens.join(' ');
+  const detected = new Set<string>();
+
+  for (const rule of PART_CLASSIFIER_RULES) {
+    if (rule.regex.test(combined)) {
+      detected.add(rule.part);
+    }
+  }
+
+  if (detected.size === 0) {
+    detected.add('Body');
+  }
+  return Array.from(detected);
+}
+
+/**
+ * Parses a 3DMigoto / ZZMI .ini file into structured AST sections,
+ * extracting target buffer/texture hashes, [Key*] sub-toggles (key & back),
+ * referenced resource files (.buf, .ib, .dds), and classified mesh parts.
+ */
+export function parseIniDocument(
+  rawContent: string,
+  filePath: string,
+  fileName?: string
+): ParsedIniDocument {
+  const resolvedFileName = fileName || filePath.split(/[/\\]/).pop() || 'mod.ini';
   const lines = rawContent.split(/\r?\n/);
   const sections: ParsedIniSection[] = [];
   const detectedHashesSet = new Set<string>();
-  const subToggles: SubToggle[] = [];
+  const referencedFilesSet = new Set<string>();
+  const partTokens: string[] = [resolvedFileName];
   let hasLegacyShaderSlots = false;
 
   let currentSection: ParsedIniSection | null = null;
+  let pendingOrigKeyComment: string | null = null;
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
+    const rawLine = lines[i];
+    const trimmed = rawLine.trim();
 
-    // Ignore full line comments
     if (trimmed.startsWith(';') || trimmed === '') {
+      const origMatch = trimmed.match(/^;\s*zzzmgr_orig_key\s*=\s*(.+)$/i);
+      if (origMatch) {
+        pendingOrigKeyComment = origMatch[1].trim();
+      }
       if (currentSection) {
-        currentSection.rawLines.push(line);
+        currentSection.rawLines.push(rawLine);
         currentSection.endLine = i + 1;
       }
       continue;
@@ -115,167 +134,200 @@ export function parseIniContent(rawContent: string, filePath = 'mod.ini'): Parse
 
     const sectionMatch = trimmed.match(/^\[([^\]]+)\]/);
     if (sectionMatch) {
-      const secName = sectionMatch[1].trim();
-      let secType: ParsedIniSection['type'] = 'Other';
-      if (/^TextureOverride/i.test(secName)) secType = 'TextureOverride';
-      else if (/^ShaderOverride/i.test(secName)) secType = 'ShaderOverride';
-      else if (/^Key/i.test(secName)) secType = 'Key';
-      else if (/^Constants$/i.test(secName)) secType = 'Constants';
-      else if (/^Resource/i.test(secName)) secType = 'Resource';
-      else if (/^CommandList/i.test(secName)) secType = 'CommandList';
-
+      if (currentSection) {
+        sections.push(currentSection);
+      }
+      const sectionName = sectionMatch[1].trim();
+      partTokens.push(sectionName);
+      pendingOrigKeyComment = null;
       currentSection = {
-        name: secName,
-        type: secType,
+        name: sectionName,
+        type: classifySectionType(sectionName),
         startLine: i + 1,
         endLine: i + 1,
         entries: {},
-        rawLines: [line],
+        rawLines: [rawLine],
       };
-      sections.push(currentSection);
       continue;
     }
 
     if (currentSection) {
-      currentSection.rawLines.push(line);
+      currentSection.rawLines.push(rawLine);
       currentSection.endLine = i + 1;
 
-      const kvMatch = trimmed.match(/^([^=;]+?)\s*=\s*(.+)$/);
+      const kvMatch = trimmed.match(/^([^=]+)=(.*)$/);
       if (kvMatch) {
         const key = kvMatch[1].trim();
-        const val = kvMatch[2].replace(/;.*$/, '').trim();
+        const val = kvMatch[2].trim();
         currentSection.entries[key] = val;
 
-        if (
-          (currentSection.type === 'TextureOverride' || currentSection.type === 'ShaderOverride') &&
-          key.toLowerCase() === 'hash'
-        ) {
-          const hexMatch = val.match(/\b([0-9a-fA-F]{8})\b/);
-          if (hexMatch) {
-            const normalizedHash = hexMatch[1].toLowerCase();
-            currentSection.hash = normalizedHash;
-            detectedHashesSet.add(normalizedHash);
+        if (key.toLowerCase() === 'key' && pendingOrigKeyComment) {
+          currentSection.entries['__zzzmgr_orig_key'] = pendingOrigKeyComment;
+        }
+
+        if (key.toLowerCase() === 'hash') {
+          const cleanHash = val.toLowerCase().split(/\s+/)[0];
+          if (/^[0-9a-f]{8,16}$/i.test(cleanHash)) {
+            currentSection.hash = cleanHash;
+            detectedHashesSet.add(cleanHash);
+          }
+        }
+
+        if (key.toLowerCase() === 'filename') {
+          const cleanFile = val.replace(/^["']|["']$/g, '').trim();
+          if (cleanFile) {
+            referencedFilesSet.add(cleanFile);
+            partTokens.push(cleanFile);
           }
         }
 
         if (
           currentSection.type === 'TextureOverride' &&
-          /^ps-t[0123]$/i.test(key)
+          /^ps-t[012]$/i.test(key) &&
+          !rawContent.includes('CommandList\\ZZMI\\ORFix')
         ) {
           currentSection.hasLegacySlots = true;
+          hasLegacyShaderSlots = true;
         }
       }
     }
   }
 
+  if (currentSection) {
+    sections.push(currentSection);
+  }
+
+  // Extract [Key*] sections into user-friendly SubToggles
+  const subToggles: SubToggle[] = [];
   for (const sec of sections) {
-    if (sec.type === 'TextureOverride' && sec.hasLegacySlots) {
-      const joinedRaw = sec.rawLines.join('\n');
-      if (!/CommandList\\ZZMI\\(SetTextures|ORFix)/i.test(joinedRaw)) {
-        hasLegacyShaderSlots = true;
-      } else {
-        sec.hasLegacySlots = false;
-      }
-    }
-
     if (sec.type === 'Key') {
-      // Skip our own generated master swap key block if scanning
-      if (sec.name === 'KeySwapOutfit' && sec.entries['$active_outfit']) {
-        continue;
-      }
-
-      const rawKey = sec.entries['key'] || sec.entries['Key'] || '';
+      const keyBinding = sec.entries['key'] || sec.entries['Key'];
+      const backBinding = sec.entries['back'] || sec.entries['Back'];
+      const origKey = sec.entries['__zzzmgr_orig_key'] || keyBinding;
       const varEntry = Object.entries(sec.entries).find(([k]) => k.startsWith('$'));
 
-      if (rawKey && varEntry) {
+      if (keyBinding && varEntry) {
         const [variable, statesRaw] = varEntry;
-        const states = statesRaw.split(',').map((s) => s.trim()).filter(Boolean);
-        const origCommentLine = sec.rawLines.find((l) => l.trim().startsWith('; zzzmgr_orig_key ='));
-        const originalKey = origCommentLine
-          ? origCommentLine.split('=')[1].trim()
-          : formatReadableKey(rawKey);
-
-        const fileName = filePath.split(/[/\\]/).pop() || 'mod.ini';
+        const states = statesRaw.split(',').map((s) => s.trim());
+        partTokens.push(variable);
         subToggles.push({
           section_name: sec.name,
           variable,
-          label: inferToggleLabel(sec.name, variable),
-          original_key: originalKey,
-          current_key: formatReadableKey(rawKey),
-          states: states.length > 0 ? states : ['0', '1'],
-          ini_file: fileName,
+          label: formatReadableToggleLabel(sec.name, variable),
+          original_key: formatReadableKey(origKey),
+          current_key: formatReadableKey(keyBinding),
+          back_key: backBinding ? formatReadableKey(backBinding) : undefined,
+          states,
+          ini_file: resolvedFileName,
         });
       }
     }
   }
 
-  const fileName = filePath.split(/[/\\]/).pop() || 'mod.ini';
   return {
     filePath,
-    fileName,
+    fileName: resolvedFileName,
     sections,
     detectedHashes: Array.from(detectedHashesSet),
     subToggles,
     hasLegacyShaderSlots,
+    referencedFiles: Array.from(referencedFilesSet),
+    detectedParts: classifyMeshPartsFromTokens(partTokens),
     rawContent,
   };
 }
 
+export function parseIniContent(rawContent: string, filePath = 'mod.ini'): ParsedIniDocument {
+  return parseIniDocument(rawContent, filePath);
+}
+
 /**
- * Safely rewrites a `[Key*]` section's `key = ...` line in raw `.ini` content,
- * preserving comments and storing `; zzzmgr_orig_key = ...` if not already recorded.
+ * Remaps the `key = ...` line inside a specific `[Key...]` section of a raw .ini string
+ * and records `; zzzmgr_orig_key = ...` if not already present.
  */
 export function rewriteIniKeybind(
   rawContent: string,
-  sectionName: string,
+  targetSectionName: string,
   newKey: string
 ): string {
   const lines = rawContent.split(/\r?\n/);
+  const out: string[] = [];
   let inTargetSection = false;
-  let hasOrigComment = false;
-  let currentKeyVal = '';
+  let hasOrigKeyCommentInSection = false;
 
-  // First pass: check if section has orig comment
   for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i].trim();
     const secMatch = trimmed.match(/^\[([^\]]+)\]/);
     if (secMatch) {
-      inTargetSection = secMatch[1].trim() === sectionName;
+      inTargetSection = secMatch[1].trim().toLowerCase() === targetSectionName.toLowerCase();
+      hasOrigKeyCommentInSection = false;
+      out.push(lines[i]);
       continue;
     }
+
     if (inTargetSection) {
-      if (trimmed.startsWith('; zzzmgr_orig_key =')) {
-        hasOrigComment = true;
+      if (/^;\s*zzzmgr_orig_key\s*=/i.test(trimmed)) {
+        hasOrigKeyCommentInSection = true;
       }
-      const keyMatch = trimmed.match(/^key\s*=\s*(.+)$/i);
+      const keyMatch = lines[i].match(/^(\s*key\s*=\s*)(.+)$/i);
       if (keyMatch) {
-        currentKeyVal = keyMatch[1].trim();
+        const prevKey = formatReadableKey(keyMatch[2].trim());
+        if (!hasOrigKeyCommentInSection) {
+          out.push(`; zzzmgr_orig_key = ${prevKey}`);
+        }
+        out.push(`${keyMatch[1]}${newKey}`);
+        inTargetSection = false;
+        continue;
       }
     }
+
+    out.push(lines[i]);
   }
 
-  inTargetSection = false;
-  const output: string[] = [];
+  return out.join('\n');
+}
+
+export const remapKeyInIniContent = rewriteIniKeybind;
+
+/**
+ * Standardizes all `[Key*]` sub-toggles in an .ini file onto the `J`, `K`, `L` keys
+ * so that `H` remains 100% exclusive to the Master Skin Swap Cycle.
+ */
+export function standardizeSubToggleKeysInIni(rawContent: string): {
+  updatedContent: string;
+  remappedCount: number;
+} {
+  const standardKeys = ['J', 'K', 'L', 'U', 'I', 'O'];
+  const lines = rawContent.split(/\r?\n/);
+  let inKeySection = false;
+  let keySectionIndex = 0;
+  let remappedCount = 0;
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
+    const trimmed = lines[i].trim();
     const secMatch = trimmed.match(/^\[([^\]]+)\]/);
     if (secMatch) {
-      inTargetSection = secMatch[1].trim() === sectionName;
-      output.push(line);
-      if (inTargetSection && !hasOrigComment && currentKeyVal) {
-        output.push(`; zzzmgr_orig_key = ${formatReadableKey(currentKeyVal)}`);
-      }
+      const secName = secMatch[1].trim();
+      inKeySection = /^Key/i.test(secName);
       continue;
     }
 
-    if (inTargetSection && /^key\s*=/i.test(trimmed)) {
-      output.push(`key = ${newKey}`);
-    } else {
-      output.push(line);
+    if (inKeySection) {
+      const keyMatch = lines[i].match(/^(\s*key\s*=\s*)(.+)$/i);
+      if (keyMatch) {
+        const assignedKey = standardKeys[keySectionIndex % standardKeys.length];
+        keySectionIndex++;
+        if (keyMatch[2].trim().toUpperCase() !== assignedKey) {
+          lines[i] = `${keyMatch[1]}${assignedKey}`;
+          remappedCount++;
+        }
+        inKeySection = false;
+      }
     }
   }
 
-  return output.join('\n');
+  return {
+    updatedContent: lines.join('\n'),
+    remappedCount,
+  };
 }

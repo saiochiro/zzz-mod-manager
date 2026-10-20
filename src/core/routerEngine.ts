@@ -76,3 +76,111 @@ export function formatDisabledFolderName(cleanFolderName: string): string {
 export function isFolderDisabled(folderName: string): boolean {
   return /^DISABLED[_-]*/i.test(folderName);
 }
+
+/**
+ * Matches an agent from the database using a GameBanana category ID.
+ */
+export function matchAgentByGbCategory(
+  gbCategoryId: number | undefined | null,
+  hashDb: HashDatabase
+): AgentHashEntry | null {
+  if (!gbCategoryId || !hashDb?.agents) return null;
+  for (const agent of Object.values(hashDb.agents)) {
+    if (agent.gb_category_id === gbCategoryId) {
+      return agent;
+    }
+  }
+  return null;
+}
+
+export const AGENT_ALIASES: Record<string, string> = {
+  clarette: 'claret_flint',
+  claret: 'claret_flint',
+  aria: 'aria',
+  roxy: 'roxy_ifrita_pryce',
+  ifrita: 'roxy_ifrita_pryce',
+  lucia: 'lucia_elowen',
+  alice: 'alice_thymefield',
+  vivian: 'vivian_banshee',
+  hugo: 'hugo_vlad',
+  vlad: 'hugo_vlad',
+  seed: 'seed',
+  orphie: 'orphie_magnusson',
+  magnusson: 'orphie_magnusson',
+  banyue: 'banyue',
+  dialyn: 'dialyn',
+  zhao: 'zhao',
+  cissia: 'cissia',
+  promeia: 'promeia',
+  norma: 'norma_hollowell',
+  velina: 'velina_airgid',
+  airgid: 'velina_airgid',
+  pyrois: 'pyrois',
+  remielle: 'remielle_dan',
+  sigrid: 'sigrid_de_lazur',
+  lazur: 'sigrid_de_lazur',
+  yuzuha: 'yuzuha_ukinami',
+  ukinami: 'yuzuha_ukinami',
+  komano: 'komano_manato',
+  manato: 'komano_manato',
+  nangong: 'nangong_yu',
+  sunna: 'sunna',
+};
+
+/**
+ * Matches an agent from the database using text hints, folder name, or title.
+ */
+export function matchAgentByHintOrName(
+  textHint: string | undefined | null,
+  hashDb: HashDatabase
+): AgentHashEntry | null {
+  if (!textHint || !hashDb?.agents) return null;
+  const clean = textHint.toLowerCase().replace(/[^a-z0-9]/g, ' ');
+  const tokens = clean.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return null;
+
+  // Direct alias check for known character nicknames & single keywords
+  for (const token of tokens) {
+    const targetAgentId = AGENT_ALIASES[token];
+    if (targetAgentId && hashDb.agents[targetAgentId]) {
+      return hashDb.agents[targetAgentId];
+    }
+  }
+
+  let bestMatch: AgentHashEntry | null = null;
+  let bestScore = 0;
+
+  for (const agent of Object.values(hashDb.agents)) {
+    let score = 0;
+    const agentIdNorm = agent.agent_id.toLowerCase().replace(/_/g, ' ');
+    const displayNorm = agent.display_name.toLowerCase();
+    const folderNorm = agent.folder_name.toLowerCase();
+
+    if (clean.includes(displayNorm)) {
+      score += 50;
+    } else if (clean.includes(folderNorm)) {
+      score += 40;
+    } else if (clean.includes(agentIdNorm)) {
+      score += 40;
+    } else {
+      const nameParts = displayNorm
+        .split(/\s+/)
+        .filter((p) => p.length > 2 && p !== 'von' && p !== 'the' && p !== 'proxy');
+      for (const part of nameParts) {
+        if (tokens.includes(part)) {
+          score += 25;
+        } else if (clean.includes(part)) {
+          score += 15;
+        }
+      }
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = agent;
+    }
+  }
+
+  return bestScore >= 20 ? bestMatch : null;
+}
+

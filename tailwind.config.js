@@ -7,36 +7,40 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        'void-black': '#0B0C10',
-        'hollow-slate': '#161922',
-        'panel-border': '#2A2F3D',
-        'fairy-cyan': '#00F0FF',
-        'phaethon-gold': '#FFE600',
-        'ether-crimson': '#FF2A54',
-        'signal-lime': '#B8FF01',
+        'void-black': '#0A0608',
+        'hollow-slate': '#140E12',
+        'panel-border': '#2E1E26',
+        'panel-card': '#191116',
+        'fairy-cyan': '#FB7185', // repurposed to Chisa Rose
+        'chisa-red': '#E11D48',
+        'chisa-glow': '#FF2E56',
+        'chisa-darkred': '#881337',
+        'chisa-rose': '#FB7185',
+        'chisa-gold': '#FBBF24',
+        'chisa-muted': '#A1A1AA',
+        'phaethon-gold': '#FBBF24',
+        'ether-crimson': '#E11D48',
+        'signal-lime': '#10B981', // clean calm emerald green for active state
       },
       fontFamily: {
-        'display': ['"Chakra Petch"', '"Rajdhani"', '"Arial Narrow"', 'sans-serif'],
+        'display': ['"Plus Jakarta Sans"', '"Inter"', 'system-ui', 'sans-serif'],
         'sans': ['"Inter"', 'system-ui', 'sans-serif'],
         'mono': ['"JetBrains Mono"', '"Fira Code"', 'monospace'],
       },
       animation: {
-        'spin-slow': 'spin 8s linear infinite',
-        'spin-fast': 'spin 1.2s linear infinite',
-        'pulse-cyan': 'pulseCyan 2.5s ease-in-out infinite',
-        'glitch': 'glitch 0.4s ease-in-out infinite',
+        'float-calm': 'floatCalm 4s ease-in-out infinite',
+        'pulse-subtle': 'pulseSubtle 3s ease-in-out infinite',
+        'spin-slow': 'spin 12s linear infinite',
       },
       keyframes: {
-        pulseCyan: {
-          '0%, 100%': { opacity: '1', transform: 'scale(1)' },
-          '50%': { opacity: '0.65', transform: 'scale(0.95)' },
+        floatCalm: {
+          '0%, 100%': { transform: 'translateY(0px)' },
+          '50%': { transform: 'translateY(-4px)' },
         },
-        glitch: {
-          '0%, 100%': { transform: 'translate(0)' },
-          '25%': { transform: 'translate(-2px, 1px)' },
-          '50%': { transform: 'translate(2px, -1px)' },
-          '75%': { transform: 'translate(-1px, -1px)' },
-        }
+        pulseSubtle: {
+          '0%, 100%': { opacity: '1', transform: 'scale(1)' },
+          '50%': { opacity: '0.82', transform: 'scale(0.98)' },
+        },
       }
     },
   },

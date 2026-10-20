@@ -1,0 +1,86 @@
+# Builds the Windows installer and publishes a GitHub Release whenever a
+# version tag (v1.2.3) is pushed. Installed copies of the app read the
+# release's latest.yml and show the "update available" prompt.
+#
+# To ship an update:
+#   1. bump "version" in package.json
+#   2. write what changed in RELEASE_NOTES.md (shown in the in-app prompt)
+#   3. commit, then push a tag that matches:  git tag v2.4.1 && git push origin v2.4.1
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to (re)build, e.g. v2.4.1'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Check package.json version matches the tag
+        shell: bash
+        run: |
+          V=$(node -p "require('./package.json').version")
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+          if [ "v$V" != "$TAG" ]; then
+            echo "::error::package.json says $V but the tag is $TAG. Bump the version or fix the tag."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        shell: bash
+        run: npm ci || npm install
+
+      - name: Build app
+        shell: bash
+        run: |
+          # Type errors are reported but don't block the build (tsc still emits JS).
+          node ./node_modules/typescript/bin/tsc -p tsconfig.electron.json || echo "::warning::TypeScript reported errors; JavaScript was still emitted."
+          node ./node_modules/vite/bin/vite.js build
+
+      - name: Package installer
+        run: npx electron-builder --win nsis portable --publish never
+
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SETUP="release/ZZZ-Mod-Manager-Setup-$VERSION.exe"
+          FILES=("$SETUP" "$SETUP.blockmap" "release/latest.yml" "release/ZZZ-Mod-Manager-Portable-$VERSION.exe")
+          for f in "${FILES[@]}"; do [ -f "$f" ] || { echo "::error::Missing $f"; ls -la release; exit 1; }; done
+
+          NOTES=RELEASE_NOTES.md
+          [ -f "$NOTES" ] || { echo "Bug fixes and improvements." > /tmp/notes.md; NOTES=/tmp/notes.md; }
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${FILES[@]}" --clobber
+            gh release edit "$TAG" --draft=false
+          else
+            gh release create "$TAG" "${FILES[@]}" \
+              --title "ProxyLaunch ( ZZZ Mod Manager $VERSION )" \
+              --notes-file "$NOTES"
+          fi

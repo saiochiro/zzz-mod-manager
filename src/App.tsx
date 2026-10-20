@@ -1,0 +1,1193 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { CloudOff, RefreshCw, UploadCloud } from 'lucide-react';
+import { CustomTitleBar } from './components/CustomTitleBar';
+import { GameBananaBrowserTab } from './components/GameBananaBrowserTab';
+import { InspectorDrawer } from './components/InspectorDrawer';
+import { MultiAgentSplitModal } from './components/SystemModals';
+import { ImportExistingLauncherModal } from './components/ImportExistingLauncherModal';
+import { Sidebar, ScreenId, SyncHealth } from './layout/Sidebar';
+import { LibraryScreen } from './screens/LibraryScreen';
+import { SyncScreen, FolderStatus } from './screens/SyncScreen';
+import { ThemesScreen } from './screens/ThemesScreen';
+import { SettingsScreen } from './screens/SettingsScreen';
+import { fairyClient, FullAppState } from './services/fairyClient';
+import {
+  AgentHashEntry,
+  AppConfig,
+  DownloadQueueItem,
+  GameBananaModItem,
+  ModManifest,
+  MultiAgentCandidate,
+  NsfwFilterState,
+  ParsedIniDocument,
+} from './shared/types';
+import {
+  applyTheme,
+  getTheme,
+  storeThemeId,
+  buildAppIconSvg,
+  rasterizeSvg,
+  Motif,
+  applyCursor,
+  readCursorSettings,
+  storeCursorSettings,
+  CursorSettings,
+} from './themes';
+import { EffectsSettings, readEffectsSettings, storeEffectsSettings, useInteractionEffects } from './ui/effects';
+import { EmptyState, Skeleton, ToastProvider, useToast, CardSkeletonGrid } from './ui';
+import { getModHealth } from './ui/modStatus';
+import { AppUpdatePrompt, useAppUpdate, useModUpdates } from './ui/updates';
+import { RefreshCw as RestartIcon } from 'lucide-react';
+import { version as APP_VERSION } from '../package.json';
+
+const errMsg = (err: unknown) => (err as Error)?.message || String(err);
+
+/** Pushes the theme's icon to the window / taskbar (PNG — Windows can't use SVG there). */
+async function syncTaskbarIcon(themeId: string) {
+  try {
+    const theme = getTheme(themeId);
+    const png = await rasterizeSvg(buildAppIconSvg(theme), 256);
+    await fairyClient.updateThemeIcon(theme.id, png);
+  } catch {
+    // Browser preview or icon IPC unavailable — the in-app icon still updates.
+  }
+}
+
+const AppInner: React.FC = () => {
+  const notify = useToast();
+  const isElectron = Boolean(window.fairyBridge?.isElectron);
+
+  const [appState, setAppState] = useState<FullAppState | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [screen, setScreen] = useState<ScreenId>('library');
+
+  const [activeTheme, setActiveTheme] = useState<string>(() => document.documentElement.dataset.theme || getTheme().id);
+  const theme = getTheme(activeTheme);
+  const [cursorSettings, setCursorSettings] = useState<CursorSettings>(readCursorSettings);
+  const [effects, setEffects] = useState<EffectsSettings>(readEffectsSettings);
+
+  useEffect(() => {
+    applyCursor(cursorSettings, theme);
+  }, [cursorSettings, theme]);
+  useInteractionEffects(effects);
+
+  const changeCursor = (patch: Partial<CursorSettings>) => {
+    setCursorSettings((prev) => {
+      const next = { ...prev, ...patch };
+      storeCursorSettings(next);
+      return next;
+    });
+  };
+  const changeEffects = (patch: Partial<EffectsSettings>) => {
+    setEffects((prev) => {
+      const next = { ...prev, ...patch };
+      storeEffectsSettings(next);
+      return next;
+    });
+  };
+
+  const [nsfwFilterState, setNsfwFilterState] = useState<NsfwFilterState>(() => {
+    try {
+      return (localStorage.getItem('zzz_nsfw_state') as NsfwFilterState) || 'hide';
+    } catch {
+      return 'hide';
+    }
+  });
+
+  // Details drawer
+  const [selectedModUuid, setSelectedModUuid] = useState<string | null>(null);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [inspectorDocs, setInspectorDocs] = useState<ParsedIniDocument[]>([]);
+  const [inspectorMasterSwap, setInspectorMasterSwap] = useState<string | null>(null);
+  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+
+  // Sync
+  const [isSyncingXxmi, setIsSyncingXxmi] = useState(false);
+  const [folderStatus, setFolderStatus] = useState<FolderStatus | null>(null);
+  const [folderStatusError, setFolderStatusError] = useState<string | null>(null);
+  const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
+
+  // Browse
+  const [gbFeed, setGbFeed] = useState<GameBananaModItem[]>([]);
+  const [downloadQueue, setDownloadQueue] = useState<DownloadQueueItem[]>([]);
+
+  // Misc
+  const [isBusy, setIsBusy] = useState(false);
+  const [isLaunching, setIsLaunching] = useState(false);
+  const [isDraggingOverWindow, setIsDraggingOverWindow] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [multiAgentPrompt, setMultiAgentPrompt] = useState<{
+    stagingId: string;
+    archiveName: string;
+    candidates: MultiAgentCandidate[];
+  } | null>(null);
+  const [lastSeenLogId, setLastSeenLogId] = useState<string | null>(null);
+
+  // Updates
+  const appUpdate = useAppUpdate();
+  const modUpdates = useModUpdates(appState?.mods ?? null);
+  const [updatingIds, setUpdatingIds] = useState<Set<string>>(new Set());
+
+  /* ---------------------------------------------------------------- */
+  /* Loading                                                          */
+  /* ---------------------------------------------------------------- */
+  const refreshFolderStatus = useCallback(async () => {
+    try {
+      setFolderStatusError(null);
+      const res = await fairyClient.detectXxmiPaths();
+      setFolderStatus(res);
+    } catch (err) {
+      setFolderStatus(null);
+      setFolderStatusError(errMsg(err));
+    }
+  }, []);
+
+  const loadInitialData = useCallback(async () => {
+    setLoadError(null);
+    try {
+      const state = await fairyClient.getState();
+      setAppState(state);
+      setLastSyncAt(new Date());
+      setLastSeenLogId((prev) => prev ?? state.logs[0]?.id ?? null);
+
+      if (state.config.activeTheme) {
+        const resolved = getTheme(state.config.activeTheme);
+        if (resolved.id !== document.documentElement.dataset.theme) {
+          applyTheme(resolved, { animate: false });
+          storeThemeId(resolved.id);
+        }
+        setActiveTheme(resolved.id);
+      }
+      if (state.config.nsfwFilterState) setNsfwFilterState(state.config.nsfwFilterState);
+
+      refreshFolderStatus();
+
+      // The feed loads separately so a slow network never blocks the library.
+      fairyClient
+        .getGameBananaFeed({ page: 1, perPage: 24, sort: 'featured' })
+        .then(setGbFeed)
+        .catch(() => {});
+      Promise.all([
+        fairyClient.getGameBananaFeed({ page: 1, perPage: 24, sort: 'likes', categoryFilter: 'all' }),
+        fairyClient.getGameBananaFeed({ page: 1, perPage: 24, sort: 'updated', categoryFilter: 'all' }),
+      ]).catch(() => {});
+    } catch (err) {
+      console.error('Failed to initialize state:', err);
+      setLoadError(errMsg(err));
+    }
+  }, [refreshFolderStatus]);
+
+  useEffect(() => {
+    syncTaskbarIcon(activeTheme);
+    loadInitialData();
+    if (window.fairyBridge?.onStateUpdated) {
+      return window.fairyBridge.onStateUpdated((newState) => {
+        setAppState(newState);
+        setLastSyncAt(new Date());
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Ctrl+1…5 jumps between screens
+  useEffect(() => {
+    const order: ScreenId[] = ['library', 'browse', 'sync', 'themes', 'settings'];
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const idx = Number(e.key) - 1;
+      if (idx >= 0 && idx < order.length) {
+        e.preventDefault();
+        setScreen(order[idx]);
+        setInspectorOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  /* ---------------------------------------------------------------- */
+  /* Theme & preferences                                              */
+  /* ---------------------------------------------------------------- */
+  const handleThemeChange = async (newThemeId: string) => {
+    const themeObj = getTheme(newThemeId);
+    if (themeObj.id === activeTheme) return;
+    setActiveTheme(themeObj.id);
+    storeThemeId(themeObj.id);
+    applyTheme(themeObj);
+    syncTaskbarIcon(themeObj.id);
+    try {
+      const res = await fairyClient.updateConfig({ activeTheme: themeObj.id });
+      setAppState(res.state);
+    } catch (err) {
+      console.warn('Theme saved locally; backend config update failed:', err);
+    }
+  };
+
+  const handleChangeNsfwFilterState = (nextState: NsfwFilterState) => {
+    setNsfwFilterState(nextState);
+    try {
+      localStorage.setItem('zzz_nsfw_state', nextState);
+    } catch {
+      // ignore
+    }
+    fairyClient
+      .updateConfig({
+        nsfwFilterState: nextState,
+        hideNsfw: nextState === 'hide',
+        nsfwMode: nextState === 'blur' ? 'blur' : 'hide',
+      })
+      .then((res) => setAppState(res.state))
+      .catch(() => {});
+  };
+
+  const handleToggleSingleActivePerAgent = async () => {
+    if (!appState) return;
+    const nextVal = !appState.config.singleActivePerAgent;
+    try {
+      const res = await fairyClient.updateConfig({ singleActivePerAgent: nextVal });
+      setAppState(res.state);
+      notify({
+        tone: 'success',
+        title: nextVal ? 'One outfit per character' : 'Multiple outfits allowed',
+        message: nextVal
+          ? 'Turning an outfit on now turns off that character’s other outfits.'
+          : 'You can now have several outfits on for the same character.',
+      });
+    } catch (err) {
+      notify({ tone: 'error', title: 'Couldn’t change that setting', message: errMsg(err) });
+    }
+  };
+
+  /* ---------------------------------------------------------------- */
+  /* Profiles                                                         */
+  /* ---------------------------------------------------------------- */
+  const handleApplyProfile = async (profileName: string) => {
+    setIsBusy(true);
+    try {
+      const res = await fairyClient.applyProfile(profileName);
+      setAppState(res.state);
+      notify({ tone: 'success', title: `Switched to “${profileName}”`, message: `${res.enabledCount} mods on.` });
+    } catch (err) {
+      notify({ tone: 'error', title: 'Couldn’t switch loadout', message: errMsg(err) });
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleSaveProfile = async (profileName: string) => {
+    try {
+      const res = await fairyClient.saveProfile(profileName);
+      setAppState(res.state);
+      notify({ tone: 'success', title: `Saved loadout “${res.profileName}”`, message: `${res.enabledCount} mods on.` });
+    } catch (err) {
+      notify({ tone: 'error', title: 'Couldn’t save loadout', message: errMsg(err) });
+    }
+  };
+
+  const handleDeleteProfile = async (profileName: string) => {
+    setIsBusy(true);
+    try {
+      const res = await fairyClient.deleteProfile(profileName);
+      setAppState(res.state);
+      notify({ tone: 'success', title: `Deleted “${profileName}”`, message: `Now using “${res.activeProfile}”.` });
+    } catch (err) {
+      notify({ tone: 'error', title: 'Couldn’t delete loadout', message: errMsg(err) });
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleRenameProfile = async (oldName: string, newName: string) => {
+    setIsBusy(true);
+    try {
+      const res = await fairyClient.renameProfile(oldName, newName);
+      setAppState(res.state);
+      notify({ tone: 'success', title: `Renamed to “${res.newName}”` });
+    } catch (err) {
+      notify({ tone: 'error', title: 'Couldn’t rename loadout', message: errMsg(err) });
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  /* ---------------------------------------------------------------- */
+  /* Library actions                                                  */
+  /* ---------------------------------------------------------------- */
+  const handleOrganizeFolders = async () => {
+    setIsBusy(true);
+    try {
+      const res = await fairyClient.organizeFolders();
+      setAppState(res.state);
+      notify({ tone: 'success', title: 'Folders tidied', message: res.message });
+    } catch (err) {
+      notify({ tone: 'error', title: 'Couldn’t tidy folders', message: errMsg(err) });
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleUndoOrganizeFolders = async () => {
+    setIsBusy(true);
+    try {
+      const res = await fairyClient.undoOrganizeFolders();
+      setAppState(res.state);
+      notify({ tone: 'success', title: 'Folder names restored', message: res.message });
+    } catch (err) {
+      notify({ tone: 'error', title: 'Couldn’t undo', message: errMsg(err) });
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleSyncXxmi = async () => {
+    setIsSyncingXxmi(true);
+    try {
+      const res = await fairyClient.syncWithXxmi();
+      setAppState(res.state);
+      setLastSyncAt(new Date());
+      notify({ tone: 'success', title: 'Synced', message: `${res.state.mods.length} mods found in your mods folder.` });
+    } catch (err) {
+      notify({
+        tone: 'error',
+        title: 'Sync failed',
+        message: errMsg(err),
+        action: { label: 'Check folders', onClick: () => setScreen('settings') },
+      });
+    } finally {
+      setIsSyncingXxmi(false);
+      refreshFolderStatus();
+    }
+  };
+
+  const handleOpenInspector = async (modUuid: string) => {
+    setSelectedModUuid(modUuid);
+    setInspectorOpen(true);
+    setIsLoadingDetails(true);
+    try {
+      const inspection = await fairyClient.inspectMod(modUuid);
+      setInspectorDocs(inspection.iniDocuments);
+      setInspectorMasterSwap(inspection.masterSwapContent);
+    } catch (err) {
+      console.error('Failed to inspect mod:', err);
+      setInspectorDocs([]);
+      setInspectorMasterSwap(null);
+    } finally {
+      setIsLoadingDetails(false);
+    }
+  };
+
+  const handleToggleEnabled = async (modUuid: string) => {
+    // Optimistic flip so the switch responds instantly
+    setAppState((prev) =>
+      prev ? { ...prev, mods: prev.mods.map((m) => (m.mod_uuid === modUuid ? { ...m, enabled: !m.enabled } : m)) } : prev
+    );
+    try {
+      const res = await fairyClient.toggleEnabled(modUuid);
+      setAppState(res.state);
+      if (res.autoDisabledMods && res.autoDisabledMods.length > 0) {
+        notify({ tone: 'info', title: `Turned on “${res.mod.title}”`, message: `Turned off: ${res.autoDisabledMods.join(', ')}` });
+      }
+      if (selectedModUuid === modUuid && inspectorOpen) {
+        handleOpenInspector(modUuid);
+      }
+    } catch (err) {
+      setAppState((prev) =>
+        prev ? { ...prev, mods: prev.mods.map((m) => (m.mod_uuid === modUuid ? { ...m, enabled: !m.enabled } : m)) } : prev
+      );
+      notify({ tone: 'error', title: 'Couldn’t switch that mod', message: errMsg(err) });
+    }
+  };
+
+  const handleToggleHCycle = async (modUuid: string) => {
+    try {
+      const res = await fairyClient.toggleHCycle(modUuid);
+      setAppState(res.state);
+      if (selectedModUuid === modUuid && inspectorOpen) {
+        setInspectorMasterSwap(res.masterSwapContent);
+      }
+    } catch (err) {
+      notify({ tone: 'error', title: 'Couldn’t update outfit rotation', message: errMsg(err) });
+    }
+  };
+
+  const handleRemapKey = async (modUuid: string, sectionName: string, newKey: string) => {
+    try {
+      const res = await fairyClient.remapSubToggle(modUuid, sectionName, newKey);
+      setAppState(res.state);
+      if (selectedModUuid === modUuid) {
+        setInspectorDocs(res.inspection.iniDocuments);
+        setInspectorMasterSwap(res.inspection.masterSwapContent);
+      }
+      notify({ tone: 'success', title: `Hotkey set to ${newKey}`, duration: 2500 });
+    } catch (err) {
+      notify({ tone: 'error', title: 'Couldn’t change hotkey', message: errMsg(err) });
+    }
+  };
+
+  const handleStandardizeAll = async () => {
+    setIsBusy(true);
+    try {
+      const res = await fairyClient.standardizeHotkeys();
+      setAppState(res.state);
+      if (selectedModUuid && inspectorOpen) await handleOpenInspector(selectedModUuid);
+      notify({
+        tone: 'success',
+        title: 'Hotkeys tidied',
+        message: `${res.totalKeysRemapped} keys updated across ${res.updatedModsCount} mods.`,
+      });
+    } catch (err) {
+      notify({ tone: 'error', title: 'Couldn’t tidy hotkeys', message: errMsg(err) });
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleRepairMod = async (modUuid: string) => {
+    setIsBusy(true);
+    try {
+      const res = await fairyClient.repairMod(modUuid);
+      setAppState(res.state);
+      if (selectedModUuid === modUuid && inspectorOpen) {
+        setInspectorDocs(res.inspection.iniDocuments);
+        setInspectorMasterSwap(res.inspection.masterSwapContent);
+      }
+      notify({
+        tone: 'success',
+        title: `Fixed “${res.manifest.title}”`,
+        message: 'A backup of the original files was kept.',
+        action: { label: 'Undo', onClick: () => handleUndoRepair(modUuid) },
+      });
+    } catch (err) {
+      notify({ tone: 'error', title: 'Fix didn’t work', message: errMsg(err) });
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleRepairAllBroken = async () => {
+    setIsBusy(true);
+    try {
+      const res = await fairyClient.repairAll();
+      setAppState(res.state);
+      if (selectedModUuid && inspectorOpen) await handleOpenInspector(selectedModUuid);
+      notify({
+        tone: 'success',
+        title: `Fixed ${res.results.length} mod${res.results.length === 1 ? '' : 's'}`,
+        message: 'Backups of the original files were kept.',
+      });
+    } catch (err) {
+      notify({ tone: 'error', title: 'Couldn’t fix everything', message: errMsg(err) });
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleUndoRepair = async (modUuid: string) => {
+    setIsBusy(true);
+    try {
+      const res = await fairyClient.undoRepair(modUuid);
+      setAppState(res.state);
+      if (selectedModUuid === modUuid && inspectorOpen) {
+        setInspectorDocs(res.inspection.iniDocuments);
+        setInspectorMasterSwap(res.inspection.masterSwapContent);
+      }
+      notify({ tone: 'success', title: 'Original files restored', message: res.message });
+    } catch (err) {
+      notify({ tone: 'error', title: 'Couldn’t restore backup', message: errMsg(err) });
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleSetCustomImageFile = async (modUuid: string) => {
+    try {
+      const selectedImg = await fairyClient.selectLocalArchiveOrFolder('image');
+      if (selectedImg) {
+        const res = await fairyClient.setCustomThumbnail(modUuid, selectedImg);
+        setAppState(res.state);
+        notify({ tone: 'success', title: 'Cover updated' });
+      }
+    } catch (err) {
+      notify({ tone: 'error', title: 'Couldn’t set cover image', message: errMsg(err) });
+    }
+  };
+
+  const handlePasteThumbnailFromClipboard = async (modUuid: string) => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.read) {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          const imgType = item.types.find((t) => t.startsWith('image/'));
+          if (imgType) {
+            const blob = await item.getType(imgType);
+            const reader = new FileReader();
+            reader.onload = async () => {
+              if (typeof reader.result === 'string') {
+                const res = await fairyClient.setCustomThumbnail(modUuid, reader.result);
+                setAppState(res.state);
+                notify({ tone: 'success', title: 'Cover pasted from clipboard' });
+              }
+            };
+            reader.readAsDataURL(blob);
+            return;
+          }
+        }
+      }
+      await handleSetCustomImageFile(modUuid);
+    } catch {
+      await handleSetCustomImageFile(modUuid);
+    }
+  };
+
+  const handleDeleteMod = async (modUuid: string) => {
+    const title = appState?.mods.find((m) => m.mod_uuid === modUuid)?.title ?? 'Mod';
+    try {
+      const res = await fairyClient.deleteMod(modUuid);
+      setAppState(res.state);
+      if (selectedModUuid === modUuid) {
+        setSelectedModUuid(null);
+        setInspectorOpen(false);
+      }
+      notify({ tone: 'success', title: `Deleted “${title}”` });
+    } catch (err) {
+      notify({ tone: 'error', title: 'Couldn’t delete mod', message: errMsg(err) });
+    }
+  };
+
+  /* ---------------------------------------------------------------- */
+  /* Installing                                                       */
+  /* ---------------------------------------------------------------- */
+  const handleInstallFromGameBanana = async (mod: GameBananaModItem) => {
+    const queueId = `q-${Date.now()}`;
+    setDownloadQueue((prev) => [
+      ...prev,
+      { queue_id: queueId, mod_id: mod.id, title: mod.title, status: 'downloading', progress: 25, stage_label: 'Downloading…' },
+    ]);
+    try {
+      setTimeout(() => {
+        setDownloadQueue((prev) =>
+          prev.map((q) => (q.queue_id === queueId && q.status === 'downloading' ? { ...q, progress: 65, stage_label: 'Unpacking…' } : q))
+        );
+      }, 450);
+
+      const res = await fairyClient.ingestPackage(mod.download_url, { metadataOverride: mod });
+      setAppState(res.state);
+      if (res.multiAgentPrompt) setMultiAgentPrompt(res.multiAgentPrompt);
+
+      setDownloadQueue((prev) =>
+        prev.map((q) => (q.queue_id === queueId ? { ...q, progress: 100, status: 'completed', stage_label: 'Installed' } : q))
+      );
+      if (!res.multiAgentPrompt) {
+        notify({
+          tone: 'success',
+          title: `Installed “${mod.title}”`,
+          action: { label: 'View in library', onClick: () => setScreen('library') },
+        });
+      }
+      setTimeout(() => setDownloadQueue((prev) => prev.filter((q) => q.queue_id !== queueId)), 1500);
+    } catch (err) {
+      setDownloadQueue((prev) =>
+        prev.map((q) => (q.queue_id === queueId ? { ...q, status: 'error', error: errMsg(err), stage_label: 'Failed' } : q))
+      );
+      notify({ tone: 'error', title: `Couldn’t install “${mod.title}”`, message: errMsg(err) });
+      setTimeout(() => setDownloadQueue((prev) => prev.filter((q) => q.queue_id !== queueId)), 6000);
+    }
+  };
+
+  const handleIngestUrlOrPath = async (source: string) => {
+    setIsBusy(true);
+    try {
+      const res = await fairyClient.ingestPackage(source);
+      setAppState(res.state);
+      if (res.multiAgentPrompt) setMultiAgentPrompt(res.multiAgentPrompt);
+      if (res.installedMods.length > 0) {
+        notify({
+          tone: 'success',
+          title: res.installedMods.length === 1 ? `Installed “${res.installedMods[0].title}”` : `Installed ${res.installedMods.length} mods`,
+          action: screen !== 'library' ? { label: 'View in library', onClick: () => setScreen('library') } : undefined,
+        });
+      }
+    } catch (err) {
+      notify({ tone: 'error', title: 'Install failed', message: errMsg(err) });
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleImportArchiveDialog = async () => {
+    const selected = await fairyClient.selectLocalArchiveOrFolder('file');
+    if (selected) {
+      handleIngestUrlOrPath(selected);
+    } else if (!isElectron) {
+      notify({ tone: 'info', title: 'Drop a file instead', message: 'Drag a .zip, .7z or .rar onto this window to install it.' });
+    }
+  };
+
+  const handleConfirmMultiAgentSplit = async (stagingId: string) => {
+    setMultiAgentPrompt(null);
+    setIsBusy(true);
+    try {
+      const res = await fairyClient.confirmMultiAgentSplit(stagingId);
+      setAppState(res.state);
+      notify({ tone: 'success', title: `Installed ${res.installedMods.length} mods` });
+    } catch (err) {
+      notify({ tone: 'error', title: 'Couldn’t split the pack', message: errMsg(err) });
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  /* ---------------------------------------------------------------- */
+  /* Mod updates                                                      */
+  /* ---------------------------------------------------------------- */
+  const handleUpdateMod = async (uuid: string, opts: { quiet?: boolean } = {}): Promise<boolean> => {
+    const profile = modUpdates.updates[uuid];
+    const old = appState?.mods.find((m) => m.mod_uuid === uuid);
+    if (!profile || !old) return false;
+    setUpdatingIds((prev) => new Set(prev).add(uuid));
+    try {
+      const res = await fairyClient.ingestPackage(profile.download_url, { metadataOverride: profile });
+      let latest = res.state;
+      setAppState(latest);
+      if (res.multiAgentPrompt) {
+        setMultiAgentPrompt(res.multiAgentPrompt);
+        notify({
+          tone: 'info',
+          title: 'Choose how to install the new version',
+          message: `The current version of “${old.title}” stays installed until you're happy with the new one.`,
+        });
+        return false;
+      }
+      if (!res.installedMods.length) throw new Error(res.error || 'The download had no installable files.');
+      // Keep the same on/off state as before
+      for (const nm of res.installedMods) {
+        const cur = latest.mods.find((m) => m.mod_uuid === nm.mod_uuid);
+        if (cur && cur.enabled !== old.enabled) latest = (await fairyClient.toggleEnabled(nm.mod_uuid)).state;
+      }
+      // Move the old version to backups (unless the new one replaced it in place)
+      const replacedInPlace = res.installedMods.some((nm) => nm.install_path === old.install_path);
+      if (!replacedInPlace && latest.mods.some((m) => m.mod_uuid === uuid)) {
+        try {
+          latest = (await fairyClient.archiveMod(uuid)).state;
+        } catch {
+          // Browser preview has no archive step; both versions stay installed.
+        }
+      }
+      setAppState(latest);
+      modUpdates.clear(uuid);
+      if (selectedModUuid === uuid) setInspectorOpen(false);
+      if (!opts.quiet) {
+        notify({ tone: 'success', title: `Updated “${old.title}”`, message: 'The previous version is saved in backups.' });
+      }
+      return true;
+    } catch (err) {
+      notify({ tone: 'error', title: `Couldn’t update “${old.title}”`, message: errMsg(err) });
+      return false;
+    } finally {
+      setUpdatingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(uuid);
+        return next;
+      });
+    }
+  };
+
+  const handleUpdateAllMods = async () => {
+    const ids = Object.keys(modUpdates.updates);
+    let ok = 0;
+    for (const id of ids) {
+      if (await handleUpdateMod(id, { quiet: true })) ok++;
+    }
+    if (ok > 0) {
+      notify({ tone: 'success', title: `Updated ${ok} mod${ok === 1 ? '' : 's'}`, message: 'Previous versions are saved in backups.' });
+    }
+  };
+
+  const handleCheckModUpdates = async () => {
+    const r = await modUpdates.check();
+    notify({
+      tone: r.found ? 'info' : 'success',
+      title: r.found ? `${r.found} mod update${r.found === 1 ? '' : 's'} available` : 'All mods are up to date',
+      message: r.checked ? `Checked ${r.checked} mod${r.checked === 1 ? '' : 's'} from GameBanana.` : 'No GameBanana mods to check.',
+      action: r.found ? { label: 'Show me', onClick: () => setScreen('library') } : undefined,
+    });
+  };
+
+  /* ---------------------------------------------------------------- */
+  /* Game                                                             */
+  /* ---------------------------------------------------------------- */
+  const handleLaunchGame = async (mode: 'modded' | 'vanilla' = 'modded') => {
+    setIsLaunching(true);
+    try {
+      const res = await fairyClient.launchGame(mode);
+      setAppState(res.state);
+      if (res.success) {
+        notify({ tone: 'success', title: mode === 'modded' ? 'Starting with mods' : 'Starting without mods', message: res.message });
+      } else {
+        notify({
+          tone: 'error',
+          title: 'Couldn’t start the game',
+          message: res.error || res.message,
+          action: { label: 'Check settings', onClick: () => setScreen('settings') },
+        });
+      }
+    } catch (err) {
+      notify({
+        tone: 'error',
+        title: 'Couldn’t start the game',
+        message: errMsg(err),
+        action: { label: 'Check settings', onClick: () => setScreen('settings') },
+      });
+    } finally {
+      setIsLaunching(false);
+    }
+  };
+
+  const handleSendF10 = async () => {
+    try {
+      const res = await fairyClient.sendF10();
+      setAppState(res.state);
+      notify({
+        tone: res.success ? 'success' : 'warning',
+        title: res.success ? 'Reloaded in game' : 'Game isn’t running',
+        message: res.success ? undefined : 'Start the game first, then reload.',
+      });
+    } catch (err) {
+      notify({ tone: 'error', title: 'Couldn’t reload in game', message: errMsg(err) });
+    }
+  };
+
+  /* ---------------------------------------------------------------- */
+  /* Drag & drop install                                              */
+  /* ---------------------------------------------------------------- */
+  const handleWindowDragOver = (e: React.DragEvent) => {
+    if (!Array.from(e.dataTransfer.types || []).includes('Files')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDraggingOverWindow) setIsDraggingOverWindow(true);
+  };
+  const handleWindowDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!e.relatedTarget || !(e.currentTarget as Node).contains(e.relatedTarget as Node)) {
+      setIsDraggingOverWindow(false);
+    }
+  };
+  const handleWindowDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOverWindow(false);
+    const files = Array.from(e.dataTransfer.files || []);
+    for (const file of files) {
+      const filePath = (file as File & { path?: string }).path;
+      if (filePath) await handleIngestUrlOrPath(filePath);
+    }
+  };
+
+  /* ---------------------------------------------------------------- */
+  /* Derived                                                          */
+  /* ---------------------------------------------------------------- */
+  const conflictingAgentIds = useMemo(() => {
+    if (!appState) return new Set<string>();
+    const byAgent = new Map<string, ModManifest[]>();
+    for (const m of appState.mods) {
+      if (m.enabled && m.agent_id !== 'uncategorized') {
+        const list = byAgent.get(m.agent_id) || [];
+        list.push(m);
+        byAgent.set(m.agent_id, list);
+      }
+    }
+    const ids = new Set<string>();
+    for (const [agentId, list] of byAgent) {
+      if (list.length >= 2 && list.some((m) => !m.in_h_swap_cycle)) ids.add(agentId);
+    }
+    return ids;
+  }, [appState]);
+
+  const resolveAgent = useCallback(
+    (agentId: string, title?: string): AgentHashEntry | null => {
+      if (!appState) return null;
+      const agents = appState.hashDb.agents;
+      if (!agentId || agentId === 'uncategorized') return null;
+      if (agents[agentId]) return agents[agentId];
+      const cleanKey = agentId.toLowerCase().replace(/[^a-z0-9]/g, '');
+      for (const [k, ag] of Object.entries(agents)) {
+        if (k.toLowerCase().replace(/[^a-z0-9]/g, '') === cleanKey) return ag;
+        if (ag.display_name.toLowerCase().replace(/[^a-z0-9]/g, '') === cleanKey) return ag;
+      }
+      if (title) {
+        const cleanTitle = title.toLowerCase();
+        for (const ag of Object.values(agents)) {
+          if (cleanTitle.includes(ag.display_name.toLowerCase())) return ag;
+        }
+      }
+      return null;
+    },
+    [appState]
+  );
+
+  /* ---------------------------------------------------------------- */
+  /* Loading & fatal error states                                     */
+  /* ---------------------------------------------------------------- */
+  if (!appState) {
+    return (
+      <div className="app">
+        <CustomTitleBar
+          activeTheme={activeTheme}
+          logs={[]}
+          unseenActivity={0}
+          onActivityOpened={() => {}}
+          onSelectMod={() => {}}
+          onViewActivity={() => {}}
+          isElectron={isElectron}
+        />
+        <div className="shell">
+          <aside className="sidebar" aria-hidden="true">
+            <Skeleton h={50} r={12} />
+            <div className="stack" style={{ marginTop: 8 }}>
+              {[0, 1, 2, 3, 4].map((i) => (
+                <Skeleton key={i} h={36} r={10} />
+              ))}
+            </div>
+            <div className="spacer" />
+            <Skeleton h={52} r={16} />
+          </aside>
+          <main className="main">
+            {loadError ? (
+              <div className="page-body" style={{ margin: 'auto', width: 'min(640px, 100%)' }}>
+                <EmptyState
+                  icon={<CloudOff />}
+                  title="Couldn’t start the mod manager"
+                  tone="error"
+                  motif={theme.motif}
+                  actions={
+                    <button className="btn btn--primary btn--lg" onClick={loadInitialData}>
+                      <RefreshCw />
+                      Try again
+                    </button>
+                  }
+                >
+                  The background service didn’t respond ({loadError}). Your mods are safe — nothing was changed.
+                </EmptyState>
+              </div>
+            ) : (
+              <>
+                <div className="busy-bar" />
+                <section className="page-hero">
+                  <Motif kind={theme.motif} className="page-hero__motif" density={22} opacity={0.45} seed="library" />
+                  <div className="page-hero__content">
+                    <div className="stack" style={{ width: 320 }}>
+                      <Skeleton w={120} h={12} />
+                      <Skeleton w={220} h={34} r={10} />
+                      <Skeleton w={300} h={30} r={99} />
+                    </div>
+                  </div>
+                </section>
+                <div className="page-body">
+                  <CardSkeletonGrid count={8} />
+                </div>
+              </>
+            )}
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  const { config, hashDb, mods, logs } = appState;
+  const visible = mods.filter((m) => !(nsfwFilterState === 'hide' && m.is_nsfw));
+  const needsAttention = visible.filter((m) => getModHealth(m) !== 'working').length;
+  const activeModsCount = mods.filter((m) => m.enabled).length;
+  const canUndoOrganize = mods.some((m) => Boolean(m.previous_folder_name));
+  const selectedMod = mods.find((m) => m.mod_uuid === selectedModUuid) || null;
+  const unseenIdx = lastSeenLogId ? logs.findIndex((l) => l.id === lastSeenLogId) : 0;
+  const unseenActivity = unseenIdx === -1 ? Math.min(logs.length, 20) : unseenIdx;
+
+  const syncHealth: SyncHealth = isSyncingXxmi
+    ? 'busy'
+    : folderStatusError
+    ? 'error'
+    : !folderStatus
+    ? 'unknown'
+    : folderStatus.isValid
+    ? 'ok'
+    : 'error';
+  const syncLabel =
+    syncHealth === 'busy' ? 'Syncing…' : syncHealth === 'ok' ? 'Connected' : syncHealth === 'unknown' ? 'Checking…' : 'Not found';
+
+  const openMod = (uuid: string) => {
+    setScreen('library');
+    handleOpenInspector(uuid);
+  };
+
+  const saveConfig = async (partial: Partial<AppConfig>) => {
+    try {
+      const res = await fairyClient.updateConfig(partial);
+      setAppState(res.state);
+      if (partial.nsfwFilterState) setNsfwFilterState(partial.nsfwFilterState);
+      if ('xxmiModsPath' in partial || 'zzzExePath' in partial || 'zzmiLoaderPath' in partial) {
+        notify({ tone: 'success', title: 'Settings saved' });
+        refreshFolderStatus();
+      }
+    } catch (err) {
+      notify({ tone: 'error', title: 'Couldn’t save settings', message: errMsg(err) });
+    }
+  };
+
+  const autoDiscover = async () => {
+    try {
+      const res = await fairyClient.autoDiscoverPaths();
+      setAppState(res.state);
+      const detected = await fairyClient.detectXxmiPaths().catch(() => null);
+      if (detected) setFolderStatus(detected);
+      notify({
+        tone: detected?.isValid ? 'success' : 'warning',
+        title: detected?.isValid ? 'Found your setup' : 'Couldn’t find everything',
+        message: detected?.isValid ? `Using ${detected.detectedVia}.` : 'Choose the folders yourself in Settings.',
+      });
+    } catch (err) {
+      notify({ tone: 'error', title: 'Auto-detect failed', message: errMsg(err) });
+    }
+  };
+
+  return (
+    <div className="app" onDragOver={handleWindowDragOver} onDragLeave={handleWindowDragLeave} onDrop={handleWindowDrop}>
+      {isDraggingOverWindow && (
+        <div className="drop-overlay">
+          <div className="drop-overlay__card">
+            <Motif kind={theme.motif} bias="edges" density={16} opacity={0.5} seed="drop" animated style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} />
+            <div className="empty__art" style={{ position: 'relative' }}>
+              <UploadCloud />
+            </div>
+            <h2 className="display h2" style={{ position: 'relative' }}>
+              Drop to install
+            </h2>
+            <p className="muted" style={{ position: 'relative' }}>
+              .zip, .7z and .rar archives — we’ll detect the character and set it up for you.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <CustomTitleBar
+        activeTheme={activeTheme}
+        logs={logs}
+        unseenActivity={unseenActivity}
+        onActivityOpened={() => setLastSeenLogId(logs[0]?.id ?? null)}
+        onSelectMod={openMod}
+        onViewActivity={() => setScreen('sync')}
+        isElectron={isElectron}
+        extra={
+          appUpdate.status.state === 'downloaded' ? (
+            <button className="btn btn--primary btn--sm titlebar-no-drag" onClick={appUpdate.install} title={`Install version ${appUpdate.status.version}`}>
+              <RestartIcon />
+              Restart to update
+            </button>
+          ) : null
+        }
+      />
+
+      <div className="shell">
+        <Sidebar
+          screen={screen}
+          onNavigate={(s) => {
+            setScreen(s);
+            setInspectorOpen(false);
+          }}
+          motif={theme.motif}
+          modsCount={visible.length}
+          needsAttention={needsAttention}
+          downloadsCount={downloadQueue.filter((q) => q.status !== 'completed').length}
+          activeProfile={config.activeProfile || 'Default'}
+          savedProfiles={Object.keys(config.profiles || {})}
+          onApplyProfile={handleApplyProfile}
+          onSaveProfile={handleSaveProfile}
+          onDeleteProfile={handleDeleteProfile}
+          onRenameProfile={handleRenameProfile}
+          activeModsCount={activeModsCount}
+          syncHealth={syncHealth}
+          syncLabel={syncLabel}
+          onLaunch={handleLaunchGame}
+          onReloadInGame={handleSendF10}
+          isLaunching={isLaunching}
+        />
+
+        <main className="main" key={screen}>
+          {(isBusy || isSyncingXxmi) && <div className="busy-bar" />}
+
+          {screen === 'library' && (
+            <LibraryScreen
+              modUpdates={modUpdates.updates}
+              updatingIds={updatingIds}
+              onUpdateMod={(id) => handleUpdateMod(id)}
+              onUpdateAllMods={handleUpdateAllMods}
+              theme={theme}
+              mods={mods}
+              hashDb={hashDb}
+              nsfwFilterState={nsfwFilterState}
+              singleActivePerAgent={Boolean(config.singleActivePerAgent)}
+              selectedModUuid={inspectorOpen ? selectedModUuid : null}
+              resolveAgent={resolveAgent}
+              conflictingAgentIds={conflictingAgentIds}
+              onOpenMod={handleOpenInspector}
+              onToggleEnabled={handleToggleEnabled}
+              onRepair={handleRepairMod}
+              onRepairAll={handleRepairAllBroken}
+              onSetCustomImage={handleSetCustomImageFile}
+              onPasteThumbnail={handlePasteThumbnailFromClipboard}
+              onDelete={handleDeleteMod}
+              onOpenFolder={(p) => fairyClient.openModFolder(p)}
+              onInstallArchive={handleImportArchiveDialog}
+              onOpenImport={() => setImportOpen(true)}
+              onBrowse={() => setScreen('browse')}
+              onToggleSingleActive={handleToggleSingleActivePerAgent}
+              onOrganizeFolders={handleOrganizeFolders}
+              onUndoOrganize={handleUndoOrganizeFolders}
+              canUndoOrganize={canUndoOrganize}
+            />
+          )}
+
+          {screen === 'browse' && (
+            <GameBananaBrowserTab
+              feed={gbFeed}
+              installedMods={mods}
+              queue={downloadQueue}
+              nsfwFilterState={nsfwFilterState}
+              agents={hashDb.agents}
+              motif={theme.motif}
+              onInstallWithFairy={handleInstallFromGameBanana}
+              onFetchLiveModId={handleIngestUrlOrPath}
+            />
+          )}
+
+          {screen === 'sync' && (
+            <SyncScreen
+              modUpdateCount={Object.keys(modUpdates.updates).length}
+              modUpdatesLastChecked={modUpdates.lastChecked}
+              checkingModUpdates={modUpdates.checking}
+              onCheckModUpdates={handleCheckModUpdates}
+              onUpdateAllMods={handleUpdateAllMods}
+              updatingMods={updatingIds.size > 0}
+              theme={theme}
+              config={config}
+              hashDb={hashDb}
+              logs={logs}
+              modsCount={mods.length}
+              folderStatus={folderStatus}
+              folderStatusError={folderStatusError}
+              lastSyncAt={lastSyncAt}
+              isSyncing={isSyncingXxmi}
+              onSync={handleSyncXxmi}
+              onAutoDetect={autoDiscover}
+              onOpenImport={() => setImportOpen(true)}
+              onFetchPreviews={async () => {
+                try {
+                  const res = await fairyClient.fetchMissingPreviews();
+                  setAppState(res.state);
+                  return res.fetchedCount > 0
+                    ? `Added ${res.fetchedCount} cover${res.fetchedCount === 1 ? '' : 's'} (checked ${res.scannedCount} mods).`
+                    : `All ${res.scannedCount} mods already have covers we could find.`;
+                } catch (err) {
+                  return `Couldn’t fetch covers: ${errMsg(err)}`;
+                }
+              }}
+              onUpdateHashDb={async () => {
+                try {
+                  const res = await fairyClient.syncHashDb();
+                  setAppState(res.state);
+                  notify({ tone: 'success', title: 'Compatibility data updated', message: res.message });
+                } catch (err) {
+                  notify({ tone: 'error', title: 'Couldn’t update compatibility data', message: errMsg(err) });
+                }
+              }}
+              onSelectMod={openMod}
+              onOpenSettings={() => setScreen('settings')}
+            />
+          )}
+
+          {screen === 'themes' && (
+            <ThemesScreen
+              activeThemeId={theme.id}
+              onSelect={handleThemeChange}
+              cursor={cursorSettings}
+              onCursorChange={changeCursor}
+              effects={effects}
+              onEffectsChange={changeEffects}
+            />
+          )}
+
+          {screen === 'settings' && (
+            <SettingsScreen
+              appUpdate={appUpdate.status}
+              onCheckAppUpdate={appUpdate.check}
+              onDownloadAppUpdate={appUpdate.download}
+              onInstallAppUpdate={appUpdate.install}
+              theme={theme}
+              config={config}
+              hashDb={hashDb}
+              appVersion={APP_VERSION}
+              nsfwFilterState={nsfwFilterState}
+              onChangeNsfw={handleChangeNsfwFilterState}
+              onSaveConfig={saveConfig}
+              onAutoDiscover={autoDiscover}
+              onToggleSingleActive={handleToggleSingleActivePerAgent}
+              onStandardizeHotkeys={handleStandardizeAll}
+              onOrganizeFolders={handleOrganizeFolders}
+              onUndoOrganize={handleUndoOrganizeFolders}
+              canUndoOrganize={canUndoOrganize}
+              onOpenImport={() => setImportOpen(true)}
+              onOpenThemes={() => setScreen('themes')}
+            />
+          )}
+        </main>
+      </div>
+
+      {inspectorOpen && selectedMod && screen === 'library' && (
+        <InspectorDrawer
+          update={modUpdates.updates[selectedMod.mod_uuid] ?? null}
+          isUpdating={updatingIds.has(selectedMod.mod_uuid)}
+          onUpdate={() => handleUpdateMod(selectedMod.mod_uuid)}
+          onIgnoreUpdate={() => {
+            const p = modUpdates.updates[selectedMod.mod_uuid];
+            if (p) modUpdates.ignore(selectedMod.mod_uuid, p);
+          }}
+          mod={selectedMod}
+          agent={resolveAgent(selectedMod.agent_id, selectedMod.title)}
+          motif={theme.motif}
+          iniDocuments={inspectorDocs}
+          masterSwapContent={inspectorMasterSwap}
+          isLoadingDetails={isLoadingDetails}
+          onClose={() => setInspectorOpen(false)}
+          onToggleEnabled={handleToggleEnabled}
+          onRemapKey={handleRemapKey}
+          onStandardizeAll={handleStandardizeAll}
+          onRepairMod={handleRepairMod}
+          onUndoRepair={handleUndoRepair}
+          onToggleHCycle={handleToggleHCycle}
+          onOpenFolder={(relPath) => fairyClient.openModFolder(relPath)}
+          onSetCustomImageFile={handleSetCustomImageFile}
+          onPasteThumbnailFromClipboard={handlePasteThumbnailFromClipboard}
+        />
+      )}
+
+      <MultiAgentSplitModal promptData={multiAgentPrompt} onConfirmSplit={handleConfirmMultiAgentSplit} onCancel={() => setMultiAgentPrompt(null)} />
+
+      <AppUpdatePrompt status={appUpdate.status} onDownload={appUpdate.download} onInstall={appUpdate.install} />
+
+      <ImportExistingLauncherModal
+        isOpen={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImportSuccess={(count) => {
+          loadInitialData();
+          notify({ tone: 'success', title: `Imported ${count} mod${count === 1 ? '' : 's'}` });
+        }}
+      />
+    </div>
+  );
+};
+
+export const App: React.FC = () => (
+  <ToastProvider>
+    <AppInner />
+  </ToastProvider>
+);

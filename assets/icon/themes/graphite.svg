@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="ai-graphite-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4f5ff0"/>
+      <stop offset="1" stop-color="#2d74c9"/>
+    </linearGradient>
+    <radialGradient id="ai-graphite-hi" cx="0.25" cy="0.08" r="0.95">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.3"/>
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="ai-graphite-orb" cx="0.36" cy="0.3" r="0.82">
+      <stop offset="0" stop-color="#4d4f52"/>
+      <stop offset="0.55" stop-color="#1d1f23"/>
+      <stop offset="1" stop-color="#0f1115"/>
+    </radialGradient>
+    <radialGradient id="ai-graphite-core" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ai-graphite-gl" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#c4b5fd"/>
+    </linearGradient>
+    <filter id="ai-graphite-halo" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+    <filter id="ai-graphite-soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="0.6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <pattern id="ai-graphite-dots" width="44" height="44" patternUnits="userSpaceOnUse" patternTransform="rotate(30)">
+      <circle cx="22" cy="22" r="8" fill="#ffffff" fill-opacity="0.2"/>
+    </pattern>
+    <radialGradient id="ai-graphite-dmg" cx="1" cy="0" r="0.7">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset="1" stop-color="#000"/>
+    </radialGradient>
+    <mask id="ai-graphite-dm"><rect width="1024" height="1024" fill="url(#ai-graphite-dmg)"/></mask>
+  </defs>
+  <rect x="32" y="32" width="960" height="960" rx="232" fill="url(#ai-graphite-bg)"/>
+  <rect x="32" y="32" width="960" height="960" rx="232" fill="url(#ai-graphite-dots)" mask="url(#ai-graphite-dm)"/>
+  <rect x="32" y="32" width="960" height="960" rx="232" fill="url(#ai-graphite-hi)"/>
+  <g transform="rotate(-22 512 528)">
+    <path d="M82 528 A430 118 0 0 1 942 528" fill="none" stroke="#ffffff" stroke-opacity="0.45" stroke-width="24" stroke-linecap="round"/>
+  </g>
+  <circle cx="512" cy="528" r="290" fill="#ffffff" fill-opacity="0.55" filter="url(#ai-graphite-halo)"/>
+  <circle cx="528" cy="550" r="280" fill="#000" fill-opacity="0.28"/>
+  <circle cx="512" cy="528" r="280" fill="url(#ai-graphite-orb)"/>
+  <circle cx="512" cy="528" r="173.6" fill="url(#ai-graphite-core)"/>
+  <g fill="none" stroke="#ffffff" stroke-linecap="round">
+      <ellipse cx="530" cy="550" rx="207.2" ry="196" stroke-opacity="0.24" stroke-width="12"/>
+      <ellipse cx="542" cy="564" rx="134.4" ry="126" stroke-opacity="0.18" stroke-width="10"/>
+    </g>
+  <g transform="translate(512 520) scale(8.6) translate(-12 -12)" filter="url(#ai-graphite-soft)">
+      <path d="M12 1C13.2 8.6 15.4 10.8 23 12 15.4 13.2 13.2 15.4 12 23 10.8 15.4 8.6 13.2 1 12 8.6 10.8 10.8 8.6 12 1Z" fill="url(#ai-graphite-gl)" stroke="none" stroke-width="0" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  <circle cx="512" cy="528" r="271" fill="none" stroke="#ffffff" stroke-width="18"/>
+  <g transform="rotate(-22 512 528)">
+    <path d="M82 528 A430 118 0 0 0 942 528" fill="none" stroke="#ffffff" stroke-width="24" stroke-linecap="round"/>
+  </g>
+  <path d="M800 152 Q809.28 200.72 858 210 Q809.28 219.28 800 268 Q790.72 219.28 742 210 Q790.72 200.72 800 152 Z" fill="#ffffff" fill-opacity="1"/><path d="M222 238 Q226.8 263.2 252 268 Q226.8 272.8 222 298 Q217.2 272.8 192 268 Q217.2 263.2 222 238 Z" fill="#ffffff" fill-opacity="0.8"/><path d="M846 796 Q849.84 816.16 870 820 Q849.84 823.84 846 844 Q842.16 823.84 822 820 Q842.16 816.16 846 796 Z" fill="#ffffff" fill-opacity="0.6"/>
+</svg>

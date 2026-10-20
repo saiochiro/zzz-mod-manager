@@ -60,3 +60,10 @@ release/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local app data / mod sandbox (never commit personal mods or settings)
+ZZMI_Root/
+ZZZ_Mod_Manager_AppData/
+_redesign_backup/
+*.lnk
+electron_out.txt

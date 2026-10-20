@@ -180,6 +180,10 @@ export function repairModOnDisk(
     }
 
     if (fileModified) {
+      const bakPath = `${iniPath}.bak`;
+      if (!fs.existsSync(bakPath)) {
+        fs.copyFileSync(iniPath, bakPath);
+      }
       fs.writeFileSync(iniPath, updatedLines.join('\n'), 'utf-8');
     }
   }
@@ -245,12 +249,16 @@ export function repairModOnDisk(
     broken_hashes: [],
     needs_orfix: false,
     needs_stride_fix: false,
+    health_status: 'working',
+    missing_resources: [],
     repair_state: newRepairState,
   };
 
-  // Save updated mod_manifest.json inside mod folder
+  // Save updated mod_manifest.json and mod.json inside mod folder
   const manifestPath = path.join(modAbsPath, 'mod_manifest.json');
   fs.writeFileSync(manifestPath, JSON.stringify(updatedManifest, null, 2), 'utf-8');
+  const modJsonPath = path.join(modAbsPath, 'mod.json');
+  fs.writeFileSync(modJsonPath, JSON.stringify(updatedManifest, null, 2), 'utf-8');
 
   telemetryMessages.push(
     `Repaired [${manifest.title}]: Applied [${appliedFixes.join(', ')}] (${diffLogs.length} surgical patches).`
@@ -331,12 +339,16 @@ export function undoModRepairOnDisk(
     }
   }
 
+  const isStillFixable =
+    brokenHashes.length > 0 || needsOrfix || (brokenHashes.length > 0 && Boolean(agent?.stride_patch));
+
   const rolledBackManifest: ModManifest = {
     ...manifest,
     detected_hashes: Array.from(new Set(restoredHashes)),
     broken_hashes: Array.from(new Set(brokenHashes)),
     needs_orfix: needsOrfix,
     needs_stride_fix: brokenHashes.length > 0 && Boolean(agent?.stride_patch),
+    health_status: isStillFixable ? 'fixable' : 'working',
     repair_state: {
       is_repaired: false,
       repaired_at: null,
@@ -348,6 +360,8 @@ export function undoModRepairOnDisk(
 
   const manifestPath = path.join(modAbsPath, 'mod_manifest.json');
   fs.writeFileSync(manifestPath, JSON.stringify(rolledBackManifest, null, 2), 'utf-8');
+  const modJsonPath = path.join(modAbsPath, 'mod.json');
+  fs.writeFileSync(modJsonPath, JSON.stringify(rolledBackManifest, null, 2), 'utf-8');
 
   return {
     success: true,

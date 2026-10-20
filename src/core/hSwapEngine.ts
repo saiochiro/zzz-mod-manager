@@ -164,7 +164,17 @@ export function syncAgentHSwapOnDisk(
 
   let isolatedFilesCount = 0;
 
-  if (activeCycleMods.length >= 2) {
+  const allHaveCanonicalBuffers =
+    activeCycleMods.length >= 2 &&
+    activeCycleMods.every((m) => {
+      const modAbs = path.join(zzmiRootPath, m.install_path);
+      return (
+        fs.existsSync(path.join(modAbs, 'Position.buf')) &&
+        fs.existsSync(path.join(modAbs, 'Diffuse.dds'))
+      );
+    });
+
+  if (activeCycleMods.length >= 2 && allHaveCanonicalBuffers) {
     // 1. Isolate raw .ini files inside each active cycle mod by renaming mod.ini -> DISABLED_source_mod.ini
     const cyclePayload: { manifest: ModManifest; modAbsPath: string }[] = [];
 
