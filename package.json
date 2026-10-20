@@ -1,6 +1,6 @@
 {
   "name": "zzz-mod-manager",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "description": "ZZZ Mod Manager (Fairy OS) \u2014 Automated 3DMigoto / ZZMI Mod Router, H-Key Outfit Merger, and Post-Patch Repair Engine",
   "main": "dist-electron/electron/main.js",
   "scripts": {
