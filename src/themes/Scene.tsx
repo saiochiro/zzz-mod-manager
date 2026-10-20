@@ -303,6 +303,62 @@ function sceneFor(t: ThemeDefinition): React.ReactNode {
           <Particles glyph="leaf" count={18} colors={[c.primary, '#b8f27a']} motion="drift" size={[10, 18]} speed={[16, 28]} seed={id} />
         </>
       );
+    case 'silver-fang':
+      return (
+        <>
+          <Glows colors={['#ffffff', c.secondary, c.accent]} strength={0.6} />
+          <span className="scene-moon" style={{ background: 'radial-gradient(circle at 40% 40%, #ffffff, #c9ccd4 55%, transparent 70%)', opacity: 0.7 }} />
+          <Beams colors={['#ffffff22', '#ffffff18']} />
+          <Bottom height="34%">
+            {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+              <rect key={i} x={980 + i * 90} y={140 + (i % 2) * 30} width="34" height={260 - (i % 2) * 30} rx="17" fill="#ffffff" opacity="0.05" />
+            ))}
+          </Bottom>
+          <Particles glyph="dot" count={30} colors={['#ffffff']} motion="drift" size={[4, 8]} speed={[24, 40]} opacity={[0.25, 0.6]} seed={id + 'd'} />
+          <Particles glyph="paw" count={6} colors={['#ffffff', c.accent]} motion="drift" size={[12, 18]} speed={[22, 34]} opacity={[0.15, 0.35]} seed={id} />
+        </>
+      );
+    case 'gale-fletcher':
+      return (
+        <>
+          <Glows colors={[c.primary, c.secondary, '#1fa0c4']} />
+          <div className="scene-wind">
+            {Array.from({ length: 9 }, (_, i) => (
+              <span key={i} style={{ top: `${8 + i * 10}%`, animationDelay: `${-i * 1.3}s`, animationDuration: `${3.5 + (i % 3)}s`, background: `linear-gradient(90deg, transparent, ${i % 2 ? c.secondary : '#ffffff'}, transparent)` }} />
+            ))}
+          </div>
+          <Particles glyph="arrow" count={8} colors={[c.accent, c.primary]} motion="drift" size={[14, 22]} speed={[8, 14]} opacity={[0.35, 0.7]} seed={id} />
+          <Particles glyph="feather" count={10} colors={['#ffffff', c.primary]} motion="fall" size={[10, 18]} speed={[18, 30]} opacity={[0.25, 0.5]} seed={id + 'f'} />
+        </>
+      );
+    case 'hard-hat':
+      return (
+        <>
+          <Glows colors={[c.primary, c.secondary, c.accent]} strength={0.8} />
+          <svg className="scene-gear scene-gear--1" viewBox="0 0 24 24"><path d={G.gear.d} fill="none" stroke={c.primary} strokeWidth="0.9" /></svg>
+          <svg className="scene-gear scene-gear--2" viewBox="0 0 24 24"><path d={G.gear.d} fill="none" stroke={c.secondary} strokeWidth="1.1" /></svg>
+          <Bottom height="46%">
+            <path d="M1180 400 L1180 60 L1196 60 L1196 400 Z M1150 60 L1560 60 L1560 74 L1150 74 Z M1196 60 L1240 20 L1252 20 L1252 60 Z M1500 74 L1500 200" stroke={c.primary} strokeWidth="4" fill={c.primary} opacity="0.16" />
+            <path d="M1186 74 L1206 100 L1226 74 L1246 100 L1266 74 L1286 100 L1306 74 L1326 100 L1346 74 L1366 100 L1386 74 L1406 100 L1426 74 L1446 100 L1466 74 L1486 100 L1506 74" stroke={c.primary} strokeWidth="3" fill="none" opacity="0.14" />
+          </Bottom>
+          <div className="scene-hazard" />
+          <Particles glyph="flame" count={22} colors={['#ffe066', c.secondary, c.accent]} motion="rise" size={[4, 10]} speed={[6, 12]} seed={id} />
+        </>
+      );
+    case 'outlaw-dust':
+      return (
+        <>
+          <Glows colors={['#f0a24a', c.secondary, '#e8c48a']} strength={0.7} />
+          <span className="scene-sun" />
+          <Bottom height="38%">
+            <path d="M0 400 L0 250 Q260 200 520 240 T1040 225 T1600 235 L1600 400 Z" fill={c.primary} opacity="0.1" />
+            <path d="M0 400 L0 300 Q300 260 640 295 T1300 285 T1600 300 L1600 400 Z" fill={c.primary} opacity="0.14" />
+            <path d="M560 400 L760 300 L840 300 L1040 400 Z" fill={c.text} opacity="0.12" />
+            <path className="scene-road" d="M800 300 L800 400" stroke="#f8f0e1" strokeWidth="6" strokeDasharray="14 18" opacity="0.7" />
+          </Bottom>
+          <Particles glyph="dot" count={26} colors={[c.primary, c.secondary]} motion="drift" size={[4, 9]} speed={[10, 20]} opacity={[0.2, 0.5]} seed={id} />
+        </>
+      );
     default:
       return (
         <>

@@ -58,6 +58,8 @@ interface Signature {
   parts: Part[];
   /** Extra detail drawn on top, no outline (shine, facets, glyph accents). */
   detail?: string;
+  /** Click point if it isn't the usual (3, 3) tip. */
+  hot?: [number, number];
 }
 
 const INK = '#15161d';
@@ -153,6 +155,37 @@ function signature(theme: ThemeDefinition): Signature {
         ],
         detail: `<path d="M3 3 L20.6 20.6 M9 9 L9.6 14 M12.4 12.4 L13 17.6 M9 9 L14 9.6 M12.4 12.4 L17.6 13" stroke="#fff" stroke-opacity=".7" stroke-width=".8" fill="none" stroke-linecap="round"/>`,
       };
+    case 'silver-fang': // polished silver fang with a red-tie glint
+      return {
+        parts: [{ d: 'M3 3 C9.4 6.2 14.6 11.6 17 19 C17.8 21.6 16.2 23.4 13.8 22.6 C10 21.4 6 13.4 3 3 Z', fill: 'url(#fill)' }],
+        detail: `<path d="M5.4 6.4 C8.6 10.8 11.4 15 13.2 19.4" stroke="#fff" stroke-width="1" fill="none" stroke-linecap="round"/>
+          <path d="M20.8 22.6 l1.6 1.6 -1.6 1.6 -1.6 -1.6z" fill="${acc}"/>`,
+      };
+    case 'gale-fletcher': // arrow with a gold head and teal fletching
+      return {
+        parts: [
+          { d: 'M8 8 L26.4 26.4', line: 1.8, color: '#eadfc4' },
+          { d: 'M3 3 L11.6 5.4 L5.4 11.6 Z', fill: acc },
+          { d: 'M21 23.6 L19.4 28.4 L23.4 25.6 Z M23.6 21 L28.4 19.4 L25.6 23.4 Z', fill: 'url(#fill)' },
+        ],
+        detail: `<path d="M4.6 4.6 L8.6 6.2" stroke="#fff" stroke-opacity=".8" stroke-width=".8" stroke-linecap="round"/>`,
+      };
+    case 'hard-hat': // demolition hammer
+      return {
+        parts: [
+          { d: 'M9.6 9.6 L27 27', line: 3, color: '#5b3a1e' },
+          { d: 'M1.4 8.6 L8.6 1.4 L13 5.8 L5.8 13 Z', fill: 'url(#fill)' },
+        ],
+        detail: `<path d="M19.6 19.6 l1.2 1.2 M22 22 l1.2 1.2 M24.4 24.4 l1.2 1.2" stroke="${c.primary}" stroke-width="2.6"/>
+          <path d="M3.4 8.4 L8.4 3.4" stroke="#fff" stroke-opacity=".8" stroke-width="1.1" stroke-linecap="round"/>`,
+        hot: [5, 5],
+      };
+    case 'outlaw-dust': // kite shield with a brass boss
+      return {
+        parts: [{ d: 'M3 3 L16 6.4 Q21 13.4 20.4 20.4 Q13.4 21 6.4 16 Z', fill: 'url(#fill)' }],
+        detail: `<path d="M5.4 5.4 L14.6 7.8 Q18.4 13.4 18.2 18.2 Q13.4 18.4 7.8 14.6 Z" stroke="#f3d9a8" stroke-opacity=".75" stroke-width=".9" fill="none"/>
+          <circle cx="12.6" cy="12.6" r="2.2" fill="#e8b04a" stroke="#5b3a1e" stroke-width=".6"/>`,
+      };
     default: // graphite / anything new: sleek proxy arrow with a data line
       return {
         parts: [{ d: 'M3 3 L3 23.4 L8.6 18.6 L12.4 26.8 L16.2 25 L12.6 17.2 L20 17.2 Z', fill: 'url(#fill)' }],
@@ -247,7 +280,7 @@ export function cursorCss(theme: ThemeDefinition, kind: 'arrow' | 'hand', opts: 
   const shape = resolveShape(theme, opts.shape);
   const k = opts.size === 'large' ? 1.5 : 1;
   const reticleHand = kind === 'hand' && (shape === 'reticle' || (shape === 'signature' && theme.cursorShape === 'reticle'));
-  const [hx, hy] = reticleHand ? [16, 16] : shape === 'signature' ? [3, 3] : [5, 3];
+  const [hx, hy] = reticleHand ? [16, 16] : shape === 'signature' ? signature(theme).hot ?? [3, 3] : [5, 3];
   return `url("${svgToDataUrl(buildCursorSvg(theme, kind, opts))}") ${Math.round(hx * k)} ${Math.round(hy * k)}, ${kind === 'arrow' ? 'default' : 'pointer'}`;
 }
 

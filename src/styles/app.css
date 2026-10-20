@@ -3785,3 +3785,79 @@ html[data-scene] .card {
   background: color-mix(in srgb, var(--surface) 82%, transparent);
   backdrop-filter: blur(12px);
 }
+/* Gale Fletcher wind streaks */
+.scene-wind {
+  position: absolute;
+  inset: 0;
+}
+.scene-wind span {
+  position: absolute;
+  left: 0;
+  width: 40vw;
+  height: 2px;
+  border-radius: 2px;
+  opacity: 0.35;
+  animation: scene-wind 4s linear infinite;
+}
+@keyframes scene-wind {
+  from {
+    transform: translateX(110vw);
+  }
+  to {
+    transform: translateX(-50vw);
+  }
+}
+/* Hard Hat gears + hazard band */
+.scene-gear {
+  position: absolute;
+  opacity: 0.22;
+  animation: scene-spin 30s linear infinite;
+}
+.scene-gear--1 {
+  right: 4vw;
+  top: 8vh;
+  width: 30vmin;
+  height: 30vmin;
+}
+.scene-gear--2 {
+  right: 24vw;
+  top: 24vh;
+  width: 16vmin;
+  height: 16vmin;
+  animation-direction: reverse;
+  animation-duration: 18s;
+}
+@keyframes scene-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.scene-hazard {
+  position: absolute;
+  left: -5%;
+  right: -5%;
+  bottom: 2vh;
+  height: 18px;
+  transform: rotate(-2deg);
+  background: repeating-linear-gradient(-45deg, var(--primary) 0 18px, #0e0d08 18px 36px);
+  opacity: 0.35;
+}
+/* Outlaw Dust sun + road */
+.scene-sun {
+  position: absolute;
+  right: 10vw;
+  top: 14vh;
+  width: 30vmin;
+  height: 30vmin;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffb35c 0%, #f08a3a 45%, transparent 70%);
+  opacity: 0.55;
+}
+.scene-road {
+  animation: scene-road 1.2s linear infinite;
+}
+@keyframes scene-road {
+  to {
+    stroke-dashoffset: -32;
+  }
+}

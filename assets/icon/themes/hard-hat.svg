@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="ai-hard-hat-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#bda142"/>
+      <stop offset="1" stop-color="#ef901f"/>
+    </linearGradient>
+    <radialGradient id="ai-hard-hat-hi" cx="0.25" cy="0.08" r="0.95">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.3"/>
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="ai-hard-hat-orb" cx="0.36" cy="0.3" r="0.82">
+      <stop offset="0" stop-color="#4d4c48"/>
+      <stop offset="0.55" stop-color="#1c1c17"/>
+      <stop offset="1" stop-color="#0e0d08"/>
+    </radialGradient>
+    <radialGradient id="ai-hard-hat-core" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ai-hard-hat-gl" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#ffcc1f"/>
+    </linearGradient>
+    <filter id="ai-hard-hat-halo" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+    <filter id="ai-hard-hat-soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="0.6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <pattern id="ai-hard-hat-dots" width="44" height="44" patternUnits="userSpaceOnUse" patternTransform="rotate(30)">
+      <circle cx="22" cy="22" r="8" fill="#ffffff" fill-opacity="0.2"/>
+    </pattern>
+    <radialGradient id="ai-hard-hat-dmg" cx="1" cy="0" r="0.7">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset="1" stop-color="#000"/>
+    </radialGradient>
+    <mask id="ai-hard-hat-dm"><rect width="1024" height="1024" fill="url(#ai-hard-hat-dmg)"/></mask>
+  </defs>
+  <rect x="32" y="32" width="960" height="960" rx="232" fill="url(#ai-hard-hat-bg)"/>
+  <rect x="32" y="32" width="960" height="960" rx="232" fill="url(#ai-hard-hat-dots)" mask="url(#ai-hard-hat-dm)"/>
+  <rect x="32" y="32" width="960" height="960" rx="232" fill="url(#ai-hard-hat-hi)"/>
+  <g transform="rotate(-22 512 528)">
+    <path d="M82 528 A430 118 0 0 1 942 528" fill="none" stroke="#ffffff" stroke-opacity="0.45" stroke-width="24" stroke-linecap="round"/>
+  </g>
+  <circle cx="512" cy="528" r="290" fill="#ffffff" fill-opacity="0.55" filter="url(#ai-hard-hat-halo)"/>
+  <circle cx="528" cy="550" r="280" fill="#000" fill-opacity="0.28"/>
+  <circle cx="512" cy="528" r="280" fill="url(#ai-hard-hat-orb)"/>
+  <circle cx="512" cy="528" r="173.6" fill="url(#ai-hard-hat-core)"/>
+  <g fill="none" stroke="#ffffff" stroke-linecap="round">
+      <ellipse cx="530" cy="550" rx="207.2" ry="196" stroke-opacity="0.24" stroke-width="12"/>
+      <ellipse cx="542" cy="564" rx="134.4" ry="126" stroke-opacity="0.18" stroke-width="10"/>
+    </g>
+  <g transform="translate(512 520) scale(8.17) translate(-12 -12)" filter="url(#ai-hard-hat-soft)">
+      <path d="M12 8.6a3.4 3.4 0 1 0 .01 0ZM12 4.8a7.2 7.2 0 1 0 .01 0ZM12 1.5v3.3M12 19.2v3.3M1.5 12h3.3M19.2 12h3.3M4.6 4.6l2.3 2.3M17.1 17.1l2.3 2.3M4.6 19.4l2.3-2.3M17.1 6.9l2.3-2.3" fill="none" stroke="url(#ai-hard-hat-gl)" stroke-width="2.8800000000000003" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  <circle cx="512" cy="528" r="271" fill="none" stroke="#ffffff" stroke-width="18"/>
+  <g transform="rotate(-22 512 528)">
+    <path d="M82 528 A430 118 0 0 0 942 528" fill="none" stroke="#ffffff" stroke-width="24" stroke-linecap="round"/>
+  </g>
+  <path d="M800 152 Q809.28 200.72 858 210 Q809.28 219.28 800 268 Q790.72 219.28 742 210 Q790.72 200.72 800 152 Z" fill="#ffffff" fill-opacity="1"/><path d="M222 238 Q226.8 263.2 252 268 Q226.8 272.8 222 298 Q217.2 272.8 192 268 Q217.2 263.2 222 238 Z" fill="#ffffff" fill-opacity="0.8"/><path d="M846 796 Q849.84 816.16 870 820 Q849.84 823.84 846 844 Q842.16 823.84 822 820 Q842.16 816.16 846 796 Z" fill="#ffffff" fill-opacity="0.6"/>
+</svg>

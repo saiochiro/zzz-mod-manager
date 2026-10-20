@@ -18,7 +18,11 @@ export type MotifKind =
   | 'leaves'
   | 'notes'
   | 'crosshairs'
-  | 'clouds';
+  | 'clouds'
+  | 'paws'
+  | 'arrows'
+  | 'gears'
+  | 'shields';
 
 export interface ThemeColors {
   /** App background behind everything. */

@@ -1,8 +1,12 @@
-What's new in 2.6.0
+What's new in 2.7.0
 
-- Agent scenes: every theme now has its own animated background. Snowfall and aurora for Frostblade, ocean waves for Riptide, rising embers for Ember Rush, a rainy city with patrol lights for Night Patrol, falling petals under the moon for Sakura Storm, and more.
-- Prefer it simple? Themes > Effects > Background lets you switch between "Agent scene" and "Plain".
-- Signature cursors: each agent has a cursor of their own, like a katana, a shark fin, a calligraphy brush, a flaming arrow, a feather quill or a leaf. You can still pick the classic arrow in Themes.
-- New ProxyLaunch logo in the top corner.
+Four new agent themes, each with its own colors, animated scene, signature cursor and app icon:
+
+- Silver Fang (Lycaon): black tie monochrome with polished silver, a moonlit scene and a silver fang cursor.
+- Gale Fletcher (Harumasa): sea-glass teal with gusts of wind and flying arrows, and an arrow cursor.
+- Hard Hat (Koleda): hazard yellow and black with a construction crane, spinning gears and sparks, and a hammer cursor.
+- Outlaw Dust (Caesar): a light desert theme with a low sun, sand dunes and an open road, and a shield cursor.
+
+Pick them in Themes. That's 15 themes now.
 
 Requires XXMI Launcher with ZZMI set up. Questions or bugs? Reach out on Discord: ghxty

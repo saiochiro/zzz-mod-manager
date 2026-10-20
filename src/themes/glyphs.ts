@@ -23,6 +23,17 @@ export const G: Record<string, Glyph> = {
   crosshair: { d: 'M12 4.5a7.5 7.5 0 1 0 .01 0ZM12 1v6M12 17v6M1 12h6M17 12h6M12 10.8a1.2 1.2 0 1 0 .01 0Z', mode: 'stroke', w: 1.6 },
   waves2: { d: 'M2 9.5c2.5-3.2 5-3.2 7.5 0s5 3.2 7.5 0 3.8-2.6 5-2.6M2 16c2.5-3.2 5-3.2 7.5 0s5 3.2 7.5 0 3.8-2.6 5-2.6', mode: 'stroke', w: 2 },
   gem: { d: 'M6.5 3.5h11L22 9l-10 12L2 9l4.5-5.5ZM2 9h20M9.5 3.5 12 9l2.5-5.5M12 9v12', mode: 'stroke', w: 1.6 },
+  paw: {
+    d: 'M12 12.6c3.2 0 6 2.6 6 5.3 0 1.8-1.4 2.9-3 2.9-1.3 0-2-.7-3-.7s-1.7.7-3 .7c-1.6 0-3-1.1-3-2.9 0-2.7 2.8-5.3 6-5.3ZM5.4 7.2a2.1 2.6 0 1 0 .01 0ZM9.3 3a2.2 2.7 0 1 0 .01 0ZM14.7 3a2.2 2.7 0 1 0 .01 0ZM18.6 7.2a2.1 2.6 0 1 0 .01 0Z',
+    mode: 'fill',
+  },
+  arrow: { d: 'M3 21 21 3M21 3h-6.5M21 3v6.5M3 21l1.2-4.8M3 21l4.8-1.2M6.4 17.6l1.2-4.8M6.4 17.6l4.8-1.2', mode: 'stroke', w: 1.7 },
+  gear: {
+    d: 'M12 8.6a3.4 3.4 0 1 0 .01 0ZM12 4.8a7.2 7.2 0 1 0 .01 0ZM12 1.5v3.3M12 19.2v3.3M1.5 12h3.3M19.2 12h3.3M4.6 4.6l2.3 2.3M17.1 17.1l2.3 2.3M4.6 19.4l2.3-2.3M17.1 6.9l2.3-2.3',
+    mode: 'stroke',
+    w: 1.6,
+  },
+  shield: { d: 'M12 2 20 5v6.4c0 5-3.4 8.7-8 10.6-4.6-1.9-8-5.6-8-10.6V5l8-3ZM12 6.2v11.6M7.2 10.4h9.6', mode: 'stroke', w: 1.6 },
   cloud: { d: 'M2 15.5c2-.2 3.2-1.4 3.4-3.2.3-2.6 2.6-4.4 5.2-4 1.2-2.3 4.4-3 6.4-1.2 1.4 1.2 1.8 3 1.2 4.6 1.8.2 3.2 1.6 3.4 3.4M5.5 19.5c3.5 0 4.5-2 8-2s4.5 2 8.5 2', mode: 'stroke', w: 1.6 },
 };
 
@@ -41,6 +52,10 @@ export const SETS: Record<MotifKind, string[]> = {
   notes: ['note', 'sparkle', 'note', 'dot'],
   crosshairs: ['crosshair', 'dot', 'dot'],
   clouds: ['cloud', 'dot', 'cloud'],
+  paws: ['paw', 'dot', 'paw'],
+  arrows: ['arrow', 'dot', 'arrow'],
+  gears: ['gear', 'dot', 'gear'],
+  shields: ['shield', 'dot', 'shield'],
 };
 
 /** The single most recognisable glyph for each motif (used on the app icon and cursor). */
@@ -59,4 +74,8 @@ export const HERO_GLYPH: Record<MotifKind, string> = {
   notes: 'note',
   crosshairs: 'crosshair',
   clouds: 'cloud',
+  paws: 'paw',
+  arrows: 'arrow',
+  gears: 'gear',
+  shields: 'shield',
 };
