@@ -72,8 +72,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          SETUP="release/ZZZ-Mod-Manager-Setup-$VERSION.exe"
-          FILES=("$SETUP" "$SETUP.blockmap" "release/latest.yml" "release/ZZZ-Mod-Manager-Portable-$VERSION.exe")
+          SETUP="release/ProxyLaunch-Setup-$VERSION.exe"
+          FILES=("$SETUP" "$SETUP.blockmap" "release/latest.yml" "release/ProxyLaunch-Portable-$VERSION.exe")
           for f in "${FILES[@]}"; do [ -f "$f" ] || { echo "::error::Missing $f"; ls -la release; exit 1; }; done
 
           NOTES=RELEASE_NOTES.md
@@ -85,6 +85,6 @@ jobs:
           else
             gh release create "$TAG" "${FILES[@]}" \
               --target "$GITHUB_SHA" \
-              --title "ProxyLaunch ( ZZZ Mod Manager $VERSION )" \
+              --title "ProxyLaunch $VERSION" \
               --notes-file "$NOTES"
           fi

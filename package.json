@@ -1,7 +1,7 @@
 {
   "name": "zzz-mod-manager",
-  "version": "2.4.1",
-  "description": "ZZZ Mod Manager (Fairy OS) \u2014 Automated 3DMigoto / ZZMI Mod Router, H-Key Outfit Merger, and Post-Patch Repair Engine",
+  "version": "2.4.2",
+  "description": "ProxyLaunch: an all-in-one mod launcher for Zenless Zone Zero",
   "main": "dist-electron/electron/main.js",
   "scripts": {
     "start": "node ./node_modules/electron/cli.js .",
@@ -14,7 +14,8 @@
   },
   "build": {
     "appId": "com.fairyos.zzzmodmanager",
-    "productName": "ZZZ Mod Manager",
+    "productName": "ProxyLaunch",
+    "executableName": "ZZZ Mod Manager",
     "directories": {
       "output": "release"
     },
@@ -37,13 +38,13 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "ZZZ Mod Manager",
+      "shortcutName": "ProxyLaunch",
       "installerIcon": "assets/icon/icon.ico",
       "uninstallerIcon": "assets/icon/icon.ico",
-      "artifactName": "ZZZ-Mod-Manager-Setup-${version}.${ext}"
+      "artifactName": "ProxyLaunch-Setup-${version}.${ext}"
     },
     "portable": {
-      "artifactName": "ZZZ-Mod-Manager-Portable-${version}.${ext}"
+      "artifactName": "ProxyLaunch-Portable-${version}.${ext}"
     },
     "publish": [
       {
@@ -77,7 +78,7 @@
     "vitest": "^3.0.5",
     "electron-builder": "^25.1.8"
   },
-  "author": "ZZZ Mod Manager",
+  "author": "ProxyLaunch",
   "repository": {
     "type": "git",
     "url": "https://github.com/saiochiro/zzz-mod-manager.git"

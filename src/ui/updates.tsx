@@ -62,7 +62,7 @@ export const AppUpdatePrompt: React.FC<{
             </p>
           </div>
         ) : (
-          <p className="muted">A new version of the mod manager is ready to download.</p>
+          <p className="muted">A new version of ProxyLaunch is ready to download.</p>
         )}
         {status.state === 'downloading' && (
           <div className="stack">

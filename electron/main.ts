@@ -10,6 +10,11 @@ if (process.platform === 'win32') {
   app.setAppUserModelId('com.fairyos.zzzmodmanager');
 }
 
+// The app was renamed from "ZZZ Mod Manager" to "ProxyLaunch". Electron names
+// the data folder after the product, so pin it to the original folder: every
+// user's mods, loadouts and settings stay exactly where they were.
+app.setPath('userData', path.join(app.getPath('appData'), 'ZZZ Mod Manager'));
+
 let mainWindow: BrowserWindow | null = null;
 const workspaceRoot = app.isPackaged ? app.getPath('userData') : path.resolve(__dirname, '../..');
 const modService = new ModManagerService(workspaceRoot);

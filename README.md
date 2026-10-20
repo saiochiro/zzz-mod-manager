@@ -40,12 +40,12 @@
 ## Install
 
 1. Go to the [latest release](https://github.com/saiochiro/zzz-mod-manager/releases/latest).
-2. Download **`ZZZ-Mod-Manager-Setup-x.x.x.exe`**. The other files on the release page are used by the app's auto-updater, so you can ignore them.
+2. Download **`ProxyLaunch-Setup-x.x.x.exe`**. The other files on the release page are used by the app's auto-updater, so you can ignore them.
 3. Run it and follow the installer.
 
 Windows may show **"Windows protected your PC"** because the app isn't code-signed. Click **More info**, then **Run anyway**. The full source code is in this repository.
 
-Prefer no install? Download **`ZZZ-Mod-Manager-Portable-x.x.x.exe`** instead. It runs straight from the file but does not auto-update.
+Prefer no install? Download **`ProxyLaunch-Portable-x.x.x.exe`** instead. It runs straight from the file but does not auto-update.
 
 ## Updating
 

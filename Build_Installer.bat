@@ -1,5 +1,5 @@
 @echo off
-title Build ZZZ Mod Manager installer
+title Build ProxyLaunch installer
 cd /d "%~dp0"
 
 echo [1/3] Installing build tools (only slow the first time)...
@@ -34,8 +34,8 @@ if errorlevel 1 goto fail
 echo.
 echo Done! Files are in the "release" folder.
 echo   To publish an update on GitHub, attach these 3 files to a new release:
-echo     ZZZ-Mod-Manager-Setup-x.x.x.exe
-echo     ZZZ-Mod-Manager-Setup-x.x.x.exe.blockmap
+echo     ProxyLaunch-Setup-x.x.x.exe
+echo     ProxyLaunch-Setup-x.x.x.exe.blockmap
 echo     latest.yml
 echo   (Portable .exe is optional - it does not auto-update.)
 start "" "%~dp0release"

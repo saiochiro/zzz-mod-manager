@@ -277,7 +277,7 @@ reload_fixes = VK_F10
       this.addLog(
         'cyan',
         'FAIRY_CORE',
-        'ZZZ Mod Manager ready. Mod directory is clean and ready for packages.'
+        'ProxyLaunch ready. Mod directory is clean and ready for packages.'
       );
     }
   }
