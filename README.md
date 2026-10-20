@@ -68,11 +68,15 @@ On Windows you can also just double-click `Launch_ZZZ_Mod_Manager.bat` to run it
 
 Releases are built automatically by GitHub Actions (`.github/workflows/release.yml`).
 
+**Easiest:** double-click `Publish_Update.bat`. It asks for the new version number and what changed, then sends everything to GitHub.
+
+**By hand:**
+
 1. Raise `"version"` in `package.json`.
 2. Describe the changes in `RELEASE_NOTES.md`. This text is shown in the in-app update popup.
 3. Push to `main`.
 
-GitHub builds the installer on Windows and publishes release `vX.Y.Z` with the installer, its `.blockmap` and `latest.yml`. Installed apps then show the update popup.
+Either way, GitHub builds the installer on Windows and publishes release `vX.Y.Z` with the installer, its `.blockmap` and `latest.yml`. Installed apps then show the update popup.
 
 ## Contact
 
