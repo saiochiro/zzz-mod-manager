@@ -29,8 +29,16 @@ export const CustomTitleBar: React.FC<CustomTitleBarProps> = ({
 }) => (
   <header className="titlebar titlebar-drag">
     <div className="titlebar__brand">
-      <span className="titlebar__wordmark" aria-label="ProxyLaunch">
-        Proxy<b>Launch</b>
+      <span className="wordmark" aria-label="ProxyLaunch">
+        <span className="wordmark__bars" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
+        <span className="wordmark__proxy">Proxy</span>
+        <span className="wordmark__launch">
+          <span>Launch</span>
+        </span>
       </span>
     </div>
     <div className="spacer" />

@@ -38,6 +38,7 @@ import { EmptyState, Skeleton, ToastProvider, useToast, CardSkeletonGrid } from 
 import { getModHealth } from './ui/modStatus';
 import { AppUpdatePrompt, useAppUpdate, useModUpdates } from './ui/updates';
 import { SetupWizard, isSetupDone, markSetupDone } from './components/SetupWizard';
+import { ThemeScene } from './themes/Scene';
 import { RefreshCw as RestartIcon } from 'lucide-react';
 import { version as APP_VERSION } from '../package.json';
 
@@ -71,6 +72,11 @@ const AppInner: React.FC = () => {
     applyCursor(cursorSettings, theme);
   }, [cursorSettings, theme]);
   useInteractionEffects(effects);
+  useEffect(() => {
+    const root = document.documentElement;
+    if (effects.background === 'scene') root.dataset.scene = '1';
+    else delete root.dataset.scene;
+  }, [effects.background]);
 
   const changeCursor = (patch: Partial<CursorSettings>) => {
     setCursorSettings((prev) => {
@@ -982,6 +988,8 @@ const AppInner: React.FC = () => {
           </div>
         </div>
       )}
+
+      {effects.background === 'scene' && <ThemeScene theme={theme} />}
 
       <CustomTitleBar
         activeTheme={activeTheme}

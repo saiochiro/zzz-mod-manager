@@ -185,7 +185,7 @@ export const ThemesScreen: React.FC<ThemesScreenProps> = ({
                       value={cursor.shape}
                       onChange={(shape) => onCursorChange({ shape })}
                       options={[
-                        { value: 'auto', label: 'Agent default' },
+                        { value: 'auto', label: 'Signature', title: 'Each agent’s own cursor: katana, shark fin, brush, leaf…' },
                         { value: 'arrow', label: 'Arrow' },
                         { value: 'blade', label: 'Blade' },
                         { value: 'reticle', label: 'Reticle', title: 'Arrow normally, a target reticle over buttons' },
@@ -211,6 +211,23 @@ export const ThemesScreen: React.FC<ThemesScreenProps> = ({
                   <Sparkles style={{ width: 18, height: 18, color: 'var(--primary-text)' }} />
                   <h2 style={{ fontWeight: 650, fontSize: 'var(--fs-lead)' }}>Effects</h2>
                 </div>
+                <div className="field">
+                  <span className="field__label">Background</span>
+                  <Segmented<'scene' | 'plain'>
+                    ariaLabel="Background style"
+                    value={effects.background}
+                    onChange={(background) => onEffectsChange({ background })}
+                    options={[
+                      { value: 'scene', label: 'Agent scene', title: 'An animated background for each agent: snow, waves, city lights…' },
+                      { value: 'plain', label: 'Plain', title: 'Just the theme colors' },
+                    ]}
+                  />
+                  <span className="small muted">
+                    {effects.background === 'scene'
+                      ? 'Each agent gets an animated scene behind the app.'
+                      : 'A clean background in the theme’s colors.'}
+                  </span>
+                </div>
                 <div className="fx-switches">
                   <FxRow
                     title="Mouse glow & card tilt"
@@ -220,7 +237,7 @@ export const ThemesScreen: React.FC<ThemesScreenProps> = ({
                   />
                   <FxRow
                     title="Moving patterns"
-                    desc="Snowflakes, petals and other theme shapes drift in headers."
+                    desc="Animates the scene and the snowflakes, petals and shapes in headers."
                     checked={effects.motion}
                     onChange={() => onEffectsChange({ motion: !effects.motion })}
                   />

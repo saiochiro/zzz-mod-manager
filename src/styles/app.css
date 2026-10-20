@@ -413,22 +413,58 @@ pre,
   letter-spacing: -0.01em;
   white-space: nowrap;
 }
-.titlebar__wordmark {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-style: italic;
-  font-size: 15px;
-  letter-spacing: 0.01em;
+.wordmark {
+  /* Bahnschrift ships with Windows 10/11: a condensed DIN face close to ZZZ's UI type. */
+  --wm-font: 'Bahnschrift', 'Bahnschrift SemiBold Condensed', 'DIN Condensed', 'Arial Narrow', 'Inter Display', 'Segoe UI', sans-serif;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding-left: 4px;
+  font-family: var(--wm-font);
+  font-stretch: 75%;
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  padding-left: 6px;
-  color: var(--text);
+  user-select: none;
 }
-.titlebar__wordmark b {
-  font-weight: 800;
-  background: linear-gradient(90deg, var(--primary), var(--accent));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+.wordmark__bars {
+  display: inline-flex;
+  gap: 2px;
+  transform: skewX(-20deg);
+}
+.wordmark__bars i {
+  display: block;
+  width: 3px;
+  height: 14px;
+  background: var(--primary);
+  border-radius: 1px;
+}
+.wordmark__bars i:nth-child(2) {
+  opacity: 0.65;
+}
+.wordmark__bars i:nth-child(3) {
+  opacity: 0.35;
+}
+.wordmark__proxy {
+  color: var(--text);
+  font-style: italic;
+}
+.wordmark__launch {
+  display: inline-block;
+  padding: 3px 8px 3px 7px;
+  background: linear-gradient(90deg, var(--cta-from), var(--cta-to));
+  transform: skewX(-14deg);
+  box-shadow: 2px 2px 0 color-mix(in srgb, var(--text) 85%, transparent);
+  border-radius: 2px;
+}
+.wordmark__launch span {
+  display: inline-block;
+  transform: skewX(14deg);
+  color: var(--on-primary);
+  font-style: italic;
+  letter-spacing: 0.1em;
 }
 .titlebar__actions {
   display: flex;
@@ -3365,4 +3401,387 @@ html[data-still] .motif-glyph {
 }
 html[data-still] .setup__icon {
   animation: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Animated theme scenes (Settings: Background → Scene)                */
+/* ------------------------------------------------------------------ */
+.titlebar,
+.shell {
+  position: relative;
+  z-index: 1;
+}
+.scene {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+}
+.scene-glow {
+  position: absolute;
+  width: 70vmax;
+  height: 70vmax;
+  border-radius: 50%;
+  filter: blur(20px);
+  will-change: transform;
+}
+.scene-glow--0 {
+  right: -22vmax;
+  top: -26vmax;
+  animation: scene-float-a 26s ease-in-out infinite alternate;
+}
+.scene-glow--1 {
+  left: 10vw;
+  bottom: -40vmax;
+  animation: scene-float-b 32s ease-in-out infinite alternate;
+}
+.scene-glow--2 {
+  right: 8vw;
+  bottom: -30vmax;
+  width: 50vmax;
+  height: 50vmax;
+  animation: scene-float-a 38s ease-in-out infinite alternate-reverse;
+}
+@keyframes scene-float-a {
+  to {
+    transform: translate(-8vmax, 6vmax) scale(1.12);
+  }
+}
+@keyframes scene-float-b {
+  to {
+    transform: translate(10vmax, -5vmax) scale(0.92);
+  }
+}
+.scene-p {
+  position: absolute;
+  top: 0;
+  will-change: transform;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+.scene-p svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.scene-p--fall {
+  animation-name: scene-fall;
+}
+.scene-p--rise {
+  animation-name: scene-rise;
+}
+.scene-p--drift {
+  animation-name: scene-drift;
+}
+@keyframes scene-fall {
+  from {
+    transform: translate3d(0, -10vh, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(var(--sway), 50vh, 0) rotate(180deg);
+  }
+  to {
+    transform: translate3d(0, 110vh, 0) rotate(360deg);
+  }
+}
+@keyframes scene-rise {
+  from {
+    transform: translate3d(0, 110vh, 0) scale(0.6);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 0.9;
+  }
+  to {
+    transform: translate3d(var(--sway), -10vh, 0) scale(1.1);
+    opacity: 0;
+  }
+}
+@keyframes scene-drift {
+  from {
+    transform: translate3d(12vw, -10vh, 0) rotate(0deg);
+  }
+  to {
+    transform: translate3d(-30vw, 110vh, 0) rotate(540deg);
+  }
+}
+.scene-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+}
+.scene-twinkle {
+  animation: scene-twinkle 3s ease-in-out infinite;
+}
+@keyframes scene-twinkle {
+  50% {
+    opacity: 0.08;
+  }
+}
+/* Frostblade aurora */
+.scene-aurora {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 45%;
+  filter: blur(26px);
+  opacity: 0.75;
+}
+.scene-aurora span {
+  position: absolute;
+  left: -20%;
+  width: 140%;
+  height: 34%;
+  border-radius: 50%;
+  transform-origin: center;
+  animation: scene-aurora 18s ease-in-out infinite alternate;
+}
+.scene-aurora span:first-child {
+  top: 18%;
+}
+.scene-aurora span:last-child {
+  top: 42%;
+  animation-duration: 24s;
+  animation-direction: alternate-reverse;
+}
+@keyframes scene-aurora {
+  from {
+    transform: translateX(-6%) skewY(-6deg) scaleY(0.8);
+  }
+  to {
+    transform: translateX(6%) skewY(5deg) scaleY(1.25);
+  }
+}
+/* Riptide waves */
+.scene-waves {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 200%;
+  height: 34%;
+}
+.scene-wave {
+  animation: scene-wave 22s linear infinite;
+}
+.scene-wave--2 {
+  animation-duration: 16s;
+  animation-direction: reverse;
+}
+.scene-wave--3 {
+  animation-duration: 11s;
+}
+@keyframes scene-wave {
+  to {
+    transform: translateX(-800px);
+  }
+}
+/* Ember heat */
+.scene-heat {
+  position: absolute;
+  inset: 0;
+  animation: scene-heat 4s ease-in-out infinite alternate;
+}
+@keyframes scene-heat {
+  to {
+    opacity: 0.55;
+  }
+}
+/* Light beams (stage / heist spotlights) */
+.scene-beams {
+  position: absolute;
+  inset: 0;
+  filter: blur(6px);
+}
+.scene-beam {
+  position: absolute;
+  top: -10%;
+  width: 16vw;
+  height: 120%;
+  transform-origin: top center;
+  clip-path: polygon(42% 0, 58% 0, 100% 100%, 0 100%);
+  animation: scene-sweep 12s ease-in-out infinite alternate;
+}
+.scene-beam--0 {
+  left: 38%;
+}
+.scene-beam--1 {
+  left: 62%;
+  animation-duration: 15s;
+  animation-direction: alternate-reverse;
+}
+.scene-beam--2 {
+  left: 82%;
+  animation-duration: 18s;
+}
+@keyframes scene-sweep {
+  from {
+    transform: rotate(-16deg);
+  }
+  to {
+    transform: rotate(16deg);
+  }
+}
+/* Night Patrol rain + sirens */
+.scene-rain {
+  position: absolute;
+  inset: -20% 0 0 0;
+  background-image: repeating-linear-gradient(102deg, transparent 0 22px, rgba(170, 200, 255, 0.16) 22px 23px);
+  background-size: 120px 120px;
+  animation: scene-rain 0.9s linear infinite;
+}
+@keyframes scene-rain {
+  to {
+    transform: translate(-24px, 120px);
+  }
+}
+.scene-siren {
+  position: absolute;
+  bottom: -18vh;
+  width: 60vw;
+  height: 40vh;
+  border-radius: 50%;
+  filter: blur(40px);
+  opacity: 0;
+  animation: scene-siren 2.4s ease-in-out infinite;
+}
+.scene-siren--red {
+  left: 10vw;
+  background: #ff2d55;
+}
+.scene-siren--blue {
+  right: -6vw;
+  background: #2d7bff;
+  animation-delay: -1.2s;
+}
+@keyframes scene-siren {
+  0%,
+  100% {
+    opacity: 0.05;
+  }
+  50% {
+    opacity: 0.42;
+  }
+}
+/* Sakura moon */
+.scene-moon {
+  position: absolute;
+  right: 8vw;
+  top: 10vh;
+  width: 34vmin;
+  height: 34vmin;
+  border-radius: 50%;
+  opacity: 0.9;
+  filter: blur(1px);
+  box-shadow: 0 0 120px rgba(255, 200, 230, 0.35);
+}
+/* Rose Requiem mist */
+.scene-mist {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 40%;
+  background: linear-gradient(0deg, color-mix(in srgb, var(--bg) 70%, transparent), transparent);
+  animation: scene-heat 9s ease-in-out infinite alternate;
+}
+/* Ink & Seal red sun seal */
+.scene-seal {
+  position: absolute;
+  right: 12vw;
+  top: 12vh;
+  width: 18vmin;
+  height: 18vmin;
+  border-radius: 50%;
+  background: radial-gradient(circle, #d64545 55%, transparent 72%);
+  opacity: 0.38;
+}
+/* Jade Garden */
+.scene-rays {
+  position: absolute;
+  inset: 0;
+  -webkit-mask-image: linear-gradient(200deg, #000, transparent 70%);
+  mask-image: linear-gradient(200deg, #000, transparent 70%);
+  animation: scene-heat 8s ease-in-out infinite alternate;
+}
+.scene-bamboo {
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 100%;
+  width: 22vw;
+}
+/* Graphite / default: proxy network grid + scan line */
+.scene-grid {
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  bottom: -5%;
+  height: 55%;
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 64px 64px;
+  transform: perspective(500px) rotateX(62deg);
+  transform-origin: bottom;
+  -webkit-mask-image: linear-gradient(0deg, #000 10%, transparent 90%);
+  mask-image: linear-gradient(0deg, #000 10%, transparent 90%);
+  animation: scene-grid 6s linear infinite;
+}
+@keyframes scene-grid {
+  to {
+    background-position: 0 64px;
+  }
+}
+.scene-scan {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  top: 0;
+  opacity: 0.5;
+  animation: scene-scan 9s ease-in-out infinite;
+}
+@keyframes scene-scan {
+  to {
+    transform: translateY(100vh);
+  }
+}
+/* Soften edges so cards stay the focus */
+.scene-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 55% 45%, transparent 50%, color-mix(in srgb, var(--bg) 35%, transparent) 100%);
+}
+.scene--light .scene-p {
+  mix-blend-mode: multiply;
+}
+html[data-still] .scene *,
+html[data-still] .scene {
+  animation-play-state: paused !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .scene,
+  .scene * {
+    animation-play-state: paused !important;
+  }
+}
+/* Scene mode: panels turn to frosted glass so the agent scene glows through
+   (cards and menus stay solid for readability). */
+html[data-scene] .titlebar,
+html[data-scene] .sidebar,
+html[data-scene] .charpanel {
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  backdrop-filter: blur(16px) saturate(1.2);
+}
+html[data-scene] .page-toolbar {
+  background: color-mix(in srgb, var(--bg) 50%, transparent);
+}
+html[data-scene] .page-hero {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 50%, transparent), color-mix(in srgb, var(--surface) 10%, transparent));
+}
+html[data-scene] .card {
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: blur(12px);
 }

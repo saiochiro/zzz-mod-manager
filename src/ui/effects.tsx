@@ -13,6 +13,8 @@ export interface EffectsSettings {
   glow: boolean;
   scanlines: boolean;
   motion: boolean;
+  /** 'scene' = animated agent background scene; 'plain' = flat theme color. */
+  background: 'scene' | 'plain';
 }
 
 const KEY = 'zzz_effects_v2';
@@ -27,7 +29,7 @@ function reducedMotion(): boolean {
 
 export function readEffectsSettings(): EffectsSettings {
   const rm = reducedMotion();
-  const fallback: EffectsSettings = { glow: !rm, scanlines: false, motion: !rm };
+  const fallback: EffectsSettings = { glow: !rm, scanlines: false, motion: !rm, background: 'scene' };
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) return { ...fallback, ...JSON.parse(raw) };
