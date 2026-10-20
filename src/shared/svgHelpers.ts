@@ -1,4 +1,3 @@
-// Claude sync verified
 function escapeXml(unsafe: string): string {
   return String(unsafe || '')
     .replace(/&/g, '&amp;')
