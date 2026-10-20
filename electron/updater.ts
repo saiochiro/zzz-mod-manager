@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 
 /**
  * App self-updates via GitHub Releases (electron-updater).
- * Flow: check on launch (and every 6 h) → tell the renderer → user clicks
+ * Flow: check ~2 s after launch (and every 6 h) → tell the renderer → user clicks
  * "Update" → download with progress → "Restart & update".
  * Only active in the installed (packaged) app; in development it reports
  * "unsupported" so the UI can explain.
@@ -83,7 +83,8 @@ export function setupUpdater(getWindow: () => BrowserWindow | null, log: (msg: s
     updater.on('error', (err: any) => send({ state: 'error', message: String(err?.message ?? err) }));
 
     const check = () => updater.checkForUpdates().catch((err: any) => log(`Update check failed: ${err?.message ?? err}`));
-    setTimeout(check, 6000);
+    // Check right after launch (the window is up within ~1s), then every 6 h.
+    setTimeout(check, 2000);
     setInterval(check, 6 * 60 * 60 * 1000);
   }
 
