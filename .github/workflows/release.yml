@@ -4,7 +4,8 @@
 # for it yet), this builds the Windows installer on GitHub's Windows runner and
 # publishes release vX.Y.Z with the Setup .exe, its .blockmap and latest.yml.
 # Installed copies of the app read latest.yml and show the "update available"
-# prompt, with RELEASE_NOTES.md as the "What's new" text.
+# prompt, with RELEASE_NOTES.md as the "What's new" text. It also attaches
+# ProxyLaunch-X.Y.Z.zip (installer + README) for uploading to GameBanana.
 #
 # To ship an update: bump "version" in package.json, update RELEASE_NOTES.md,
 # and push to main. That's it.
@@ -38,10 +39,29 @@ jobs:
           V=$(node -p "require('./package.json').version")
           echo "VERSION=$V" >> "$GITHUB_ENV"
           echo "TAG=v$V" >> "$GITHUB_ENV"
-          if gh release view "v$V" --json assets --jq '.assets[].name' 2>/dev/null | grep -qx latest.yml; then
-            echo "Release v$V already published; nothing to do."
+          ASSETS=$(gh release view "v$V" --json assets --jq '.assets[].name' 2>/dev/null || true)
+          if echo "$ASSETS" | grep -qx latest.yml; then
             echo "SKIP=1" >> "$GITHUB_ENV"
+            if echo "$ASSETS" | grep -qx "ProxyLaunch-$V.zip"; then
+              echo "Release v$V already published; nothing to do."
+            else
+              echo "Release v$V is published but has no GameBanana zip; adding it."
+              echo "ZIP_ONLY=1" >> "$GITHUB_ENV"
+            fi
           fi
+
+      - name: Add GameBanana zip to an existing release
+        if: env.ZIP_ONLY == '1'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p release gb
+          gh release download "$TAG" --pattern "ProxyLaunch-Setup-$VERSION.exe" --dir release
+          cp "release/ProxyLaunch-Setup-$VERSION.exe" gb/
+          cp docs/GameBanana-README.txt gb/README.txt
+          7z a -tzip "release/ProxyLaunch-$VERSION.zip" ./gb/*
+          gh release upload "$TAG" "release/ProxyLaunch-$VERSION.zip" --clobber
 
       - uses: actions/setup-node@v4
         if: env.SKIP != '1'
@@ -75,6 +95,11 @@ jobs:
           SETUP="release/ProxyLaunch-Setup-$VERSION.exe"
           FILES=("$SETUP" "$SETUP.blockmap" "release/latest.yml" "release/ProxyLaunch-Portable-$VERSION.exe")
           for f in "${FILES[@]}"; do [ -f "$f" ] || { echo "::error::Missing $f"; ls -la release; exit 1; }; done
+
+          # Zip for GameBanana (it only accepts archives): installer + README.
+          mkdir -p gb && cp "$SETUP" gb/ && cp docs/GameBanana-README.txt gb/README.txt
+          7z a -tzip "release/ProxyLaunch-$VERSION.zip" ./gb/*
+          FILES+=("release/ProxyLaunch-$VERSION.zip")
 
           NOTES=RELEASE_NOTES.md
           [ -f "$NOTES" ] || { echo "Bug fixes and improvements." > /tmp/notes.md; NOTES=/tmp/notes.md; }
