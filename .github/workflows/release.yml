@@ -1,60 +1,61 @@
-# Builds the Windows installer and publishes a GitHub Release whenever a
-# version tag (v1.2.3) is pushed. Installed copies of the app read the
-# release's latest.yml and show the "update available" prompt.
+# Ships an app update automatically.
 #
-# To ship an update:
-#   1. bump "version" in package.json
-#   2. write what changed in RELEASE_NOTES.md (shown in the in-app prompt)
-#   3. commit, then push a tag that matches:  git tag v2.4.1 && git push origin v2.4.1
+# Whenever main gets a new "version" in package.json (and there is no release
+# for it yet), this builds the Windows installer on GitHub's Windows runner and
+# publishes release vX.Y.Z with the Setup .exe, its .blockmap and latest.yml.
+# Installed copies of the app read latest.yml and show the "update available"
+# prompt, with RELEASE_NOTES.md as the "What's new" text.
+#
+# To ship an update: bump "version" in package.json, update RELEASE_NOTES.md,
+# and push to main. That's it.
 
 name: Release
 
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+    paths: ['package.json', 'RELEASE_NOTES.md', '.github/workflows/release.yml']
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Existing tag to (re)build, e.g. v2.4.1'
-        required: true
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  group: release
   cancel-in-progress: false
 
 jobs:
   windows:
     runs-on: windows-latest
-    env:
-      TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Read version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V=$(node -p "require('./package.json').version")
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+          echo "TAG=v$V" >> "$GITHUB_ENV"
+          if gh release view "v$V" --json assets --jq '.assets[].name' 2>/dev/null | grep -qx latest.yml; then
+            echo "Release v$V already published; nothing to do."
+            echo "SKIP=1" >> "$GITHUB_ENV"
+          fi
 
       - uses: actions/setup-node@v4
+        if: env.SKIP != '1'
         with:
           node-version: 20
           cache: npm
 
-      - name: Check package.json version matches the tag
-        shell: bash
-        run: |
-          V=$(node -p "require('./package.json').version")
-          echo "VERSION=$V" >> "$GITHUB_ENV"
-          if [ "v$V" != "$TAG" ]; then
-            echo "::error::package.json says $V but the tag is $TAG. Bump the version or fix the tag."
-            exit 1
-          fi
-
       - name: Install dependencies
+        if: env.SKIP != '1'
         shell: bash
         run: npm ci || npm install
 
       - name: Build app
+        if: env.SKIP != '1'
         shell: bash
         run: |
           # Type errors are reported but don't block the build (tsc still emits JS).
@@ -62,9 +63,11 @@ jobs:
           node ./node_modules/vite/bin/vite.js build
 
       - name: Package installer
+        if: env.SKIP != '1'
         run: npx electron-builder --win nsis portable --publish never
 
       - name: Publish release
+        if: env.SKIP != '1'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -81,6 +84,7 @@ jobs:
             gh release edit "$TAG" --draft=false
           else
             gh release create "$TAG" "${FILES[@]}" \
+              --target "$GITHUB_SHA" \
               --title "ProxyLaunch ( ZZZ Mod Manager $VERSION )" \
               --notes-file "$NOTES"
           fi
