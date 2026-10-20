@@ -37,6 +37,7 @@ import { EffectsSettings, readEffectsSettings, storeEffectsSettings, useInteract
 import { EmptyState, Skeleton, ToastProvider, useToast, CardSkeletonGrid } from './ui';
 import { getModHealth } from './ui/modStatus';
 import { AppUpdatePrompt, useAppUpdate, useModUpdates } from './ui/updates';
+import { SetupWizard, isSetupDone, markSetupDone } from './components/SetupWizard';
 import { RefreshCw as RestartIcon } from 'lucide-react';
 import { version as APP_VERSION } from '../package.json';
 
@@ -127,6 +128,7 @@ const AppInner: React.FC = () => {
   const appUpdate = useAppUpdate();
   const modUpdates = useModUpdates(appState?.mods ?? null);
   const [updatingIds, setUpdatingIds] = useState<Set<string>>(new Set());
+  const [setupOpen, setSetupOpen] = useState(false);
 
   /* ---------------------------------------------------------------- */
   /* Loading                                                          */
@@ -161,6 +163,18 @@ const AppInner: React.FC = () => {
       if (state.config.nsfwFilterState) setNsfwFilterState(state.config.nsfwFilterState);
 
       refreshFolderStatus();
+
+      // First launch: show the setup wizard, unless this is an existing user
+      // whose game, XXMI and mods are already in place.
+      if (!isSetupDone()) {
+        fairyClient
+          .getSetupStatus()
+          .then((s) => {
+            if (s.game.ok && s.loader.ok && s.zzmi.ok && s.modsCount > 0) markSetupDone();
+            else setSetupOpen(true);
+          })
+          .catch(() => setSetupOpen(true));
+      }
 
       // The feed loads separately so a slow network never blocks the library.
       fairyClient
@@ -1137,6 +1151,7 @@ const AppInner: React.FC = () => {
               canUndoOrganize={canUndoOrganize}
               onOpenImport={() => setImportOpen(true)}
               onOpenThemes={() => setScreen('themes')}
+              onRunSetup={() => setSetupOpen(true)}
             />
           )}
         </main>
@@ -1173,6 +1188,22 @@ const AppInner: React.FC = () => {
       <MultiAgentSplitModal promptData={multiAgentPrompt} onConfirmSplit={handleConfirmMultiAgentSplit} onCancel={() => setMultiAgentPrompt(null)} />
 
       <AppUpdatePrompt status={appUpdate.status} onDownload={appUpdate.download} onInstall={appUpdate.install} />
+
+      <SetupWizard
+        open={setupOpen}
+        activeTheme={activeTheme}
+        onThemeChange={handleThemeChange}
+        onSaveConfig={async (partial) => {
+          const res = await fairyClient.updateConfig(partial);
+          setAppState(res.state);
+          refreshFolderStatus();
+        }}
+        onClose={() => {
+          setSetupOpen(false);
+          refreshFolderStatus();
+          fairyClient.getState().then(setAppState).catch(() => {});
+        }}
+      />
 
       <ImportExistingLauncherModal
         isOpen={importOpen}

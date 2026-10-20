@@ -111,6 +111,15 @@ export interface HashDatabase {
   agents: Record<string, AgentHashEntry>;
 }
 
+/** Result of the first-run setup check (game + mod loader detection). */
+export interface SetupStatus {
+  game: { ok: boolean; path: string };
+  loader: { ok: boolean; path: string; isXxmi: boolean };
+  /** XXMI has Zenless Zone Zero (ZZMI) set up. */
+  zzmi: { ok: boolean; path: string };
+  modsCount: number;
+}
+
 export interface AppConfig {
   appDataPath: string;
   zzmiRootPath: string;

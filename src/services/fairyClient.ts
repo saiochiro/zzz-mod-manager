@@ -8,6 +8,7 @@ import {
   IngestionResult,
   ModManifest,
   ParsedIniDocument,
+  SetupStatus,
 } from '../shared/types';
 
 declare global {
@@ -233,6 +234,18 @@ export const fairyClient = {
 
   syncHashDb: (): Promise<{ hashDb: HashDatabase; message: string; state: FullAppState }> =>
     invokeBackend('zzz:syncHashDb'),
+
+  /** First-run setup: detects the game + XXMI and reports what's ready. */
+  getSetupStatus: (): Promise<SetupStatus> => invokeBackend('setup:status'),
+
+  /** Opens an http(s) link in the user's web browser. */
+  openExternal: async (url: string): Promise<void> => {
+    if (window.fairyBridge?.isElectron) {
+      await window.fairyBridge.invoke('app:openExternal', url);
+    } else {
+      window.open(url, '_blank', 'noopener');
+    }
+  },
 
   autoDiscoverPaths: (): Promise<{
     zzzExePath: string;

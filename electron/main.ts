@@ -89,6 +89,13 @@ function createWindow() {
     writeBootLog('BrowserWindow did-finish-load complete! Frameless window is visible.');
   });
 
+  // Links with target="_blank" (mod pages, XXMI download…) open in the user's
+  // web browser instead of a bare Electron window.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
   // Intercept GameBanana download URLs or zzzmgr:// deep links in embedded webviews
   mainWindow.webContents.on('will-navigate', async (event, url) => {
     if (url.startsWith('zzzmgr://') || /gamebanana\.com\/dl\//i.test(url)) {
@@ -335,6 +342,14 @@ ipcMain.handle('xxmi:detectPaths', async () => {
 ipcMain.handle('zzz:syncHashDb', async () => {
   const res = modService.syncHashDatabaseFromCloud();
   return { ...res, state: modService.getFullState() };
+});
+
+ipcMain.handle('setup:status', async () => modService.getSetupStatus());
+
+ipcMain.handle('app:openExternal', async (_e, url: string) => {
+  if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return false;
+  await shell.openExternal(url);
+  return true;
 });
 
 ipcMain.handle('zzz:autoDiscoverPaths', async () => {

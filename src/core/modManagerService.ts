@@ -7,6 +7,7 @@ import { DEFAULT_HASH_DB } from '../shared/defaultHashDb';
 import {
   AgentHashEntry,
   AppConfig,
+  SetupStatus,
   ExternalLauncherDetection,
   FairyLogEntry,
   FairyState,
@@ -2254,6 +2255,29 @@ endif
       zzmiRootPath: this.zzmiRootPath,
       zzmiLoaderPath: resolvedLoader,
       discoveredVia,
+    };
+  }
+
+  /**
+   * First-run setup check: looks for the game and XXMI (saving any newly found
+   * paths) and reports which pieces are ready.
+   */
+  public getSetupStatus(): SetupStatus {
+    this.autoDiscoverSystemPaths();
+    const cfg = this.getConfig();
+    const exists = (p?: string) => Boolean(p) && fs.existsSync(p as string);
+    const appData =
+      process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:\\Users\\Default', 'AppData', 'Roaming');
+    const zzmiDir = path.join(appData, 'XXMI Launcher', 'ZZMI');
+    return {
+      game: { ok: exists(cfg.zzzExePath), path: cfg.zzzExePath || '' },
+      loader: {
+        ok: exists(cfg.zzmiLoaderPath),
+        path: cfg.zzmiLoaderPath || '',
+        isXxmi: /xxmi\s*launcher\.exe$/i.test(path.basename(cfg.zzmiLoaderPath || '')),
+      },
+      zzmi: { ok: fs.existsSync(zzmiDir), path: zzmiDir },
+      modsCount: this.scanInstalledMods().length,
     };
   }
 

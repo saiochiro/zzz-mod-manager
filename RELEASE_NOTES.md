@@ -1,8 +1,7 @@
-What's new in 2.4.2
+What's new in 2.5.0
 
-- The app is now called ProxyLaunch everywhere: installer, desktop and Start menu shortcut, Windows apps list and the update popup.
-- New Hollow app icon on your desktop and taskbar.
-- The icon in the top left corner of the app is gone, replaced by the ProxyLaunch logo.
-- Your mods, loadouts, themes and settings are kept exactly as they were.
+- New first-time setup: a quick welcome guide finds your game and XXMI for you, links you straight to the XXMI download if it's missing, and lets you pick your agent theme.
+- Missing something? The setup tells you exactly what to do, and you can run it again anytime from Settings > Folders & game.
+- Links like "Mod page" now open in your web browser instead of a new app window.
 
 Requires XXMI Launcher with ZZMI set up. Questions or bugs? Reach out on Discord: ghxty

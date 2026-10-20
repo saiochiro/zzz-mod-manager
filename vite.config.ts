@@ -141,6 +141,9 @@ function fairyBackendMiddlewarePlugin(): Plugin {
             case 'zzz:syncHashDb':
               result = { ...svc.syncHashDatabaseFromCloud(), state: svc.getFullState() };
               break;
+            case 'setup:status':
+              result = svc.getSetupStatus();
+              break;
             case 'zzz:autoDiscoverPaths':
               result = { ...svc.autoDiscoverSystemPaths(), state: svc.getFullState() };
               break;

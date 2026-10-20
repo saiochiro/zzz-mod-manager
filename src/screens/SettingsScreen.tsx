@@ -16,6 +16,7 @@ import {
   Palette,
   ShieldCheck,
   SlidersHorizontal,
+  Wand2,
 } from 'lucide-react';
 import type { AppConfig, HashDatabase, NsfwFilterState } from '../shared/types';
 import type { ThemeDefinition } from '../themes/types';
@@ -37,6 +38,8 @@ interface SettingsScreenProps {
   onChangeNsfw: (s: NsfwFilterState) => void;
   onSaveConfig: (partial: Partial<AppConfig>) => Promise<void>;
   onAutoDiscover: () => Promise<void>;
+  /** Re-opens the first-run setup wizard. */
+  onRunSetup?: () => void;
   onToggleSingleActive: () => void;
   onStandardizeHotkeys: () => void;
   onOrganizeFolders: () => void;
@@ -188,6 +191,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = (p) => {
                     {detecting ? <Loader2 className="spin" /> : <FolderSearch />}
                     Find automatically
                   </button>
+                  {p.onRunSetup && (
+                    <button className="btn btn--ghost btn--sm" onClick={p.onRunSetup}>
+                      <Wand2 />
+                      Run setup again
+                    </button>
+                  )}
                 </div>
                 <PathField
                   label="Mods folder"
