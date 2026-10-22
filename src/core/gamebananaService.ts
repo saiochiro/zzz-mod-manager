@@ -195,6 +195,13 @@ export function getAllModPreviewUrls(mod: any): string[] {
 }
 
 import { runLayer2VisionModerationBatch } from './nsfwVisionService';
+import { applyNsfwReview } from './nsfwReview';
+
+/** Applies the AI check / your own NSFW calls, then drops NSFW items if asked. */
+function finalizeNsfw(items: GameBananaModItem[], hideNsfw: boolean): GameBananaModItem[] {
+  const out = items.map((m) => applyNsfwReview(m, `gb:${m.id}`));
+  return hideNsfw ? out.filter((m) => !m.is_nsfw) : out;
+}
 
 export const NSFW_KEYWORD_REGEX =
   /\b(nsfw|18\+|r18|r-18|nude|nudity|naked|topless|bottomless|uncensored|explicit|adult|skimpy|lewd|hentai|ecchi|erotic|sex|sexual|strip|lingerie|bikini|microbikini|thong|bondage|bdsm|fetish|boob|boobs|breasts|ass|butt|nipple|pussy|penis|futa|ahegao|bunny\s*suit|slingshot|pasties)\b/i;
@@ -332,7 +339,7 @@ export async function fetchLiveGameBananaFeed(
 
   const cached = feedResponseCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < FEED_CACHE_TTL_MS) {
-    return cached.items;
+    return finalizeNsfw(cached.items, hideNsfw);
   }
 
   const existingInflight = inflightFeedRequests.get(cacheKey);
@@ -559,17 +566,9 @@ export async function fetchLiveGameBananaFeed(
           );
         }
 
-        // Pre-filter Layer 1 NSFW items when hideNsfw is enabled before parallel Layer 2 moderation
-        if (hideNsfw) {
-          liveItems = liveItems.filter((m) => !m.is_nsfw);
-        }
-
-        // Layer 2: Parallel AI Vision & Deep Content Moderation via Promise.all
-        let combined = await runLayer2VisionModerationBatch(liveItems);
-
-        if (hideNsfw) {
-          combined = combined.filter((m) => !m.is_nsfw);
-        }
+        // Layer 2: deep metadata check on items not labeled yet, then the AI check / your own calls.
+        // NSFW items are only dropped after that, so ones the AI check cleared still show.
+        let combined = finalizeNsfw(await runLayer2VisionModerationBatch(liveItems), hideNsfw);
 
         if (sort === 'alphabetical') {
           combined.sort((a, b) => a.title.localeCompare(b.title));

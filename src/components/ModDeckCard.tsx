@@ -13,6 +13,8 @@ import {
   Wrench,
 } from 'lucide-react';
 import type { AgentHashEntry, GameBananaModItem, ModManifest, NsfwFilterState } from '../shared/types';
+import { isBlurredByNsfwFilter } from '../shared/nsfw';
+import { NsfwBadge } from './NsfwLabel';
 import type { MotifKind } from '../themes/types';
 import { Switch, ThumbImage, usePopover } from '../ui';
 import { getModHealth, HEALTH_META } from '../ui/modStatus';
@@ -62,7 +64,7 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
   const health = getModHealth(mod);
   const meta = HEALTH_META[health];
   const HealthIcon = meta.icon;
-  const blurred = Boolean(mod.is_nsfw && nsfwFilterState === 'blur' && !revealed);
+  const blurred = isBlurredByNsfwFilter(mod, nsfwFilterState) && !revealed;
   const target = agent?.display_name || (mod.category_tag && mod.category_tag !== 'Skins' ? mod.category_tag : 'UI & effects');
 
   return (
@@ -113,6 +115,7 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
               Overlaps
             </span>
           ) : null}
+          <NsfwBadge item={mod} className="badge--glass" />
         </div>
         {(update || isUpdating) && health !== 'fixable' && (
           <div className="mod-card__fix">

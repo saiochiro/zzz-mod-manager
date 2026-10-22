@@ -18,6 +18,9 @@ export function initNsfwVisionCache(appDataPath: string): void {
         for (const [k, v] of Object.entries(raw)) {
           const id = Number(k);
           if (!Number.isNaN(id) && v && typeof v === 'object') {
+            // Older versions saved a rough skin-color guess here, which flagged lots of safe mods.
+            // The on-device AI check replaces it, so those guesses are dropped.
+            if (/^Layer 2 Vision/i.test(String((v as VisionModerationResult).reason || ''))) continue;
             visionCacheMemory.set(id, v as VisionModerationResult);
           }
         }

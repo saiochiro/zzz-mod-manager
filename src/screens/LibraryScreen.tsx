@@ -21,6 +21,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import type { AgentHashEntry, GameBananaModItem, HashDatabase, ModManifest, NsfwFilterState } from '../shared/types';
+import { isHiddenByNsfwFilter } from '../shared/nsfw';
 import type { ThemeDefinition } from '../themes/types';
 import { Motif } from '../themes/Motif';
 import { AgentRosterSidebar } from '../components/AgentRosterSidebar';
@@ -72,7 +73,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
   const more = usePopover();
 
   const visibleMods = useMemo(
-    () => p.mods.filter((m) => !(p.nsfwFilterState === 'hide' && m.is_nsfw)),
+    () => p.mods.filter((m) => !isHiddenByNsfwFilter(m, p.nsfwFilterState)),
     [p.mods, p.nsfwFilterState]
   );
   const onCount = visibleMods.filter((m) => m.enabled).length;

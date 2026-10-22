@@ -17,6 +17,8 @@ import {
 import type { AgentHashEntry, GameBananaModItem, ModManifest, ParsedIniDocument } from '../shared/types';
 import type { MotifKind } from '../themes/types';
 import { Avatar, Switch, ThumbImage, useEscape } from '../ui';
+import { NsfwLabelControl } from './NsfwLabel';
+import type { FullAppState } from '../services/fairyClient';
 import { formatBytes, getModHealth, HEALTH_META } from '../ui/modStatus';
 
 interface InspectorDrawerProps {
@@ -40,6 +42,8 @@ interface InspectorDrawerProps {
   onOpenFolder?: (relInstallPath: string) => void;
   onSetCustomImageFile?: (modUuid: string) => void;
   onPasteThumbnailFromClipboard?: (modUuid: string) => void;
+  /** After you change the mod's content label. */
+  onStateChange?: (s: FullAppState) => void;
 }
 
 type Tab = 'overview' | 'hotkeys' | 'advanced';
@@ -65,6 +69,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
   onOpenFolder,
   onSetCustomImageFile,
   onPasteThumbnailFromClipboard,
+  onStateChange,
 }) => {
   const [tab, setTab] = useState<Tab>('overview');
   const [capturing, setCapturing] = useState<string | null>(null);
@@ -219,6 +224,12 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                   </p>
                 </div>
               ) : null}
+
+              {onStateChange && (
+                <div className="card card--pad">
+                  <NsfwLabelControl item={mod} onChanged={onStateChange} />
+                </div>
+              )}
 
               {parts.length > 0 && (
                 <div>

@@ -68,7 +68,7 @@ export const CommunityPanel: React.FC<Props> = ({ theme, hashDb, nsfwFilterState
           view,
           sort,
           agentId: agentId || null,
-          hideNsfw: nsfwFilterState === 'hide',
+          hideNsfw: nsfwFilterState === 'hide' || nsfwFilterState === 'toggle',
           page: nextPage,
         });
         setPosts((prev) => (nextPage === 0 ? res.posts : [...prev, ...res.posts]));
@@ -198,7 +198,7 @@ export const CommunityPanel: React.FC<Props> = ({ theme, hashDb, nsfwFilterState
               { value: 'top', label: 'Most liked' },
             ]}
           />
-          {nsfwFilterState === 'hide' && view === 'all' && (
+          {(nsfwFilterState === 'hide' || nsfwFilterState === 'toggle') && view === 'all' && (
             <span className="caption">
               <EyeOff style={{ width: 13, height: 13, verticalAlign: '-2px' }} /> 18+ posts are hidden (Settings → Content filter)
             </span>

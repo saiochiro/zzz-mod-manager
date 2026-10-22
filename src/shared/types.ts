@@ -2,7 +2,22 @@ export type FairyState = 'idle' | 'processing' | 'alert';
 
 export type ModHealthStatus = 'working' | 'fixable' | 'broken';
 
-export type NsfwFilterState = 'hide' | 'blur' | 'show';
+import type { NsfwFilter, NsfwLevel, NsfwSource } from './nsfw';
+export type { NsfwLevel, NsfwSource } from './nsfw';
+
+/** hide = SFW only, toggle = SFW + mods with NSFW toggles, blur = everything with NSFW blurred, show = everything. */
+export type NsfwFilterState = NsfwFilter;
+
+/** Added by the NSFW review: the label's level, why, and who decided it. */
+export interface NsfwReviewInfo {
+  nsfw_level?: NsfwLevel;
+  nsfw_reason?: string;
+  nsfw_source?: NsfwSource;
+  /** The AI check (or you) already looked at it. */
+  nsfw_checked?: boolean;
+  /** The label it had before the AI check. */
+  nsfw_flagged?: boolean;
+}
 
 export interface FairyLogEntry {
   id: string;
@@ -41,7 +56,7 @@ export interface RepairState {
   diff_logs?: RepairDiffLog[];
 }
 
-export interface ModManifest {
+export interface ModManifest extends NsfwReviewInfo {
   mod_uuid: string;
   gamebanana_id: number | null;
   title: string;
@@ -135,7 +150,9 @@ export interface AppConfig {
   activeTheme?: string;
   hideNsfw?: boolean;
   nsfwMode?: 'hide' | 'blur';
-  nsfwFilterState?: NsfwFilterState; // 'hide' | 'blur' | 'show'
+  nsfwFilterState?: NsfwFilterState; // 'hide' | 'toggle' | 'blur' | 'show'
+  /** Run the on-device AI check on mods labeled NSFW (and on covers of unlabeled ones). Default on. */
+  nsfwAiCheck?: boolean;
   singleActivePerAgent?: boolean;
   activeProfile?: string;
   profiles?: Record<string, string[]>; // profileName -> list of enabled mod_uuids
@@ -169,7 +186,7 @@ export interface ParsedIniDocument {
   rawContent: string;
 }
 
-export interface GameBananaModItem {
+export interface GameBananaModItem extends NsfwReviewInfo {
   id: number;
   title: string;
   author: string;
@@ -286,7 +303,7 @@ export interface WorkshopRecipe {
 }
 
 /** An installed mod as the Workshop sees it: which parts it can donate. */
-export interface WorkshopCatalogEntry {
+export interface WorkshopCatalogEntry extends NsfwReviewInfo {
   mod_uuid: string;
   title: string;
   author: string;

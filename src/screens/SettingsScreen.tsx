@@ -17,6 +17,8 @@ import {
   Palette,
   ShieldCheck,
   SlidersHorizontal,
+  ToggleRight,
+  Bot,
   Wand2,
 } from 'lucide-react';
 import type { AppConfig, HashDatabase, NsfwFilterState } from '../shared/types';
@@ -24,6 +26,7 @@ import type { ThemeDefinition } from '../themes/types';
 import { Motif } from '../themes/Motif';
 import { ThemeIcon } from '../components/ThemeIcon';
 import { fairyClient, AppUpdateStatus } from '../services/fairyClient';
+import { forgetNsfwReviews } from '../services/nsfwAi';
 import { Segmented, Switch, shortVersion } from '../ui';
 
 interface SettingsScreenProps {
@@ -240,18 +243,61 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = (p) => {
               <section id="settings-content" className="card card--pad">
                 <h2 className="h3">Content filter</h2>
                 <p className="small muted" style={{ marginBottom: 16 }}>
-                  Choose how mods marked as sensitive (18+) appear in your library and in Browse.
+                  Choose which mods show up in your Library, Browse and the Workshop.
                 </p>
                 <Segmented<NsfwFilterState>
                   ariaLabel="Sensitive content"
                   value={p.nsfwFilterState}
                   onChange={p.onChangeNsfw}
                   options={[
-                    { value: 'hide', label: 'Hide', icon: <ShieldCheck /> },
-                    { value: 'blur', label: 'Blur previews', icon: <EyeOff /> },
-                    { value: 'show', label: 'Show', icon: <Eye /> },
+                    { value: 'hide', label: 'SFW only', icon: <ShieldCheck /> },
+                    { value: 'toggle', label: 'SFW + NSFW toggles', icon: <ToggleRight /> },
+                    { value: 'blur', label: 'NSFW blurred', icon: <EyeOff /> },
+                    { value: 'show', label: 'Show all', icon: <Eye /> },
                   ]}
                 />
+                <p className="caption" style={{ marginTop: 10 }}>
+                  {p.nsfwFilterState === 'hide'
+                    ? 'Only mods with no NSFW content at all.'
+                    : p.nsfwFilterState === 'toggle'
+                    ? 'Safe mods, plus mods that are safe by default but have NSFW options you can switch on in game. Fully NSFW mods stay hidden.'
+                    : p.nsfwFilterState === 'blur'
+                    ? 'Everything shows. NSFW pictures are blurred until you click them.'
+                    : 'Everything shows, nothing is blurred.'}
+                </p>
+                <div className="setting" style={{ marginTop: 8 }}>
+                  <div className="setting__text">
+                    <div className="setting__title">
+                      <Bot style={{ width: 15, height: 15, verticalAlign: '-2px' }} /> AI check for NSFW labels
+                    </div>
+                    <div className="setting__desc">
+                      Mods get labeled NSFW from their GameBanana rating or title, which is sometimes wrong. An AI model on your PC looks at
+                      their pictures: labels come off mods that are actually safe, and mods that are only NSFW through a toggle get the
+                      NSFW toggle label. Nothing is uploaded. You can always change a mod’s label yourself in its details.
+                    </div>
+                  </div>
+                  <Switch
+                    checked={config.nsfwAiCheck !== false}
+                    onChange={() => p.onSaveConfig({ nsfwAiCheck: config.nsfwAiCheck === false })}
+                    label="AI check for NSFW labels"
+                  />
+                </div>
+                {config.nsfwAiCheck !== false && (
+                  <button
+                    className="btn btn--ghost btn--sm"
+                    onClick={async () => {
+                      try {
+                        await fairyClient.nsfwReset();
+                        forgetNsfwReviews();
+                        await p.onSaveConfig({});
+                      } catch {
+                        // ignore
+                      }
+                    }}
+                  >
+                    <RefreshCw /> Check all mods again
+                  </button>
+                )}
               </section>
 
               <section id="settings-mods" className="card card--pad">

@@ -1,8 +1,9 @@
-What's new in 2.11.0
+What's new in 2.12.0
 
-- Mod Workshop: every part now gets a check before you mix it. Parts that should come out cleanly mix as normal. Parts that may not look right on their own are marked Risky, and parts with broken or missing files are marked Broken. Click a part to see exactly why.
-- Mod Workshop: click any part to see a 3D view of that mod with the piece you're taking highlighted. Drag to turn it, scroll to zoom, double click to reset.
-- Fixed mixed mods where a part's hotkey only worked while another part was on screen (for example hair toggles that depended on the face). The Workshop now copies that switch over, so the hotkey keeps working.
-- The Workshop now warns you when a part starts on a setting with no textures, which is what made some mixed hair look shiny or metallic.
+- AI check for NSFW labels: lots of mods get labeled NSFW or skimpy when they aren't. ProxyLaunch now runs a small AI model on your PC that looks at a flagged mod's pictures. If they're all safe, the label comes off. Nothing is uploaded and no account is needed. You can turn it off in Settings, Content filter.
+- New NSFW toggle label for mods that are safe by default but have NSFW options you switch on in game. The AI check finds these when the cover is safe but some screenshots aren't, or when the mod page or its hotkeys mention an NSFW toggle.
+- The content filter has four choices now: SFW only, SFW + NSFW toggles, NSFW blurred, and Show all.
+- Think a label is wrong? Open the mod's details and set it to SFW, NSFW toggle or 18+ yourself. Your choice always wins.
+- Removed the old skin-color guess that flagged many safe mods as NSFW.
 
 Requires XXMI Launcher with ZZMI set up. Questions or bugs? Reach out on Discord: ghxty

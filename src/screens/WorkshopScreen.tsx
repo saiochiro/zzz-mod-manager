@@ -21,6 +21,8 @@ import {
 } from 'lucide-react';
 import { HeroDecor } from '../ui/HeroDecor';
 import { PartViewer } from '../components/PartViewer';
+import { NsfwBadge } from '../components/NsfwLabel';
+import { isBlurredByNsfwFilter, isHiddenByNsfwFilter } from '../shared/nsfw';
 import { Avatar, EmptyState, Modal, Segmented, Switch, ThumbImage, useToast } from '../ui';
 import { CommunityPanel, PostDialog } from './CommunityPanel';
 import type { CommunityProfile } from '../shared/community';
@@ -218,7 +220,7 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
   }, [agentId]);
 
   const agent = agentId ? hashDb.agents[agentId] : null;
-  const donors = (catalog ?? []).filter((c) => !c.is_workshop && !(c.is_nsfw && nsfwFilterState === 'hide'));
+  const donors = (catalog ?? []).filter((c) => !c.is_workshop && !isHiddenByNsfwFilter(c, nsfwFilterState));
   const yours = (catalog ?? []).filter((c) => c.is_workshop);
   const partNames = useMemo(() => {
     const order: string[] = [];
@@ -396,7 +398,7 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
                             .map((d) => {
                               const active = picks[part] === d.mod_uuid;
                               const check = partCheck(d, part);
-                              const blur = d.is_nsfw && nsfwFilterState === 'blur';
+                              const blur = isBlurredByNsfwFilter(d, nsfwFilterState);
                               return (
                                 <button
                                   key={d.mod_uuid}
@@ -411,7 +413,7 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
                                 >
                                   <span className={`ws-option__thumb ${blur ? 'is-blurred' : ''}`}>
                                     <ThumbImage src={d.thumbnail_url} alt={d.title} motif={theme.motif} />
-                                    {d.is_nsfw && <span className="badge badge--error ws-option__flag">18+</span>}
+                                    <NsfwBadge item={d} className="ws-option__flag" />
                                     <StatusBadge check={check} className="ws-option__status" />
                                     {active && (
                                       <span className="ws-option__check">
@@ -513,7 +515,7 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
                   <div className="ws-yours">
                     {yours.map((y) => (
                       <div key={y.mod_uuid} className="ws-yours__item">
-                        <span className={`ws-option__thumb ${y.is_nsfw && nsfwFilterState === 'blur' ? 'is-blurred' : ''}`}>
+                        <span className={`ws-option__thumb ${isBlurredByNsfwFilter(y, nsfwFilterState) ? 'is-blurred' : ''}`}>
                           <ThumbImage src={y.thumbnail_url} alt={y.title} motif={theme.motif} />
                         </span>
                         <div className="min-w-0" style={{ flex: 1 }}>

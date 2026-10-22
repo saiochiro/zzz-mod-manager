@@ -50,6 +50,17 @@ import {
   moderateModThumbnailVision,
   setCachedVisionResult,
 } from './nsfwVisionService';
+import {
+  applyNsfwReview,
+  initNsfwReview,
+  nsfwKey,
+  resetNsfwAiResults,
+  setNsfwOverride,
+  submitNsfwReview,
+  type NsfwReviewRequest,
+  type NsfwReviewResult,
+} from './nsfwReview';
+import type { NsfwLevel } from '../shared/nsfw';
 import { buildMasterSwapIniContent, syncAgentHSwapOnDisk } from './hSwapEngine';
 import { ZZMI_COMPONENTS } from '../shared/zzmiComponents';
 import {
@@ -258,6 +269,7 @@ export class ModManagerService {
     fs.mkdirSync(path.join(this.appDataPath, 'cache', 'thumbnails'), { recursive: true });
 
     initNsfwVisionCache(this.appDataPath);
+    initNsfwReview(this.appDataPath);
 
     fs.mkdirSync(path.join(this.zzmiRootPath, 'Mods', '_ZZZMM_Managed'), { recursive: true });
     fs.mkdirSync(path.join(this.zzmiRootPath, 'Mods', '_Uncategorized_UI_Audio'), {
@@ -1035,7 +1047,31 @@ endif
       }
     }
 
-    return results.sort((a, b) => a.title.localeCompare(b.title));
+    return results.map((m) => applyNsfwReview(m, nsfwKey(m))).sort((a, b) => a.title.localeCompare(b.title));
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* NSFW review (on-device AI check + your own calls)                 */
+  /* ---------------------------------------------------------------- */
+
+  /** Stores the AI check's verdict for a mod. Installed mods also pass their hotkey names as hints. */
+  public async submitNsfwReview(req: NsfwReviewRequest & { modUuid?: string }): Promise<NsfwReviewResult> {
+    let hotkeyNames = req.hotkeyNames;
+    if (req.modUuid) {
+      const mod = this.scanInstalledMods().find((m) => m.mod_uuid === req.modUuid);
+      if (mod) hotkeyNames = (mod.sub_toggles || []).flatMap((t) => [t.section_name, t.variable, t.label]);
+    }
+    return submitNsfwReview({ ...req, hotkeyNames });
+  }
+
+  /** Your own label for a mod (null = go back to the automatic one). */
+  public setNsfwLevel(key: string, level: NsfwLevel | null, flagged: boolean): void {
+    setNsfwOverride(key, level, flagged);
+    this.addLog('info', 'FAIRY_CORE', level ? `NSFW label for ${key} set to ${level} by you.` : `NSFW label for ${key} reset to automatic.`);
+  }
+
+  public resetNsfwAiChecks(): number {
+    return resetNsfwAiResults();
   }
 
   private loadOrReconstructManifest(
@@ -3648,6 +3684,7 @@ endif
         gamebanana_id: m.gamebanana_id,
         thumbnail_url: m.thumbnail_url,
         is_nsfw: Boolean(m.is_nsfw),
+        nsfw_level: m.nsfw_level,
         is_workshop: (m.tags || []).includes('Workshop'),
         shareable: (() => {
           try {
@@ -3682,9 +3719,11 @@ endif
     if (NSFW_KEYWORD_REGEX.test(name)) reasons.push('The name suggests adult content');
     for (const src of sources) {
       if (src.is_nsfw) {
-        reasons.push(`"${src.title}" is labeled NSFW or skimpy`);
+        reasons.push(src.nsfw_level === 'toggle' ? `"${src.title}" has NSFW toggles` : `"${src.title}" is labeled NSFW or skimpy`);
         continue;
       }
+      // The AI check already looked at this one and found it safe.
+      if (src.nsfw_checked) continue;
       if (src.gamebanana_id && src.thumbnail_url?.startsWith('http')) {
         try {
           const vision = await moderateModThumbnailVision({

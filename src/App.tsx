@@ -42,6 +42,8 @@ import { SetupWizard, isSetupDone, markSetupDone } from './components/SetupWizar
 import { ThemeScene } from './themes/Scene';
 import { RefreshCw as RestartIcon } from 'lucide-react';
 import { version as APP_VERSION } from '../package.json';
+import { isHiddenByNsfwFilter, nsfwKeyOf } from './shared/nsfw';
+import { onNsfwReviewed, queueNsfwReview, withNsfwOutcome } from './services/nsfwAi';
 
 const errMsg = (err: unknown) => (err as Error)?.message || String(err);
 
@@ -235,6 +237,36 @@ const AppInner: React.FC = () => {
       console.warn('Theme saved locally; backend config update failed:', err);
     }
   };
+
+  // On-device AI check of installed mods' NSFW labels, in the background.
+  const nsfwAiOn = appState?.config.nsfwAiCheck !== false;
+  const libraryMods = appState?.mods;
+  useEffect(() => {
+    if (!nsfwAiOn || !libraryMods) return;
+    queueNsfwReview(
+      libraryMods
+        .filter((m) => !m.nsfw_checked && m.nsfw_source !== 'you')
+        .map((m) => ({
+          key: nsfwKeyOf(m)!,
+          gamebananaId: m.gamebanana_id,
+          modUuid: m.mod_uuid,
+          title: m.title,
+          description: m.description,
+          flagged: Boolean(m.nsfw_flagged ?? m.is_nsfw),
+          images: [m.thumbnail_url, ...(m.preview_images || [])].filter((u, i, a): u is string => Boolean(u) && a.indexOf(u) === i),
+        }))
+        .filter((it) => it.key)
+    );
+  }, [libraryMods, nsfwAiOn]);
+  useEffect(
+    () =>
+      onNsfwReviewed((r) =>
+        setAppState((prev) =>
+          prev ? { ...prev, mods: prev.mods.map((m) => (nsfwKeyOf(m) === r.key ? withNsfwOutcome(m, r) : m)) } : prev
+        )
+      ),
+    []
+  );
 
   const handleChangeNsfwFilterState = (nextState: NsfwFilterState) => {
     setNsfwFilterState(nextState);
@@ -908,7 +940,7 @@ const AppInner: React.FC = () => {
   }
 
   const { config, hashDb, mods, logs } = appState;
-  const visible = mods.filter((m) => !(nsfwFilterState === 'hide' && m.is_nsfw));
+  const visible = mods.filter((m) => !isHiddenByNsfwFilter(m, nsfwFilterState));
   const needsAttention = visible.filter((m) => getModHealth(m) !== 'working').length;
   const activeModsCount = mods.filter((m) => m.enabled).length;
   const canUndoOrganize = mods.some((m) => Boolean(m.previous_folder_name));
@@ -1073,6 +1105,8 @@ const AppInner: React.FC = () => {
               motif={theme.motif}
               onInstallWithFairy={handleInstallFromGameBanana}
               onFetchLiveModId={handleIngestUrlOrPath}
+              nsfwAiCheck={config.nsfwAiCheck !== false}
+              onStateChange={setAppState}
             />
           )}
 
@@ -1203,6 +1237,7 @@ const AppInner: React.FC = () => {
           onOpenFolder={(relPath) => fairyClient.openModFolder(relPath)}
           onSetCustomImageFile={handleSetCustomImageFile}
           onPasteThumbnailFromClipboard={handlePasteThumbnailFromClipboard}
+          onStateChange={setAppState}
         />
       )}
 

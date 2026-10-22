@@ -31,7 +31,10 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { fairyClient } from '../services/fairyClient';
+import { fairyClient, type FullAppState } from '../services/fairyClient';
+import { isBlurredByNsfwFilter, isHiddenByNsfwFilter, nsfwLevelOf } from '../shared/nsfw';
+import { onNsfwReviewed, queueNsfwReview, withNsfwOutcome } from '../services/nsfwAi';
+import { NsfwBadge, NsfwLabelControl } from './NsfwLabel';
 import type { MotifKind } from '../themes/types';
 import { Motif } from '../themes/Motif';
 import { Avatar, CardSkeletonGrid, EmptyState, formatCount, Modal, SearchInput, Segmented, ThumbImage } from '../ui';
@@ -45,6 +48,10 @@ interface GameBananaBrowserTabProps {
   motif: MotifKind;
   onInstallWithFairy: (mod: GameBananaModItem) => void;
   onFetchLiveModId: (modIdOrUrl: string) => void;
+  /** Run the on-device AI check on what's shown. */
+  nsfwAiCheck?: boolean;
+  /** After you change a mod's content label (it can also be installed). */
+  onStateChange?: (s: FullAppState) => void;
 }
 
 type QuickTab = 'featured' | 'popular' | 'updated' | 'character';
@@ -58,6 +65,8 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
   onInstallWithFairy,
   onFetchLiveModId,
   motif,
+  nsfwAiCheck = true,
+  onStateChange,
 }) => {
   const allAgents = useMemo(() => {
     const src = agents && Object.keys(agents).length > 0 ? agents : DEFAULT_HASH_DB.agents;
@@ -137,117 +146,6 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
   const [revealedNsfwIds, setRevealedNsfwIds] = useState<Set<number>>(new Set());
 
   // Layer 2 AI/Canvas Vision Moderation Cache by Mod ID (persisted in localStorage + backend cache)
-  const visionCacheRef = React.useRef<Map<number, boolean>>(new Map());
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('zzz_nsfw_vision_cache');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        for (const [k, v] of Object.entries(parsed)) {
-          visionCacheRef.current.set(Number(k), Boolean(v));
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  const handleThumbnailVisionScan = (item: GameBananaModItem, imgEl: HTMLImageElement) => {
-    if (item.is_nsfw || visionCacheRef.current.has(item.id)) return;
-    if (!item.thumbnail_url || item.thumbnail_url.startsWith('data:image/svg+xml')) {
-      visionCacheRef.current.set(item.id, false);
-      return;
-    }
-
-    try {
-      const canvas = document.createElement('canvas');
-      const size = 64;
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      ctx.drawImage(imgEl, 0, 0, size, size);
-      const { data } = ctx.getImageData(0, 0, size, size);
-
-      let centerSkinPixels = 0;
-      let centerTotalPixels = 0;
-
-      // Analyze center torso crop (x: 16..48, y: 12..52) in YCbCr + RGB skin-tone space
-      for (let y = 12; y < 52; y++) {
-        for (let x = 16; x < 48; x++) {
-          const idx = (y * size + x) * 4;
-          const r = data[idx];
-          const g = data[idx + 1];
-          const b = data[idx + 2];
-
-          const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
-          const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
-
-          const isSkin =
-            r > 95 &&
-            g > 40 &&
-            b > 20 &&
-            r > g &&
-            r > b &&
-            Math.abs(r - g) > 15 &&
-            cr >= 135 &&
-            cr <= 173 &&
-            cb >= 77 &&
-            cb <= 127;
-
-          if (isSkin) centerSkinPixels++;
-          centerTotalPixels++;
-        }
-      }
-
-      const skinRatio = centerTotalPixels > 0 ? centerSkinPixels / centerTotalPixels : 0;
-      const flaggedByVision = skinRatio > 0.48;
-
-      visionCacheRef.current.set(item.id, flaggedByVision);
-      try {
-        const serialized: Record<string, boolean> = {};
-        for (const [k, v] of visionCacheRef.current.entries()) {
-          serialized[String(k)] = v;
-        }
-        localStorage.setItem('zzz_nsfw_vision_cache', JSON.stringify(serialized));
-      } catch {
-        // ignore storage quota
-      }
-
-      fairyClient
-        .recordVisionResult({
-          modId: item.id,
-          thumbnailUrl: item.thumbnail_url,
-          isNsfw: flaggedByVision,
-          confidence: Number(skinRatio.toFixed(2)),
-          reason: flaggedByVision
-            ? `Layer 2 Vision: High skin exposure detected (${Math.round(skinRatio * 100)}%)`
-            : 'Layer 2 Vision: Safe thumbnail',
-          checkedAt: new Date().toISOString(),
-        })
-        .catch(() => {});
-
-      if (flaggedByVision) {
-        setModsList((prev) =>
-          prev.map((m) =>
-            m.id === item.id
-              ? {
-                  ...m,
-                  is_nsfw: true,
-                  nsfw_reason: `Layer 2 Vision (${Math.round(skinRatio * 100)}% skin ratio)`,
-                }
-              : m
-          )
-        );
-      }
-    } catch {
-      // Cross-origin canvas read blocked; rely on backend Layer 2 moderation result
-      visionCacheRef.current.set(item.id, Boolean(item.is_nsfw));
-    }
-  };
-
   const feedCacheRef = React.useRef<Map<string, GameBananaModItem[]>>(new Map());
 
   const makeClientCacheKey = (
@@ -403,10 +301,8 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
       selectedAuthor?.name
     );
 
-    const applyCachedVisionFlags = (list: GameBananaModItem[]) =>
-      list.map((m) =>
-        visionCacheRef.current.get(m.id) === true ? { ...m, is_nsfw: true } : m
-      );
+    // Labels (including the AI check's) come from the backend already applied.
+    const applyCachedVisionFlags = (list: GameBananaModItem[]) => list;
 
     // If filtering by an author, immediately show any matching mods already cached in state
     const cachedAuthorMatches = selectedAuthor
@@ -514,9 +410,36 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
     }
   };
 
+  // On-device AI check of NSFW labels for what's loaded (flagged mods first, then covers of the rest).
+  useEffect(() => {
+    if (!nsfwAiCheck) return;
+    queueNsfwReview(
+      modsList
+        .filter((m) => m.is_live_api !== false && !m.nsfw_checked && m.nsfw_source !== 'you')
+        .map((m) => ({
+          key: `gb:${m.id}`,
+          gamebananaId: m.id,
+          title: m.title,
+          description: m.description,
+          contentRating: m.content_rating,
+          flagged: Boolean(m.nsfw_flagged ?? m.is_nsfw),
+          images: [m.thumbnail_url, ...(m.preview_images || [])].filter((u, i, a) => Boolean(u) && a.indexOf(u) === i),
+        }))
+    );
+  }, [modsList, nsfwAiCheck]);
+  useEffect(
+    () =>
+      onNsfwReviewed((r) => {
+        const patch = (m: GameBananaModItem) => (`gb:${m.id}` === r.key ? withNsfwOutcome(m, r) : m);
+        setModsList((list) => (list.some((m) => `gb:${m.id}` === r.key) ? list.map(patch) : list));
+        setGalleryMod((g) => (g ? patch(g) : g));
+      }),
+    []
+  );
+
   const displayedMods = useMemo(() => {
     return modsList.filter((item) => {
-      if (nsfwFilterState === 'hide' && item.is_nsfw) {
+      if (isHiddenByNsfwFilter(item, nsfwFilterState)) {
         return false;
       }
       if (categoryFilter !== 'all') {
@@ -531,7 +454,7 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
   }, [modsList, nsfwFilterState, categoryFilter]);
 
   const spotlightMods = useMemo(() => {
-    return displayedMods.filter((m) => !m.is_nsfw).slice(0, 3);
+    return displayedMods.filter((m) => nsfwLevelOf(m) === 'sfw').slice(0, 3);
   }, [displayedMods]);
 
   const activeAgent = useMemo(() => {
@@ -901,7 +824,7 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
               ) : (
                 <div className="gb-grid">
                   {gridMods.map((item, i) => {
-                    const blurred = Boolean(item.is_nsfw) && nsfwFilterState === 'blur' && !revealedNsfwIds.has(item.id);
+                    const blurred = isBlurredByNsfwFilter(item, nsfwFilterState) && !revealedNsfwIds.has(item.id);
                     const imageCount = item.preview_images?.length ?? 0;
                     return (
                       <article
@@ -940,6 +863,7 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
                                 {imageCount}
                               </span>
                             )}
+                            <NsfwBadge item={item} className="badge--glass" />
                           </div>
                         </div>
                         <div className="gb-card__body">
@@ -1086,6 +1010,23 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
                       <span className="caption">Views</span>
                     </div>
                   </div>
+                  {onStateChange && (
+                    <NsfwLabelControl
+                      item={galleryMod}
+                      onChanged={onStateChange}
+                      onLevel={(level) => {
+                        const patch = (m: GameBananaModItem): GameBananaModItem => {
+                          if (m.id !== galleryMod.id) return m;
+                          const flagged = Boolean(m.nsfw_flagged ?? m.is_nsfw);
+                          return level
+                            ? { ...m, nsfw_level: level, is_nsfw: level !== 'sfw', nsfw_source: 'you', nsfw_checked: true, nsfw_reason: undefined }
+                            : { ...m, nsfw_level: flagged ? 'nsfw' : 'sfw', is_nsfw: flagged, nsfw_source: flagged ? 'gamebanana' : undefined, nsfw_checked: false, nsfw_reason: undefined };
+                        };
+                        setGalleryMod((g) => (g ? patch(g) : g));
+                        setModsList((list) => list.map(patch));
+                      }}
+                    />
+                  )}
                   <div>
                     <div className="row" style={{ marginBottom: 8 }}>
                       <span className="eyebrow" style={{ flex: 1 }}>
