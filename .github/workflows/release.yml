@@ -84,7 +84,14 @@ jobs:
 
       - name: Package installer
         if: env.SKIP != '1'
-        run: npx electron-builder --win nsis portable --publish never
+        shell: bash
+        run: |
+          set -o pipefail
+          npx electron-builder --win nsis portable --publish never 2>&1 | tee build.log || {
+            # Surface the useful lines as annotations (job logs aren't always viewable).
+            grep -iE "error|warning|\.nsh|line [0-9]+" build.log | tail -25 | while IFS= read -r l; do echo "::error::${l:0:900}"; done
+            exit 1
+          }
 
       - name: Publish release
         if: env.SKIP != '1'
