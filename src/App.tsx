@@ -618,6 +618,9 @@ const AppInner: React.FC = () => {
       const res = await fairyClient.ingestPackage(mod.download_url, { metadataOverride: mod });
       setAppState(res.state);
       if (res.multiAgentPrompt) setMultiAgentPrompt(res.multiAgentPrompt);
+      // The backend reports failures in the result instead of throwing.
+      if (!res.success) throw new Error(res.error || 'The install failed.');
+      if (!res.multiAgentPrompt && res.installedMods.length === 0) throw new Error('Nothing in that download could be installed as a mod.');
 
       setDownloadQueue((prev) =>
         prev.map((q) => (q.queue_id === queueId ? { ...q, progress: 100, status: 'completed', stage_label: 'Installed' } : q))
@@ -645,6 +648,7 @@ const AppInner: React.FC = () => {
       const res = await fairyClient.ingestPackage(source);
       setAppState(res.state);
       if (res.multiAgentPrompt) setMultiAgentPrompt(res.multiAgentPrompt);
+      if (!res.success) throw new Error(res.error || 'The install failed.');
       if (res.installedMods.length > 0) {
         notify({
           tone: 'success',

@@ -44,7 +44,9 @@ function makeAgentPortraitSvg(
 export const DEFAULT_HASH_DB: HashDatabase = {
   schema_version: '3.3',
   game_patch: 'ZZZ 3.3 // ZZMI ASSETS HASHES // PHOENIX ADDED',
-  last_synced: '2026-10-21T00:00:00Z',
+  last_synced: '2026-10-22T00:00:00Z',
+  // Raise when built-in hashes change so installed apps refresh their stored copy.
+  builtin_revision: 2,
   agents: {
     von_lycaon: {
       agent_id: 'von_lycaon',
@@ -947,10 +949,11 @@ export const DEFAULT_HASH_DB: HashDatabase = {
       element: 'Fire',
       accent_color: '#F97316',
       portrait_svg: makeAgentPortraitSvg('PH', '#F97316', '#E11D48', '🔥', 'KCA-02'),
-      // ZZMI hasn't published Phoenix's buffer hashes yet (new in 3.3). Mods still route to her
-      // by GameBanana category / name; add hashes here once they are in ZZ-Model-Importer-Assets.
-      current_hashes: {"position_vb":"","blend_vb":"","texcoord_vb":"","ib":""},
+      // ZZMI hasn't published Phoenix yet (new in 3.3). These hashes come from a working 3.3
+      // Phoenix mod (body, hair, accessories, weapon, face). Replace with ZZMI's once published.
+      current_hashes: {"position_vb":"","blend_vb":"0fc8027f","texcoord_vb":"5174be85","ib":"9040e2c4"},
       legacy_hash_migrations: {},
+      component_hashes: ["0fc8027f","5174be85","4ac4d074","9040e2c4","efc69729","e982ac3d","672c5dc6","ad90e710","fe38014f","68b29826","202db56f","b11ff137","05d7f849","467f7bd4","8bf0357a","0bcb1cb4","dbbf0aee","d58b6350","f15548c2"],
     },
   },
 };

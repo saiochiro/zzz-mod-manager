@@ -1,5 +1,6 @@
 import AdmZip from 'adm-zip';
 import { execFileSync } from 'child_process';
+import { createRequire } from 'module';
 import fs from 'fs';
 import path from 'path';
 import { HashDatabase } from '../shared/types';
@@ -27,7 +28,40 @@ export interface UnpackStagingResult {
 const FORBIDDEN_EXTENSIONS = new Set(['.dll', '.exe', '.bat', '.cmd', '.ps1', '.vbs', '.scr', '.msi']);
 
 /**
+ * The 7-Zip binary shipped with the app (7zip-bin). Inside a packaged app it lives in
+ * app.asar.unpacked, because programs can't run from inside the asar archive.
+ */
+function sevenZipPath(): string | null {
+  try {
+    const req = typeof require === 'function' ? require : createRequire(path.join(process.cwd(), 'index.js'));
+    const p: string = req('7zip-bin').path7za;
+    const unpacked = p.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
+    if (fs.existsSync(unpacked)) return unpacked;
+    if (fs.existsSync(p)) return p;
+  } catch {
+    // not installed (dev without deps)
+  }
+  return null;
+}
+
+function tryExtractWith(cmd: string, args: string[], targetDir: string): string | null {
+  try {
+    execFileSync(cmd, args, { stdio: 'pipe', windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
+  } catch (err) {
+    // 7-Zip exit code 1 = warnings only (files were still extracted).
+    const status = (err as { status?: number }).status;
+    if (!(cmd !== 'tar.exe' && status === 1)) {
+      const out = String((err as { stderr?: Buffer }).stderr || (err as Error).message || '').trim();
+      return out.split(/\r?\n/).filter(Boolean).slice(-2).join(' ') || 'failed';
+    }
+  }
+  return fs.readdirSync(targetDir).length > 0 ? null : 'nothing was extracted';
+}
+
+/**
  * Extracts an archive (.zip, .7z, .rar) or copies a folder into `stagingDir`.
+ * Order: built-in zip reader, then the bundled 7-Zip (7z, zip, Unicode names), then
+ * Windows' tar.exe (RAR on Windows 11).
  */
 export function extractToDir(sourcePath: string, targetDir: string): void {
   fs.mkdirSync(targetDir, { recursive: true });
@@ -59,16 +93,44 @@ export function extractToDir(sourcePath: string, targetDir: string): void {
         return;
       }
     } catch {
-      // Fall through to tar.exe (bsdtar supports RAR5, 7z, Deflate64, LZMA zips, etc.)
+      // Fall through to 7-Zip / tar (Deflate64, LZMA zips, ...)
     }
   }
 
-  // Fallback for .7z / .rar / .tar / complex .zip using Windows built-in tar.exe (bsdtar supports zip/7z/rar/tar on Windows 11)
-  try {
-    execFileSync('tar.exe', ['-xf', sourcePath, '-C', targetDir], { stdio: 'ignore' });
-  } catch (err) {
-    throw new Error(`Archive extraction failed for ${path.basename(sourcePath)}: ${(err as Error).message}`);
+  const problems: string[] = [];
+  const sevenZip = sevenZipPath();
+  if (sevenZip) {
+    const err = tryExtractWith(sevenZip, ['x', '-y', '-bd', `-o${targetDir}`, sourcePath], targetDir);
+    if (!err) return;
+    problems.push(`7-Zip: ${err}`);
   }
+  if (process.platform === 'win32') {
+    const err = tryExtractWith('tar.exe', ['-xf', sourcePath, '-C', targetDir], targetDir);
+    if (!err) return;
+    problems.push(`tar: ${err}`);
+  }
+  throw new Error(
+    `Couldn't unpack ${path.basename(sourcePath)}. ${
+      /\.rar$/i.test(sourcePath) ? 'RAR files need Windows 11, or unpack it yourself and import the folder. ' : ''
+    }(${problems.join('; ') || 'no extractor available'})`
+  );
+}
+
+function isInside(child: string, parent: string): boolean {
+  const rel = path.relative(parent, child);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+/** Deepest folder that contains all of the given folders. */
+function commonAncestor(dirs: string[]): string | null {
+  if (dirs.length === 0) return null;
+  let anc = path.resolve(dirs[0]);
+  while (!dirs.every((d) => isInside(path.resolve(d), anc))) {
+    const up = path.dirname(anc);
+    if (up === anc) return null;
+    anc = up;
+  }
+  return anc;
 }
 
 export function copyDirRecursive(src: string, dest: string): void {
@@ -231,6 +293,31 @@ export function unpackAndLocalizeModArchive(
     }
   }
 
+  // Many mods split one character into sibling folders (body/, hair/, weapon/, face/...), each
+  // with its own .ini. Install the folder that holds all of them, not just the first one.
+  const archiveName = path.basename(sourceArchiveOrDir).replace(/\.(zip|7z|rar)$/i, '');
+  const recognizedIds = [...new Set(allLocalized.map((r) => r.matchedAgentId).filter((id) => id !== 'uncategorized'))];
+  for (const id of recognizedIds) {
+    const group = allLocalized.filter((r) => r.matchedAgentId === id);
+    if (group.length < 2) continue;
+    const ancestor = commonAncestor(group.map((r) => r.rootPath));
+    if (!ancestor || path.relative(stagingDir, ancestor).startsWith('..')) continue;
+    // Don't swallow another character's folders.
+    const others = allLocalized.filter((r) => r.matchedAgentId !== id && r.matchedAgentId !== 'uncategorized');
+    if (others.some((o) => isInside(o.rootPath, ancestor))) continue;
+    const merged: LocalizedModRoot = {
+      ...group[0],
+      rootPath: ancestor,
+      folderName: path.resolve(ancestor) === path.resolve(stagingDir) ? archiveName : path.basename(ancestor),
+      iniFiles: group.flatMap((r) => r.iniFiles.map((f) => path.relative(ancestor, path.join(r.rootPath, f)))),
+      detectedHashes: [...new Set(group.flatMap((r) => r.detectedHashes))],
+      nestedDepthUnpacked: Math.min(...group.map((r) => r.nestedDepthUnpacked)),
+    };
+    localizedByAgent.set(id, merged);
+    const firstIdx = allLocalized.indexOf(group[0]);
+    allLocalized[firstIdx] = merged;
+  }
+
   // Distinct recognized agents (excluding uncategorized if recognized agents exist)
   const recognizedAgentRoots = Array.from(localizedByAgent.values()).filter(
     (r) => r.matchedAgentId !== 'uncategorized'
@@ -239,7 +326,7 @@ export function unpackAndLocalizeModArchive(
   const isMultiAgentPack = recognizedAgentRoots.length >= 2;
   const finalRoots = isMultiAgentPack
     ? recognizedAgentRoots
-    : [allLocalized[0]];
+    : [recognizedAgentRoots[0] ?? allLocalized[0]];
 
   const maxDepth = Math.max(...finalRoots.map((r) => r.nestedDepthUnpacked), 1);
 

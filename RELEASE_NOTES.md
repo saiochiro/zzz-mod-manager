@@ -1,9 +1,9 @@
-What's new in 2.12.0
+What's new in 2.13.0
 
-- AI check for NSFW labels: lots of mods get labeled NSFW or skimpy when they aren't. ProxyLaunch now runs a small AI model on your PC that looks at a flagged mod's pictures. If they're all safe, the label comes off. Nothing is uploaded and no account is needed. You can turn it off in Settings, Content filter.
-- New NSFW toggle label for mods that are safe by default but have NSFW options you switch on in game. The AI check finds these when the cover is safe but some screenshots aren't, or when the mod page or its hotkeys mention an NSFW toggle.
-- The content filter has four choices now: SFW only, SFW + NSFW toggles, NSFW blurred, and Show all.
-- Think a label is wrong? Open the mod's details and set it to SFW, NSFW toggle or 18+ yourself. Your choice always wins.
-- Removed the old skin-color guess that flagged many safe mods as NSFW.
+- Phoenix support: ProxyLaunch now recognizes Phoenix mods by their files, so they go to her section even when the name doesn't say Phoenix, and the Mod Workshop can split her mods into Body, Hair, Accessory, Weapon and Face.
+- Fixed .7z mods not installing. ProxyLaunch now comes with 7-Zip, so .7z downloads unpack on every PC, including ones with Chinese or Japanese file names.
+- Fixed mods that keep each piece in its own folder (body, hair, weapon, face...) only installing the first folder. The whole mod is installed now.
+- Fixed the app saying "Installed" when an install actually failed. You now see what went wrong.
+- Failed downloads are cleaned up instead of filling up space.
 
 Requires XXMI Launcher with ZZMI set up. Questions or bugs? Reach out on Discord: ghxty

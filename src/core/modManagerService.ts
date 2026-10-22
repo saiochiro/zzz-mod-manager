@@ -70,6 +70,7 @@ import {
   extractModPreview,
   decodeRecipe,
   encodeRecipe,
+  listModInis,
   safeFolderName,
   type WorkshopPick,
 } from './workshopEngine';
@@ -270,6 +271,7 @@ export class ModManagerService {
 
     initNsfwVisionCache(this.appDataPath);
     initNsfwReview(this.appDataPath);
+    this.cleanStaleStaging();
 
     fs.mkdirSync(path.join(this.zzmiRootPath, 'Mods', '_ZZZMM_Managed'), { recursive: true });
     fs.mkdirSync(path.join(this.zzmiRootPath, 'Mods', '_Uncategorized_UI_Audio'), {
@@ -312,7 +314,9 @@ export class ModManagerService {
         if (
           !existing.schema_version ||
           existing.schema_version !== DEFAULT_HASH_DB.schema_version ||
-          Object.keys(existing.agents || {}).length < Object.keys(DEFAULT_HASH_DB.agents).length
+          Object.keys(existing.agents || {}).length < Object.keys(DEFAULT_HASH_DB.agents).length ||
+          // A newer built-in database (new hashes for an agent) replaces the stored copy.
+          (existing.builtin_revision || 0) < (DEFAULT_HASH_DB.builtin_revision || 0)
         ) {
           fs.writeFileSync(this.hashDbPath, JSON.stringify(DEFAULT_HASH_DB, null, 2), 'utf-8');
         }
@@ -1050,6 +1054,23 @@ endif
     return results.map((m) => applyNsfwReview(m, nsfwKey(m))).sort((a, b) => a.title.localeCompare(b.title));
   }
 
+  /** Removes leftover install folders (failed or abandoned installs) older than 6 hours. */
+  private cleanStaleStaging(): void {
+    const dir = path.join(this.appDataPath, 'staging_temp');
+    try {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, e.name);
+        try {
+          if (Date.now() - fs.statSync(p).mtimeMs > 6 * 3600 * 1000) fs.rmSync(p, { recursive: true, force: true });
+        } catch {
+          // in use; try next time
+        }
+      }
+    } catch {
+      // no staging folder yet
+    }
+  }
+
   /* ---------------------------------------------------------------- */
   /* NSFW review (on-device AI check + your own calls)                 */
   /* ---------------------------------------------------------------- */
@@ -1105,15 +1126,9 @@ endif
     // 3. Re-parse .ini files in folder to compute live hashes, subToggles, referenced resources, and mesh parts
     let iniFiles: string[] = [];
     try {
-      iniFiles = fs
-        .readdirSync(modAbsDir)
-        .filter(
-          (f) =>
-            f.toLowerCase().endsWith('.ini') &&
-            f.toLowerCase() !== 'desktop.ini' &&
-            f.toLowerCase() !== 'master_swap.ini' &&
-            f.toLowerCase() !== 'd3dx.ini'
-        );
+      fs.readdirSync(modAbsDir);
+      // Includes .ini files in sub-folders (body/, hair/, weapon/... style mods).
+      iniFiles = listModInis(modAbsDir).map((f) => path.relative(modAbsDir, f));
     } catch {
       return null;
     }
@@ -1137,7 +1152,7 @@ endif
       if (parsed.hasLegacyShaderSlots) hasLegacySlots = true;
 
       for (const refFile of parsed.referencedFiles) {
-        const refAbs = path.resolve(modAbsDir, refFile);
+        const refAbs = path.resolve(path.dirname(path.join(modAbsDir, iniFile)), refFile);
         if (!fs.existsSync(refAbs)) {
           missingResources.push(refFile);
         }
@@ -1751,12 +1766,9 @@ endif
     if (!manifest) throw new Error(`Mod not found: ${modUuid}`);
 
     const modAbsDir = path.join(this.zzmiRootPath, manifest.install_path);
-    const iniFiles = fs
-      .readdirSync(modAbsDir)
-      .filter((f) => f.toLowerCase().endsWith('.ini') && f.toLowerCase() !== 'desktop.ini');
+    const iniFiles = listModInis(modAbsDir);
 
-    for (const iniFile of iniFiles) {
-      const iniPath = path.join(modAbsDir, iniFile);
+    for (const iniPath of iniFiles) {
       const raw = fs.readFileSync(iniPath, 'utf-8');
       const rewritten = rewriteIniKeybind(raw, sectionName, newKey);
       if (rewritten !== raw) {
@@ -1794,13 +1806,10 @@ endif
     for (const mod of mods) {
       if (mod.sub_toggles.length === 0) continue;
       const modAbsDir = path.join(this.zzmiRootPath, mod.install_path);
-      const iniFiles = fs
-        .readdirSync(modAbsDir)
-        .filter((f) => f.toLowerCase().endsWith('.ini') && f.toLowerCase() !== 'desktop.ini');
+      const iniFiles = listModInis(modAbsDir);
 
       let modChanged = false;
-      for (const iniFile of iniFiles) {
-        const iniPath = path.join(modAbsDir, iniFile);
+      for (const iniPath of iniFiles) {
         let content = fs.readFileSync(iniPath, 'utf-8');
         const parsed = parseIniContent(content, iniPath);
 
@@ -2001,6 +2010,10 @@ endif
         }
 
         if (!downloadedRealArchive) {
+          // Only the offline demo mode may fall back to a placeholder package.
+          if (!this.getConfig().sandboxMode) {
+            throw new Error(`Couldn't download "${gbMeta.title}" from GameBanana. Check your connection and try again.`);
+          }
           buildRealisticModZipArchive(gbMeta, dlArchivePath);
         }
 
@@ -2106,6 +2119,8 @@ endif
     } catch (err) {
       const errMsg = (err as Error).message;
       this.addLog('error', 'GB_INGEST', `Ingestion failed: ${errMsg}`);
+      // Don't leave big half-unpacked downloads behind.
+      fs.rmSync(stagingDir, { recursive: true, force: true });
       return {
         success: false,
         installedMods: [],

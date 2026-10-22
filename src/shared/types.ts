@@ -125,6 +125,8 @@ export interface HashDatabase {
   schema_version: string;
   game_patch: string;
   last_synced: string;
+  /** Built-in database revision; a higher one in a new app version replaces the stored copy. */
+  builtin_revision?: number;
   agents: Record<string, AgentHashEntry>;
 }
 
