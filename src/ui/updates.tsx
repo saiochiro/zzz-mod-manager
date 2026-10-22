@@ -30,7 +30,7 @@ export const AppUpdatePrompt: React.FC<{
   onInstall: () => void;
 }> = ({ status, onDownload, onInstall }) => {
   const [dismissed, setDismissed] = useState<string | null>(null);
-  const relevant = status.state === 'available' || status.state === 'downloading' || status.state === 'downloaded';
+  const relevant = status.state === 'available' || status.state === 'downloading' || status.state === 'downloaded' || status.state === 'installing';
   const open = relevant && dismissed !== `${status.version}:${status.state === 'downloaded' ? 'ready' : 'offer'}`;
   const close = () => setDismissed(`${status.version}:${status.state === 'downloaded' ? 'ready' : 'offer'}`);
 
@@ -64,6 +64,7 @@ export const AppUpdatePrompt: React.FC<{
         ) : (
           <p className="muted">A new version of ProxyLaunch is ready to download.</p>
         )}
+        {status.state === 'available' && <p className="caption">One click: ProxyLaunch downloads the update, then restarts by itself to install it.</p>}
         {status.state === 'downloading' && (
           <div className="stack">
             <div className="row small">
@@ -81,7 +82,12 @@ export const AppUpdatePrompt: React.FC<{
         <button className="btn btn--ghost" onClick={close}>
           Later
         </button>
-        {status.state === 'downloaded' ? (
+        {status.state === 'installing' ? (
+          <button className="btn btn--primary" disabled>
+            <Loader2 className="spin" />
+            Restarting to update…
+          </button>
+        ) : status.state === 'downloaded' ? (
           <button className="btn btn--primary" onClick={onInstall}>
             <RefreshCw />
             Restart &amp; update

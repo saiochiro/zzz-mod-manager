@@ -16,7 +16,8 @@ export type UpdateState =
   | 'downloading'
   | 'downloaded'
   | 'error'
-  | 'unsupported';
+  | 'unsupported'
+  | 'installing';
 
 export interface UpdateStatus {
   state: UpdateState;
@@ -48,6 +49,9 @@ function cleanNotes(raw: unknown): string | undefined {
 export function setupUpdater(getWindow: () => BrowserWindow | null, log: (msg: string) => void, beforeInstall: () => void = () => {}) {
   let status: UpdateStatus = { state: app.isPackaged ? 'idle' : 'unsupported', current: app.getVersion() };
   let updater: any = null;
+  let downloading = false;
+  let installing = false;
+  let installWhenDownloaded = false;
 
   if (app.isPackaged) {
     try {
@@ -77,9 +81,11 @@ export function setupUpdater(getWindow: () => BrowserWindow | null, log: (msg: s
     updater.on('download-progress', (p: any) =>
       send({ state: 'downloading', version: status.version, notes: status.notes, percent: Math.round(p?.percent ?? 0) })
     );
-    updater.on('update-downloaded', (info: any) =>
-      send({ state: 'downloaded', version: info?.version ?? status.version, notes: status.notes })
-    );
+    updater.on('update-downloaded', (info: any) => {
+      send({ state: 'downloaded', version: info?.version ?? status.version, notes: status.notes });
+      // "Update now" is one click: once the download finishes, install right away.
+      if (installWhenDownloaded) install();
+    });
     updater.on('error', (err: any) => send({ state: 'error', message: String(err?.message ?? err) }));
 
     const check = () => updater.checkForUpdates().catch((err: any) => log(`Update check failed: ${err?.message ?? err}`));
@@ -101,18 +107,36 @@ export function setupUpdater(getWindow: () => BrowserWindow | null, log: (msg: s
   });
   ipcMain.handle('app:downloadUpdate', async () => {
     if (!updater) return false;
+    installWhenDownloaded = true;
+    if (status.state === 'downloaded') {
+      install();
+      return true;
+    }
+    if (downloading) return true; // second click while downloading: nothing to do
+    downloading = true;
     send({ state: 'downloading', version: status.version, notes: status.notes, percent: 0 });
     try {
       await updater.downloadUpdate();
       return true;
     } catch (err) {
+      installWhenDownloaded = false;
       send({ state: 'error', message: (err as Error).message });
       return false;
+    } finally {
+      downloading = false;
     }
   });
   ipcMain.handle('app:installUpdate', () => {
     if (!updater) return false;
-    setImmediate(() => {
+    install();
+    return true;
+  });
+
+  function install() {
+    if (installing) return; // a second click must not start a second installer
+    installing = true;
+    send({ state: 'installing', version: status.version, notes: status.notes });
+    setTimeout(() => {
       try {
         beforeInstall();
       } catch {
@@ -125,7 +149,6 @@ export function setupUpdater(getWindow: () => BrowserWindow | null, log: (msg: s
         w.destroy();
       }
       updater.quitAndInstall(true, true);
-    });
-    return true;
-  });
+    }, 600);
+  }
 }

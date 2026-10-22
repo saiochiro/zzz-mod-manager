@@ -371,6 +371,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = (p) => {
                         ? `Downloading ${p.appUpdate.version}… ${p.appUpdate.percent ?? 0}%`
                         : p.appUpdate.state === 'downloaded'
                         ? `Version ${p.appUpdate.version} is ready to install`
+                        : p.appUpdate.state === 'installing'
+                        ? `Restarting to install ${p.appUpdate.version}…`
                         : p.appUpdate.state === 'checking'
                         ? 'Checking for updates…'
                         : p.appUpdate.state === 'none'
@@ -386,7 +388,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = (p) => {
                         ? 'Works in the installed version of the app (from the Setup file).'
                         : p.appUpdate.state === 'error'
                         ? p.appUpdate.message
-                        : 'New versions download from GitHub and install when you restart.'}
+                        : 'Click Update now and ProxyLaunch downloads the new version and restarts to install it.'}
                     </div>
                   </div>
                   {p.appUpdate.state === 'available' ? (
@@ -403,7 +405,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = (p) => {
                     <button
                       className="btn btn--secondary btn--sm"
                       onClick={p.onCheckAppUpdate}
-                      disabled={p.appUpdate.state === 'unsupported' || p.appUpdate.state === 'checking' || p.appUpdate.state === 'downloading'}
+                      disabled={p.appUpdate.state === 'unsupported' || p.appUpdate.state === 'checking' || p.appUpdate.state === 'downloading' || p.appUpdate.state === 'installing'}
                     >
                       {p.appUpdate.state === 'checking' ? <Loader2 className="spin" /> : <RefreshCw />}
                       Check for updates

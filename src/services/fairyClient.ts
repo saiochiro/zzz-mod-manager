@@ -29,7 +29,7 @@ declare global {
 }
 
 export interface AppUpdateStatus {
-  state: 'idle' | 'checking' | 'available' | 'none' | 'downloading' | 'downloaded' | 'error' | 'unsupported';
+  state: 'idle' | 'checking' | 'available' | 'none' | 'downloading' | 'downloaded' | 'error' | 'unsupported' | 'installing';
   current: string;
   version?: string;
   notes?: string;
