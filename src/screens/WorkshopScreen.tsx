@@ -1,12 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  AlertTriangle,
+  Box,
   Check,
+  CircleAlert,
   ClipboardCopy,
   ClipboardPaste,
   Download,
   ExternalLink,
   FlaskConical,
   Hammer,
+  Info,
   Layers,
   Loader2,
   Share2,
@@ -16,6 +20,7 @@ import {
   Users,
 } from 'lucide-react';
 import { HeroDecor } from '../ui/HeroDecor';
+import { PartViewer } from '../components/PartViewer';
 import { Avatar, EmptyState, Modal, Segmented, Switch, ThumbImage, useToast } from '../ui';
 import { CommunityPanel, PostDialog } from './CommunityPanel';
 import type { CommunityProfile } from '../shared/community';
@@ -29,6 +34,8 @@ import type {
   NsfwFilterState,
   WorkshopBuildResponse,
   WorkshopCatalogEntry,
+  WorkshopPartCheck,
+  WorkshopPreview,
   WorkshopRecipe,
   WorkshopResolvedRecipe,
 } from '../shared/types';
@@ -47,6 +54,99 @@ interface Props {
 type Picks = Record<string, string>;
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+const STATUS_LABEL = { good: 'Mixes well', risky: 'May not mix well', bad: 'Broken files' } as const;
+
+const partCheck = (d: WorkshopCatalogEntry | undefined, part: string): WorkshopPartCheck | undefined =>
+  d?.parts.find((p) => p.name === part)?.check;
+
+const StatusBadge: React.FC<{ check?: WorkshopPartCheck; className?: string }> = ({ check, className = '' }) => {
+  if (!check || check.status === 'good') return null;
+  return (
+    <span className={`ws-status ws-status--${check.status} ${className}`} title={check.notes.map((n) => n.text).join('\n')}>
+      {check.status === 'bad' ? <CircleAlert /> : <AlertTriangle />}
+      <span>{check.status === 'bad' ? 'Broken' : 'Risky'}</span>
+    </span>
+  );
+};
+
+const NoteList: React.FC<{ check?: WorkshopPartCheck }> = ({ check }) => {
+  if (!check) return null;
+  if (check.notes.length === 0) return <p className="small muted">No problems found. This part should come out cleanly.</p>;
+  return (
+    <ul className="ws-checks">
+      {check.notes.map((n) => (
+        <li key={n.text} className={`ws-checks__item ws-checks__item--${n.level}`}>
+          {n.level === 'info' ? <Info /> : n.level === 'warn' ? <AlertTriangle /> : <CircleAlert />}
+          <span>{n.text}</span>
+        </li>
+      ))}
+    </ul>
+  );
+};
+
+/** The 3D look at the part being taken out, plus what the check found. */
+const PartPreviewCard: React.FC<{ donor: WorkshopCatalogEntry; part: string }> = ({ donor, part }) => {
+  const [preview, setPreview] = useState<WorkshopPreview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    setPreview(null);
+    setError(null);
+    const cached = previewCache.get(donor.mod_uuid);
+    (cached ?? fairyClient.workshopPreview(donor.mod_uuid))
+      .then((p) => {
+        if (!cached) previewCache.set(donor.mod_uuid, Promise.resolve(p));
+        if (live) setPreview(p);
+      })
+      .catch((e) => live && setError(errMsg(e)));
+    return () => {
+      live = false;
+    };
+  }, [donor.mod_uuid]);
+
+  const check = partCheck(donor, part);
+  const hasMesh = preview?.meshes.some((m) => m.part === part);
+  const label = part === 'Other' ? 'Extras' : part;
+  return (
+    <div className="ws-preview">
+      <div className="row" style={{ gap: 8 }}>
+        <Box style={{ width: 16, height: 16, color: 'var(--primary-text)' }} />
+        <b className="small truncate" style={{ flex: 1 }}>
+          {label} from {donor.title}
+        </b>
+        {check && <span className={`ws-status ws-status--${check.status} ws-status--inline`}>{STATUS_LABEL[check.status]}</span>}
+      </div>
+      <div className="ws-preview__stage">
+        {error ? (
+          <div className="pv pv--empty small muted">Couldn’t read this mod’s model.</div>
+        ) : !preview ? (
+          <div className="pv pv--empty small muted">
+            <Loader2 className="spin" /> Loading model…
+          </div>
+        ) : preview.meshes.length === 0 ? (
+          <div className="pv pv--empty small muted">This mod has no model to show, only textures.</div>
+        ) : (
+          <PartViewer meshes={preview.meshes} highlight={part} />
+        )}
+        {preview && preview.meshes.length > 0 && (
+          <div className="ws-preview__legend caption">
+            {hasMesh ? (
+              <>
+                <i className="ws-preview__swatch" /> {label} (what you take) <i className="ws-preview__swatch ws-preview__swatch--gray" /> rest of this mod
+              </>
+            ) : (
+              <>This part has no shape of its own. It changes colors or hides a piece.</>
+            )}
+          </div>
+        )}
+      </div>
+      <NoteList check={check} />
+    </div>
+  );
+};
+
+const previewCache = new Map<string, Promise<WorkshopPreview>>();
 
 export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilterState, onState, onDownloadGameBananaMod, onOpenLibrary }) => {
   const notify = useToast();
@@ -75,6 +175,8 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
   const [me, setMe] = useState<CommunityProfile | null>(null);
   const [posting, setPosting] = useState<WorkshopCatalogEntry | null>(null);
   const [communityRefresh, setCommunityRefresh] = useState(0);
+  /** The tile last clicked, shown in the 3D preview. */
+  const [focus, setFocus] = useState<{ part: string; modUuid: string } | null>(null);
 
   useEffect(() => {
     fairyClient.communityMe().then(setMe).catch(() => setMe(null));
@@ -109,6 +211,8 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
   useEffect(() => {
     if (!agentId) return;
     setPicks({});
+    setFocus(null);
+    previewCache.clear();
     loadCatalog(agentId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentId]);
@@ -124,6 +228,9 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
   }, [donors]);
   const pickedCount = Object.keys(picks).length;
   const pickedNsfw = Object.values(picks).some((uuid) => donors.find((d) => d.mod_uuid === uuid)?.is_nsfw);
+  const pickedChecks = Object.entries(picks).map(([part, uuid]) => ({ part, check: partCheck(donors.find((d) => d.mod_uuid === uuid), part) }));
+  const riskyPicks = pickedChecks.filter((p) => p.check && p.check.status !== 'good');
+  const focusDonor = focus ? donors.find((d) => d.mod_uuid === focus.modUuid) : undefined;
 
   const build = async () => {
     if (!agentId) return;
@@ -251,7 +358,8 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
                     Parts
                   </h2>
                   <p className="small muted" style={{ marginBottom: 16 }}>
-                    Parts you don’t choose stay as the original game model.
+                    Parts you don’t choose stay as the original game model. Click a part to see it highlighted on the model.
+                    Parts marked <span className="ws-status ws-status--risky ws-status--inline">Risky</span> may not look right on their own.
                   </p>
                   {loadingCatalog ? (
                     <div className="row muted">
@@ -273,7 +381,10 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
                             role="radio"
                             aria-checked={!picks[part]}
                             className={`ws-option ws-option--original ${!picks[part] ? 'is-active' : ''}`}
-                            onClick={() => setPicks(({ [part]: _drop, ...rest }) => rest)}
+                            onClick={() => {
+                              setPicks(({ [part]: _drop, ...rest }) => rest);
+                              if (focus?.part === part) setFocus(null);
+                            }}
                           >
                             <span className="ws-option__thumb ws-option__thumb--original">
                               <Sparkles />
@@ -284,6 +395,7 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
                             .filter((d) => d.parts.some((p) => p.name === part))
                             .map((d) => {
                               const active = picks[part] === d.mod_uuid;
+                              const check = partCheck(d, part);
                               const blur = d.is_nsfw && nsfwFilterState === 'blur';
                               return (
                                 <button
@@ -291,12 +403,16 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
                                   role="radio"
                                   aria-checked={active}
                                   className={`ws-option ${active ? 'is-active' : ''}`}
-                                  onClick={() => setPicks((p) => ({ ...p, [part]: d.mod_uuid }))}
-                                  title={`${d.title}${d.author ? ` by ${d.author}` : ''}`}
+                                  onClick={() => {
+                                    setPicks((p) => ({ ...p, [part]: d.mod_uuid }));
+                                    setFocus({ part, modUuid: d.mod_uuid });
+                                  }}
+                                  title={`${d.title}${d.author ? ` by ${d.author}` : ''}${check && check.status !== 'good' ? `\n${STATUS_LABEL[check.status]}: ${check.notes.filter((n) => n.level !== 'info').map((n) => n.text).join(' ')}` : ''}`}
                                 >
                                   <span className={`ws-option__thumb ${blur ? 'is-blurred' : ''}`}>
                                     <ThumbImage src={d.thumbnail_url} alt={d.title} motif={theme.motif} />
                                     {d.is_nsfw && <span className="badge badge--error ws-option__flag">18+</span>}
+                                    <StatusBadge check={check} className="ws-option__status" />
                                     {active && (
                                       <span className="ws-option__check">
                                         <Check />
@@ -315,13 +431,30 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
 
                 <aside className="card card--pad ws-summary">
                   <h2 className="h3">Your mod</h2>
+                  {focus && focusDonor ? (
+                    <PartPreviewCard donor={focusDonor} part={focus.part} />
+                  ) : (
+                    <div className="ws-preview ws-preview--idle small muted">
+                      <Box /> Pick a part to see what you’re taking out of that mod.
+                    </div>
+                  )}
                   <ul className="ws-summary__list">
                     {partNames.map((part) => {
                       const d = donors.find((x) => x.mod_uuid === picks[part]);
+                      const check = partCheck(d, part);
                       return (
                         <li key={part}>
                           <span>{part === 'Other' ? 'Extras' : part}</span>
-                          <span className={d ? '' : 'muted'}>{d ? d.title : 'Original'}</span>
+                          <span className={`row ${d ? '' : 'muted'}`} style={{ gap: 6, justifyContent: 'flex-end', minWidth: 0 }}>
+                            {d ? (
+                              <button className="ws-summary__link truncate" onClick={() => setFocus({ part, modUuid: d.mod_uuid })} title="Show on the model">
+                                {d.title}
+                              </button>
+                            ) : (
+                              'Original'
+                            )}
+                            <StatusBadge check={check} />
+                          </span>
                         </li>
                       );
                     })}
@@ -352,6 +485,17 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
                     </div>
                     <Switch checked={markNsfw || pickedNsfw} disabled={pickedNsfw} onChange={() => setMarkNsfw(!markNsfw)} label="Has nudity or skimpy clothing" />
                   </div>
+                  {riskyPicks.length > 0 && (
+                    <div className="ws-note ws-note--caution">
+                      <AlertTriangle />
+                      <p className="small">
+                        {riskyPicks.some((p) => p.check?.status === 'bad')
+                          ? 'Some parts you picked have broken files and will likely look wrong in game. '
+                          : 'Some parts you picked may not look right on their own. '}
+                        You can still build it. Click a part above to see why.
+                      </p>
+                    </div>
+                  )}
                   <button className="btn btn--primary btn--lg" style={{ width: '100%' }} disabled={building || pickedCount === 0 || !name.trim()} onClick={build}>
                     {building ? <Loader2 className="spin" /> : <Hammer />}
                     {building ? 'Building…' : 'Build my mod'}

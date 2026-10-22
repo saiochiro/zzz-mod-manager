@@ -13,6 +13,7 @@ import {
   WorkshopBuildResponse,
   WorkshopCatalogEntry,
   WorkshopRecipe,
+  WorkshopPreview,
   WorkshopResolvedRecipe,
 } from '../shared/types';
 import type { CommunityPage, CommunityPost, CommunityProfile, CommunityQuery } from '../shared/community';
@@ -224,6 +225,13 @@ export const fairyClient = {
   workshopCatalog: (agentId: string): Promise<WorkshopCatalogEntry[]> => invokeBackend('workshop:catalog', agentId),
   workshopBuild: (req: WorkshopBuildRequest): Promise<WorkshopBuildResponse & { state: FullAppState }> =>
     invokeBackend('workshop:build', req),
+  workshopPreview: async (modUuid: string): Promise<WorkshopPreview> => {
+    const raw = await invokeBackend<WorkshopPreview>('workshop:preview', modUuid);
+    // Typed arrays survive Electron IPC; the web dev bridge sends plain JSON.
+    const f32 = (x: any) => (x instanceof Float32Array ? x : Float32Array.from(Array.isArray(x) ? x : Object.values(x ?? {})));
+    const u32 = (x: any) => (x instanceof Uint32Array ? x : Uint32Array.from(Array.isArray(x) ? x : Object.values(x ?? {})));
+    return { ...raw, meshes: raw.meshes.map((m) => ({ ...m, positions: f32(m.positions), indices: u32(m.indices) })) };
+  },
   workshopShareCode: (modUuid: string): Promise<string> => invokeBackend('workshop:shareCode', modUuid),
   workshopResolveCode: (code: string): Promise<WorkshopResolvedRecipe> => invokeBackend('workshop:resolveCode', code),
   workshopResolveRecipe: (recipe: WorkshopRecipe): Promise<WorkshopResolvedRecipe> => invokeBackend('workshop:resolveRecipe', recipe),

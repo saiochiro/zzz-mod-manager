@@ -25,6 +25,7 @@ import {
   WorkshopBuildResponse,
   WorkshopCatalogEntry,
   WorkshopRecipe,
+  WorkshopPreview,
   WorkshopResolvedRecipe,
 } from '../shared/types';
 import {
@@ -54,6 +55,8 @@ import { ZZMI_COMPONENTS } from '../shared/zzmiComponents';
 import {
   analyzeModParts,
   buildWorkshopMod,
+  checkModParts,
+  extractModPreview,
   decodeRecipe,
   encodeRecipe,
   safeFolderName,
@@ -3654,7 +3657,16 @@ endif
             return undefined;
           }
         })(),
-        parts: analyzeModParts(this.modAbsDir(m), index),
+        parts: (() => {
+          const dir = this.modAbsDir(m);
+          let checks: ReturnType<typeof checkModParts> = {};
+          try {
+            checks = checkModParts(dir, index);
+          } catch (err) {
+            console.warn(`Workshop: couldn't check "${m.title}": ${err instanceof Error ? err.message : err}`);
+          }
+          return analyzeModParts(dir, index).map((p) => ({ ...p, check: checks[p.name] }));
+        })(),
       }))
       .filter((e) => e.parts.length > 0)
       .sort((a, b) => a.title.localeCompare(b.title));
@@ -3805,6 +3817,13 @@ endif
       warnings: built.warnings,
       missingFiles: built.missingFiles,
     };
+  }
+
+  /** The meshes of an installed mod, by part, for the Workshop's 3D preview. */
+  public getWorkshopPreview(modUuid: string): WorkshopPreview {
+    const mod = this.scanInstalledMods().find((m) => m.mod_uuid === modUuid);
+    if (!mod) throw new Error('That mod is no longer installed.');
+    return extractModPreview(this.modAbsDir(mod), this.workshopPartIndex(mod.agent_id));
   }
 
   /** The recipe of a Workshop mod: which part came from which mod. */

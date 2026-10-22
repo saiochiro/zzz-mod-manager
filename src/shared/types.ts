@@ -296,7 +296,35 @@ export interface WorkshopCatalogEntry {
   is_workshop: boolean;
   /** Workshop mods only: every part comes from a GameBanana mod, so it can be posted. */
   shareable?: boolean;
-  parts: Array<{ name: string; sectionCount: number }>;
+  parts: Array<{ name: string; sectionCount: number; check?: WorkshopPartCheck }>;
+}
+
+/** How well one part of a mod can be taken out on its own. */
+export type WorkshopPartStatus = 'good' | 'risky' | 'bad';
+
+export interface WorkshopPartNote {
+  /** info: worth knowing or already handled; warn: may look off; bad: will break. */
+  level: 'info' | 'warn' | 'bad';
+  text: string;
+}
+
+export interface WorkshopPartCheck {
+  status: WorkshopPartStatus;
+  notes: WorkshopPartNote[];
+}
+
+/** One piece of mesh for the 3D preview. positions = xyz floats, indices = triangles. */
+export interface WorkshopPreviewMesh {
+  part: string;
+  name: string;
+  positions: Float32Array;
+  indices: Uint32Array;
+}
+
+export interface WorkshopPreview {
+  meshes: WorkshopPreviewMesh[];
+  /** Parts that change the look without a mesh of their own (recolors, hidden pieces). */
+  meshlessParts: string[];
 }
 
 export interface WorkshopBuildRequest {

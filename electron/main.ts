@@ -335,6 +335,7 @@ ipcMain.handle('workshop:build', async (_e, req: any) => {
   const res = await modService.buildWorkshopMod(req);
   return { ...res, state: modService.getFullState() };
 });
+ipcMain.handle('workshop:preview', async (_e, modUuid: string) => modService.getWorkshopPreview(modUuid));
 ipcMain.handle('workshop:shareCode', async (_e, modUuid: string) => modService.getWorkshopShareCode(modUuid));
 ipcMain.handle('workshop:resolveCode', async (_e, code: string) => modService.resolveWorkshopCode(code));
 ipcMain.handle('workshop:resolveRecipe', async (_e, recipe: any) => modService.resolveWorkshopRecipe(recipe));
