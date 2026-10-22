@@ -137,6 +137,15 @@ function fairyBackendMiddlewarePlugin(): Plugin {
             case 'workshop:resolveCode':
               result = svc.resolveWorkshopCode(args[0]);
               break;
+            case 'workshop:resolveRecipe':
+              result = svc.resolveWorkshopRecipe(args[0]);
+              break;
+            case 'community:me':
+              result = null;
+              break;
+            case 'community:list':
+              result = { posts: [], likedIds: [], reports: {}, hasMore: false };
+              break;
             case 'zzz:fetchGameBananaMod':
               result = await fetchGameBananaModProfile(Number(args[0]));
               break;

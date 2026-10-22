@@ -1,8 +1,9 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, safeStorage, session, shell } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import { fetchGameBananaModProfile } from '../src/core/gamebananaService';
 import { ModManagerService } from '../src/core/modManagerService';
+import { CommunityClient, type StoredSession } from '../src/core/communityClient';
 import { setupUpdater } from './updater';
 
 // Give the app its own Windows identity so the taskbar shows our icon, not Electron's.
@@ -328,6 +329,53 @@ ipcMain.handle('workshop:build', async (_e, req: any) => {
 });
 ipcMain.handle('workshop:shareCode', async (_e, modUuid: string) => modService.getWorkshopShareCode(modUuid));
 ipcMain.handle('workshop:resolveCode', async (_e, code: string) => modService.resolveWorkshopCode(code));
+ipcMain.handle('workshop:resolveRecipe', async (_e, recipe: any) => modService.resolveWorkshopRecipe(recipe));
+
+// Community page (Supabase). Tokens stay in the main process, encrypted with the OS keychain.
+const communitySessionFile = () => path.join(app.getPath('userData'), 'community_session.bin');
+const community = new CommunityClient(
+  {
+    load: () => {
+      try {
+        const raw = fs.readFileSync(communitySessionFile());
+        const json = safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(raw) : raw.toString('utf-8');
+        return JSON.parse(json) as StoredSession;
+      } catch {
+        return null;
+      }
+    },
+    save: (s) => {
+      try {
+        if (!s) {
+          fs.rmSync(communitySessionFile(), { force: true });
+          return;
+        }
+        const json = JSON.stringify(s);
+        fs.writeFileSync(communitySessionFile(), safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(json) : Buffer.from(json, 'utf-8'));
+      } catch {
+        // session just won't persist
+      }
+    },
+  },
+  (url) => shell.openExternal(url)
+);
+ipcMain.handle('community:me', async () => community.me());
+ipcMain.handle('community:signIn', async () => {
+  const me = await community.signIn();
+  mainWindow?.show();
+  mainWindow?.focus();
+  return me;
+});
+ipcMain.handle('community:signOut', async () => community.signOut());
+ipcMain.handle('community:list', async (_e, q: any) => community.list(q));
+ipcMain.handle('community:publish', async (_e, modUuid: string, description: string) =>
+  community.publish(modService.getWorkshopRecipe(modUuid), String(description || ''))
+);
+ipcMain.handle('community:like', async (_e, postId: string, liked: boolean) => community.setLiked(postId, liked));
+ipcMain.handle('community:report', async (_e, postId: string, reason: string) => community.report(postId, String(reason || '')));
+ipcMain.handle('community:remove', async (_e, postId: string) => community.remove(postId));
+ipcMain.handle('community:moderate', async (_e, postId: string, status: any, isNsfw: any) => community.moderate(postId, status ?? null, isNsfw ?? null));
+ipcMain.handle('community:ban', async (_e, userId: string, banned: boolean) => community.setBanned(userId, banned));
 
 ipcMain.handle('zzz:fetchGameBananaMod', async (_e, modId: number) => {
   return fetchGameBananaModProfile(modId);

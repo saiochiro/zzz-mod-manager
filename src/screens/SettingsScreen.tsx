@@ -344,7 +344,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = (p) => {
                   <div className="setting__text">
                     <div className="setting__title">Mod Workshop</div>
                     <div className="setting__desc">
-                      Mix parts from mods you have (hair from one, jacket from another) into your own mod. Adds a Workshop page under Themes.
+                      Mix parts from mods you have (hair from one, jacket from another) into your own mod, and share them on the Community tab. Adds a Workshop page under Themes.
                     </div>
                   </div>
                   <Switch

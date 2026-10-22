@@ -26,7 +26,7 @@
 - **Outfit switching.** Turn outfits on and off per character, and cycle them in-game with H.
 - **Fix after game patches.** Finds mods that broke after an update and repairs them in one click.
 - **Import from other launchers.** Bring your existing mod setup over in a few clicks.
-- **Mod Workshop (experimental).** Mix parts from mods you have, like the hair from one mod and the jacket from another, into your own mod. Share it with a code that credits the original creators.
+- **Mod Workshop (experimental).** Mix parts from mods you have, like the hair from one mod and the jacket from another, into your own mod. Post it on the in-app Community page or share it with a code. Either way the original creators keep their credit and downloads.
 - **Agent themes and cursors.** 16 themes inspired by ZZZ agents, each with its own colors, background, animated effects, app icon and mouse cursor.
 
 <p align="center">

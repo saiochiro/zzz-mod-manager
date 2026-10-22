@@ -294,6 +294,8 @@ export interface WorkshopCatalogEntry {
   thumbnail_url?: string;
   is_nsfw: boolean;
   is_workshop: boolean;
+  /** Workshop mods only: every part comes from a GameBanana mod, so it can be posted. */
+  shareable?: boolean;
   parts: Array<{ name: string; sectionCount: number }>;
 }
 

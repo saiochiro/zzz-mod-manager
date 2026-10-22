@@ -12,8 +12,10 @@ import {
   WorkshopBuildRequest,
   WorkshopBuildResponse,
   WorkshopCatalogEntry,
+  WorkshopRecipe,
   WorkshopResolvedRecipe,
 } from '../shared/types';
+import type { CommunityPage, CommunityPost, CommunityProfile, CommunityQuery } from '../shared/community';
 
 declare global {
   interface Window {
@@ -46,7 +48,13 @@ export interface FullAppState {
 
 async function invokeBackend<T = any>(channel: string, ...args: any[]): Promise<T> {
   if (window.fairyBridge?.isElectron) {
-    return window.fairyBridge.invoke(channel, ...args);
+    try {
+      return await window.fairyBridge.invoke(channel, ...args);
+    } catch (err) {
+      // Electron prefixes errors with "Error invoking remote method 'x': Error: "; show just the message.
+      const msg = String((err as Error)?.message || err).replace(/^Error invoking remote method '[^']+':\s*(\w*Error:\s*)?/, '');
+      throw new Error(msg);
+    }
   }
 
   const res = await fetch('/api/zzz', {
@@ -218,6 +226,20 @@ export const fairyClient = {
     invokeBackend('workshop:build', req),
   workshopShareCode: (modUuid: string): Promise<string> => invokeBackend('workshop:shareCode', modUuid),
   workshopResolveCode: (code: string): Promise<WorkshopResolvedRecipe> => invokeBackend('workshop:resolveCode', code),
+  workshopResolveRecipe: (recipe: WorkshopRecipe): Promise<WorkshopResolvedRecipe> => invokeBackend('workshop:resolveRecipe', recipe),
+
+  // Community page
+  communityMe: (): Promise<CommunityProfile | null> => invokeBackend('community:me'),
+  communitySignIn: (): Promise<CommunityProfile> => invokeBackend('community:signIn'),
+  communitySignOut: (): Promise<void> => invokeBackend('community:signOut'),
+  communityList: (q: CommunityQuery): Promise<CommunityPage> => invokeBackend('community:list', q),
+  communityPublish: (modUuid: string, description: string): Promise<CommunityPost> => invokeBackend('community:publish', modUuid, description),
+  communityLike: (postId: string, liked: boolean): Promise<void> => invokeBackend('community:like', postId, liked),
+  communityReport: (postId: string, reason: string): Promise<void> => invokeBackend('community:report', postId, reason),
+  communityRemove: (postId: string): Promise<void> => invokeBackend('community:remove', postId),
+  communityModerate: (postId: string, status: 'published' | 'hidden' | 'removed' | null, isNsfw: boolean | null): Promise<CommunityPost> =>
+    invokeBackend('community:moderate', postId, status, isNsfw),
+  communityBan: (userId: string, banned: boolean): Promise<void> => invokeBackend('community:ban', userId, banned),
 
   fetchGameBananaMod: (modId: number): Promise<GameBananaModItem> =>
     invokeBackend('zzz:fetchGameBananaMod', modId),

@@ -3576,6 +3576,14 @@ endif
         thumbnail_url: m.thumbnail_url,
         is_nsfw: Boolean(m.is_nsfw),
         is_workshop: (m.tags || []).includes('Workshop'),
+        shareable: (() => {
+          try {
+            const r = JSON.parse(fs.readFileSync(path.join(this.modAbsDir(m), 'workshop_recipe.json'), 'utf-8')) as WorkshopRecipe;
+            return r.parts.length > 0 && r.parts.every((p) => Boolean(p.source.gamebanana_id));
+          } catch {
+            return undefined;
+          }
+        })(),
         parts: analyzeModParts(this.modAbsDir(m), index),
       }))
       .filter((e) => e.parts.length > 0)
@@ -3729,20 +3737,32 @@ endif
     };
   }
 
-  /** Share code for a Workshop mod (its recipe: which part came from which mod). */
-  public getWorkshopShareCode(modUuid: string): string {
+  /** The recipe of a Workshop mod: which part came from which mod. */
+  public getWorkshopRecipe(modUuid: string): WorkshopRecipe {
     const mod = this.scanInstalledMods().find((m) => m.mod_uuid === modUuid);
     if (!mod) throw new Error('Mod not found.');
     const recipePath = path.join(this.modAbsDir(mod), 'workshop_recipe.json');
     if (!fs.existsSync(recipePath)) throw new Error('This mod wasn’t made in the Workshop.');
     const recipe = JSON.parse(fs.readFileSync(recipePath, 'utf-8')) as WorkshopRecipe;
     recipe.is_nsfw = recipe.is_nsfw || Boolean(mod.is_nsfw);
-    return encodeRecipe(recipe);
+    recipe.name = mod.title || recipe.name;
+    return recipe;
   }
 
-  /** Matches a shared recipe against installed mods so it can be rebuilt here. */
+  /** Share code for a Workshop mod. */
+  public getWorkshopShareCode(modUuid: string): string {
+    return encodeRecipe(this.getWorkshopRecipe(modUuid));
+  }
+
+  /** Matches a shared recipe code against installed mods so it can be rebuilt here. */
   public resolveWorkshopCode(code: string): WorkshopResolvedRecipe {
-    const recipe = decodeRecipe(code);
+    return this.resolveWorkshopRecipe(decodeRecipe(code));
+  }
+
+  /** Same, for a recipe that came from the community page. */
+  public resolveWorkshopRecipe(input: WorkshopRecipe): WorkshopResolvedRecipe {
+    // Round-trip through the share-code decoder so it gets the same validation.
+    const recipe = decodeRecipe(encodeRecipe(input));
     const hashDb = this.getHashDb();
     if (!hashDb.agents[recipe.agent_id]) throw new Error('This recipe is for an agent ProxyLaunch doesn’t know yet. Update the app and try again.');
     const index = this.workshopPartIndex(recipe.agent_id);

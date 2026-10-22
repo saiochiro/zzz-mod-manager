@@ -261,7 +261,7 @@ export const SetupWizard: React.FC<Props> = ({ open, activeTheme, onThemeChange,
               <Tip icon={<FlaskConical />} title="1. Turn it on" text="Settings → Experimental → Mod Workshop. A Workshop page appears under Themes." />
               <Tip icon={<Shirt />} title="2. Pick parts" text="Choose an agent, then pick a mod for each part. Parts you skip stay as the original model." />
               <Tip icon={<Hammer />} title="3. Build it" text="Name it and build. It lands in your Library like any other mod, already labeled 18+ if any part is." />
-              <Tip icon={<Share2 />} title="4. Share it" text="Copy its share code. Friends paste it in the Workshop and ProxyLaunch grabs the mods it needs from GameBanana." />
+              <Tip icon={<Share2 />} title="4. Share it" text="Post it on the Community tab (sign in with Discord) or copy its share code. ProxyLaunch grabs the mods it needs from GameBanana for whoever gets it." />
             </div>
             <div className="row" style={{ marginTop: 12 }}>
               <button

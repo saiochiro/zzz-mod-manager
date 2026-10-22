@@ -13,9 +13,12 @@ import {
   ShieldAlert,
   Shirt,
   Sparkles,
+  Users,
 } from 'lucide-react';
 import { HeroDecor } from '../ui/HeroDecor';
-import { Avatar, EmptyState, Modal, Switch, ThumbImage, useToast } from '../ui';
+import { Avatar, EmptyState, Modal, Segmented, Switch, ThumbImage, useToast } from '../ui';
+import { CommunityPanel, PostDialog } from './CommunityPanel';
+import type { CommunityProfile } from '../shared/community';
 import { Motif } from '../themes/Motif';
 import type { ThemeDefinition } from '../themes/types';
 import { fairyClient, type FullAppState } from '../services/fairyClient';
@@ -26,6 +29,7 @@ import type {
   NsfwFilterState,
   WorkshopBuildResponse,
   WorkshopCatalogEntry,
+  WorkshopRecipe,
   WorkshopResolvedRecipe,
 } from '../shared/types';
 
@@ -66,6 +70,25 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
   const [building, setBuilding] = useState(false);
   const [result, setResult] = useState<WorkshopBuildResponse | null>(null);
   const [codeOpen, setCodeOpen] = useState(false);
+  const [codeRecipe, setCodeRecipe] = useState<WorkshopRecipe | null>(null);
+  const [tab, setTab] = useState<'build' | 'community'>('build');
+  const [me, setMe] = useState<CommunityProfile | null>(null);
+  const [posting, setPosting] = useState<WorkshopCatalogEntry | null>(null);
+  const [communityRefresh, setCommunityRefresh] = useState(0);
+
+  useEffect(() => {
+    fairyClient.communityMe().then(setMe).catch(() => setMe(null));
+  }, []);
+
+  const signIn = async () => {
+    try {
+      const profile = await fairyClient.communitySignIn();
+      setMe(profile);
+      notify({ tone: 'success', title: `Signed in as ${profile.display_name}` });
+    } catch (e) {
+      notify({ tone: 'error', title: 'Couldn’t sign in', message: errMsg(e) });
+    }
+  };
 
   useEffect(() => {
     if (!agentId && agents.length) setAgentId(agents[0].agent.agent_id);
@@ -152,6 +175,33 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
         </section>
 
         <div className="page-body stack-4">
+          <Segmented<'build' | 'community'>
+            ariaLabel="Workshop"
+            value={tab}
+            onChange={setTab}
+            options={[
+              { value: 'build', label: 'Build', icon: <Hammer /> },
+              { value: 'community', label: 'Community', icon: <Users /> },
+            ]}
+          />
+
+          {tab === 'community' && (
+            <CommunityPanel
+              theme={theme}
+              hashDb={hashDb}
+              nsfwFilterState={nsfwFilterState}
+              refreshKey={communityRefresh}
+              me={me}
+              onMeChange={setMe}
+              onGet={(recipe) => {
+                setCodeRecipe(recipe);
+                setCodeOpen(true);
+              }}
+            />
+          )}
+
+          {tab === 'build' && (
+          <>
           <ol className="ws-steps" aria-label="How it works">
             <li>
               <b>1</b> Pick an agent
@@ -331,6 +381,9 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
                             {y.is_nsfw ? ' · 18+' : ''}
                           </div>
                         </div>
+                        <button className="btn btn--primary btn--sm" onClick={() => setPosting(y)}>
+                          <Users /> Post
+                        </button>
                         <button
                           className="btn btn--secondary btn--sm"
                           onClick={async () => {
@@ -349,6 +402,8 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
                 </section>
               )}
             </>
+          )}
+          </>
           )}
         </div>
       </div>
@@ -404,14 +459,28 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
         )}
       </Modal>
 
+      <PostDialog
+        mod={posting ? { mod_uuid: posting.mod_uuid, title: posting.title, gamebanana_ok: posting.shareable !== false } : null}
+        me={me}
+        onSignIn={signIn}
+        onClose={() => setPosting(null)}
+        onPosted={() => setCommunityRefresh((n) => n + 1)}
+      />
+
       <ShareCodeDialog
         open={codeOpen}
         theme={theme}
         hashDb={hashDb}
-        onClose={() => setCodeOpen(false)}
+        initialRecipe={codeRecipe}
+        onClose={() => {
+          setCodeOpen(false);
+          setCodeRecipe(null);
+        }}
         onDownload={onDownloadGameBananaMod}
         onUse={(resolved) => {
           setCodeOpen(false);
+          setCodeRecipe(null);
+          setTab('build');
           setAgentId(resolved.recipe.agent_id);
           // Wait for the agent's catalog, then apply the picks.
           fairyClient.workshopCatalog(resolved.recipe.agent_id).then((cat) => {
@@ -432,10 +501,12 @@ const ShareCodeDialog: React.FC<{
   open: boolean;
   theme: ThemeDefinition;
   hashDb: HashDatabase;
+  /** Opened from a community post instead of a pasted code. */
+  initialRecipe?: WorkshopRecipe | null;
   onClose: () => void;
   onDownload: (id: number) => Promise<void>;
   onUse: (r: WorkshopResolvedRecipe) => void;
-}> = ({ open, hashDb, onClose, onDownload, onUse }) => {
+}> = ({ open, hashDb, initialRecipe, onClose, onDownload, onUse }) => {
   const [code, setCode] = useState('');
   const [resolved, setResolved] = useState<WorkshopResolvedRecipe | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -446,14 +517,16 @@ const ShareCodeDialog: React.FC<{
       setCode('');
       setResolved(null);
       setError(null);
+      if (initialRecipe) check();
     }
-  }, [open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialRecipe]);
 
   const check = async (c = code) => {
     setBusy('check');
     setError(null);
     try {
-      setResolved(await fairyClient.workshopResolveCode(c));
+      setResolved(initialRecipe ? await fairyClient.workshopResolveRecipe(initialRecipe) : await fairyClient.workshopResolveCode(c));
     } catch (e) {
       setResolved(null);
       setError(errMsg(e));
@@ -469,8 +542,9 @@ const ShareCodeDialog: React.FC<{
     <Modal open={open} onClose={onClose} size="wide" labelledBy="ws-code-title">
       <div className="stack-4" style={{ padding: 24 }}>
         <h2 id="ws-code-title" className="h3">
-          Use a share code
+          {initialRecipe ? 'Get this mod' : 'Use a share code'}
         </h2>
+        {!initialRecipe && (
         <div className="row">
           <input
             className="input input--mono"
@@ -485,6 +559,12 @@ const ShareCodeDialog: React.FC<{
             {busy === 'check' ? <Loader2 className="spin" /> : <Check />} Check
           </button>
         </div>
+        )}
+        {initialRecipe && busy === 'check' && !resolved && (
+          <div className="row muted">
+            <Loader2 className="spin" /> Checking which mods you have…
+          </div>
+        )}
         {error && <p className="small" style={{ color: 'var(--error)' }}>{error}</p>}
 
         {resolved && (

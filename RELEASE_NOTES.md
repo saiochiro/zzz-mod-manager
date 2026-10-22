@@ -1,15 +1,14 @@
-What's new in 2.8.0
+What's new in 2.9.0
 
-New and experimental: the Mod Workshop. Make your own mods out of the ones you already have.
+The Mod Workshop now has a Community tab, a page just for ProxyLaunch.
 
-- Turn it on in Settings > Experimental > Mod Workshop. A Workshop page shows up under Themes.
-- Pick an agent, then pick a mod for each part: hair from one Jane mod, jacket from another, and so on. Parts you skip stay as the original model.
-- Name it and build it. Your new mod lands in your Library, and the original mods' toggle keys keep working.
-- Share it with a code. Friends paste the code in the Workshop, ProxyLaunch downloads the mods it needs from GameBanana and builds it for them. The original creators keep their credit and downloads.
-- 18+ labels carry over. If any part comes from a mod labeled NSFW or skimpy, the new mod is labeled too, and you can label it yourself.
+- Browse mods other people made in the Workshop, sort by newest or most liked, and filter by agent.
+- Click Get and ProxyLaunch downloads the GameBanana mods it needs and builds it for you.
+- Sign in with Discord to post your own Workshop mods, like posts and report problems.
+- Posts never include mod files. They list which part came from which GameBanana mod, so the original creators keep their credit and downloads.
+- 18+ labels are checked on the server against each mod's GameBanana content ratings, so a post can't skip them. Your Content filter setting decides whether you see 18+ posts.
+- 3 reports hide a post until a moderator reviews it.
 
-The setup tutorial has a new Workshop step, so it will show once more for everyone.
-
-It's experimental, so some mods might not split cleanly. Tell me which ones on Discord.
+The Community tab is inside the Workshop. Turn the Workshop on in Settings > Experimental.
 
 Requires XXMI Launcher with ZZMI set up. Questions or bugs? Reach out on Discord: ghxty
