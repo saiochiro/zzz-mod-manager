@@ -16,6 +16,14 @@ if (process.platform === 'win32') {
 // user's mods, loadouts and settings stay exactly where they were.
 app.setPath('userData', path.join(app.getPath('appData'), 'ZZZ Mod Manager'));
 
+// Only ever one ProxyLaunch. A second launch (desktop icon, or a zzzmgr:// install
+// link from the browser) hands its link to the running copy and exits. Without
+// this, extra hidden copies piled up and blocked the installer during updates.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.exit(0);
+}
+
 let mainWindow: BrowserWindow | null = null;
 const workspaceRoot = app.isPackaged ? app.getPath('userData') : path.resolve(__dirname, '../..');
 const modService = new ModManagerService(workspaceRoot);
@@ -509,11 +517,42 @@ app.whenReady().then(() => {
   }
 
   createWindow();
-  setupUpdater(() => mainWindow, writeBootLog);
+  setupUpdater(() => mainWindow, writeBootLog, () => {
+    // Everything that could keep the process alive while the installer runs.
+    modsWatcher?.close();
+    modsWatcher = null;
+  });
+  // Launched by an install link while ProxyLaunch was closed.
+  const initialLink = deepLinkFrom(process.argv);
+  if (initialLink) mainWindow?.webContents.once('did-finish-load', () => openDeepLink(initialLink));
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+/** Install link passed on the command line (zzzmgr://...). */
+function deepLinkFrom(argv: string[]): string | null {
+  return argv.find((a) => /^zzzmgr:\/\//i.test(a)) ?? null;
+}
+
+async function openDeepLink(url: string | null) {
+  if (!url) return;
+  try {
+    await modService.ingestPackage(url);
+    mainWindow?.webContents.send('zzz:stateUpdated', modService.getFullState());
+  } catch (err) {
+    writeBootLog(`Deep link failed: ${(err as Error).message}`);
+  }
+}
+
+app.on('second-instance', (_event, argv) => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+  openDeepLink(deepLinkFrom(argv));
 });
 
 app.on('window-all-closed', () => {

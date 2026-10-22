@@ -45,7 +45,7 @@ function cleanNotes(raw: unknown): string | undefined {
     .trim();
 }
 
-export function setupUpdater(getWindow: () => BrowserWindow | null, log: (msg: string) => void) {
+export function setupUpdater(getWindow: () => BrowserWindow | null, log: (msg: string) => void, beforeInstall: () => void = () => {}) {
   let status: UpdateStatus = { state: app.isPackaged ? 'idle' : 'unsupported', current: app.getVersion() };
   let updater: any = null;
 
@@ -112,7 +112,20 @@ export function setupUpdater(getWindow: () => BrowserWindow | null, log: (msg: s
   });
   ipcMain.handle('app:installUpdate', () => {
     if (!updater) return false;
-    setImmediate(() => updater.quitAndInstall(false, true));
+    setImmediate(() => {
+      try {
+        beforeInstall();
+      } catch {
+        // keep going
+      }
+      // Close every window first so nothing holds the app open, then run the
+      // installer silently (no wizard) and reopen ProxyLaunch when it's done.
+      for (const w of BrowserWindow.getAllWindows()) {
+        w.removeAllListeners('close');
+        w.destroy();
+      }
+      updater.quitAndInstall(true, true);
+    });
     return true;
   });
 }

@@ -1,6 +1,6 @@
 {
   "name": "zzz-mod-manager",
-  "version": "2.10.2",
+  "version": "2.10.3",
   "description": "ProxyLaunch: an all-in-one mod launcher for Zenless Zone Zero",
   "main": "dist-electron/electron/main.js",
   "scripts": {
@@ -41,7 +41,8 @@
       "shortcutName": "ProxyLaunch",
       "installerIcon": "assets/icon/icon.ico",
       "uninstallerIcon": "assets/icon/icon.ico",
-      "artifactName": "ProxyLaunch-Setup-${version}.${ext}"
+      "artifactName": "ProxyLaunch-Setup-${version}.${ext}",
+      "include": "installer/installer.nsh"
     },
     "portable": {
       "artifactName": "ProxyLaunch-Portable-${version}.${ext}"
