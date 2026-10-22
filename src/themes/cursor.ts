@@ -22,7 +22,8 @@ export interface CursorSettings {
   size: CursorSize;
 }
 
-const KEY = 'zzz_cursor_v2';
+const KEY = 'zzz_cursor_v3';
+const PREV_KEY = 'zzz_cursor_v2';
 const LEGACY_KEY = 'zzz_cursor';
 
 const PATHS: Record<'arrow' | 'blade', string> = {
@@ -69,6 +70,9 @@ interface Signature {
 
 const SIG_GRID = 44;
 const SIG_TIP: [number, number] = [7, 7];
+/** On-screen size of the character cursors (normal / large). */
+// Chromium drops cursors over 128 device px, so large stays small enough for 200% scaling.
+const SIG_PX = { normal: 52, large: 64 } as const;
 const POINTER = 'M7 7 L7 30.5 L12.9 25 L17.1 34 L21.5 32 L17.3 23.1 L25.6 23.1 Z';
 const INK = '#15161d';
 const GOLD = '#e9c46a';
@@ -339,7 +343,7 @@ export function buildCursorSvg(
   const shape = resolveShape(theme, opts.shape);
   const reticleHand = kind === 'hand' && (shape === 'reticle' || (shape === 'signature' && theme.cursorShape === 'reticle'));
   if (shape === 'signature' && !reticleHand) {
-    const px = opts.size === 'large' ? 66 : SIG_GRID;
+    const px = SIG_PX[opts.size === 'large' ? 'large' : 'normal'];
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${px}" height="${px}" viewBox="0 0 ${SIG_GRID} ${SIG_GRID}">${signatureSvg(theme, kind === 'hand')}</svg>`;
   }
   const px = opts.size === 'large' ? 48 : 32;
@@ -351,7 +355,11 @@ export function cursorCss(theme: ThemeDefinition, kind: 'arrow' | 'hand', opts: 
   const shape = resolveShape(theme, opts.shape);
   const k = opts.size === 'large' ? 1.5 : 1;
   const reticleHand = kind === 'hand' && (shape === 'reticle' || (shape === 'signature' && theme.cursorShape === 'reticle'));
-  const [hx, hy] = reticleHand ? [16, 16] : shape === 'signature' ? SIG_TIP : [5, 3];
+  if (shape === 'signature' && !reticleHand) {
+    const scale = SIG_PX[opts.size === 'large' ? 'large' : 'normal'] / SIG_GRID;
+    return `url("${svgToDataUrl(buildCursorSvg(theme, kind, opts))}") ${Math.round(SIG_TIP[0] * scale)} ${Math.round(SIG_TIP[1] * scale)}, ${kind === 'arrow' ? 'default' : 'pointer'}`;
+  }
+  const [hx, hy] = reticleHand ? [16, 16] : [5, 3];
   return `url("${svgToDataUrl(buildCursorSvg(theme, kind, opts))}") ${Math.round(hx * k)} ${Math.round(hy * k)}, ${kind === 'arrow' ? 'default' : 'pointer'}`;
 }
 
@@ -360,6 +368,13 @@ export function readCursorSettings(): CursorSettings {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) return { ...fallback, ...JSON.parse(raw) };
+    // v3 introduced character cursors: keep the old choice of theme/size, but switch
+    // everyone to them once (Settings still lets you pick Arrow or Blade again).
+    const prev = localStorage.getItem(PREV_KEY);
+    if (prev) {
+      const old = JSON.parse(prev) as Partial<CursorSettings>;
+      return { ...fallback, pref: old.pref ?? fallback.pref, size: old.size ?? fallback.size, shape: 'auto' };
+    }
     const legacy = localStorage.getItem(LEGACY_KEY);
     if (legacy) return { ...fallback, pref: legacy };
   } catch {

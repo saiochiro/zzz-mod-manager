@@ -185,7 +185,7 @@ export const ThemesScreen: React.FC<ThemesScreenProps> = ({
                       value={cursor.shape}
                       onChange={(shape) => onCursorChange({ shape })}
                       options={[
-                        { value: 'auto', label: 'Signature', title: 'Each agent’s own cursor: katana, shark fin, brush, leaf…' },
+                        { value: 'auto', label: 'Character', title: 'The pointer dressed as the agent: fox ears, shark fins, wings, thrusters…' },
                         { value: 'arrow', label: 'Arrow' },
                         { value: 'blade', label: 'Blade' },
                         { value: 'reticle', label: 'Reticle', title: 'Arrow normally, a target reticle over buttons' },

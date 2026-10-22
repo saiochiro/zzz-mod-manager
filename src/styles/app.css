@@ -3114,18 +3114,19 @@ html[data-still] .motif-glyph {
   z-index: 2;
 }
 .cursor-opt__preview--pair {
-  width: 58px;
+  width: 96px;
+  height: 56px;
   gap: 2px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .cursor-opt__preview--pair img {
-  width: 26px;
-  height: 26px;
+  width: 44px;
+  height: 44px;
 }
 .cursor-opt {
-  width: 86px;
+  width: 112px;
 }
 .fx-switches {
   display: flex;
@@ -3998,7 +3999,10 @@ html[data-scene] .card {
   padding: 4px 2px 8px;
 }
 .ws-option {
-  flex: 0 0 132px;
+  flex: none;
+  width: 150px;
+  min-width: 150px;
+  max-width: 150px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -4014,7 +4018,9 @@ html[data-scene] .card {
 .ws-option__thumb {
   position: relative;
   display: block;
-  aspect-ratio: 4 / 3;
+  width: 100%;
+  height: 112px;
+  flex: none;
   border-radius: var(--r-md);
   overflow: hidden;
   border: 2px solid var(--border);
@@ -4023,6 +4029,8 @@ html[data-scene] .card {
 }
 .ws-option__thumb img,
 .ws-option__thumb .thumb-fallback {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -4032,7 +4040,7 @@ html[data-scene] .card {
   transform: scale(1.1);
 }
 .ws-option__thumb--original {
-  display: grid;
+  display: grid !important;
   place-items: center;
   background: repeating-linear-gradient(-45deg, var(--surface) 0 10px, var(--raised) 10px 20px);
 }
@@ -4049,6 +4057,8 @@ html[data-scene] .card {
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
 .ws-option__title {
+  display: block;
+  width: 100%;
   font-size: var(--fs-sm);
   font-weight: 600;
   overflow: hidden;
@@ -4088,7 +4098,8 @@ html[data-scene] .card {
   gap: var(--s-3);
 }
 .ws-yours__item .ws-option__thumb {
-  width: 72px;
+  width: 80px;
+  height: 60px;
   flex-shrink: 0;
 }
 .ws-note {
@@ -4136,6 +4147,8 @@ html[data-scene] .card {
 }
 .cm-card__thumb img,
 .cm-card__thumb .thumb-fallback {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
