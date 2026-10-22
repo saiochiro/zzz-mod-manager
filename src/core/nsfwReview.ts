@@ -72,10 +72,10 @@ function persist(): void {
 export const nsfwKey = nsfwKeyOf;
 
 /** Puts the stored verdict (if any) on an item. Safe to call more than once. */
-export function applyNsfwReview<T extends NsfwReviewFields>(item: T, key: string | null): T {
+export function applyNsfwReview<T extends NsfwReviewFields>(item: T, key: string | null): T & NsfwReviewFields {
   const flagged = item.nsfw_flagged ?? Boolean(item.is_nsfw);
   const st = key ? store.get(key) : undefined;
-  const out: T = { ...item, nsfw_flagged: flagged };
+  const out: T & NsfwReviewFields = { ...item, nsfw_flagged: flagged };
   if (st && (st.source === 'you' || st.flagged === flagged || (st.flagged && !flagged))) {
     out.nsfw_level = st.level;
     out.is_nsfw = st.level !== 'sfw';
