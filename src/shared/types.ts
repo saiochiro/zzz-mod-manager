@@ -142,6 +142,8 @@ export interface AppConfig {
   defaultModHandler?: boolean;
   xxmiModsPath?: string;
   modStorageLibraryPath?: string;
+  /** Experimental: shows the Mod Workshop screen. */
+  workshopEnabled?: boolean;
 }
 
 export interface ParsedIniSection {
@@ -260,4 +262,68 @@ export interface ExternalLauncherDetection {
   path: string;
   modsCount: number;
   description: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* Mod Workshop (experimental)                                         */
+/* ------------------------------------------------------------------ */
+
+export interface WorkshopSourceInfo {
+  title: string;
+  author: string;
+  gamebanana_id: number | null;
+  mod_uuid?: string;
+}
+
+export interface WorkshopRecipe {
+  format: 'proxylaunch-recipe';
+  version: 1;
+  name: string;
+  agent_id: string;
+  parts: Array<{ part: string; source: WorkshopSourceInfo }>;
+  is_nsfw: boolean;
+  created_at: string;
+}
+
+/** An installed mod as the Workshop sees it: which parts it can donate. */
+export interface WorkshopCatalogEntry {
+  mod_uuid: string;
+  title: string;
+  author: string;
+  gamebanana_id: number | null;
+  thumbnail_url?: string;
+  is_nsfw: boolean;
+  is_workshop: boolean;
+  parts: Array<{ name: string; sectionCount: number }>;
+}
+
+export interface WorkshopBuildRequest {
+  agentId: string;
+  name: string;
+  picks: Array<{ part: string; modUuid: string }>;
+  /** The creator says it shows nudity or skimpy clothing. Can only add a label, never remove one. */
+  markNsfw?: boolean;
+  /** Turn the new mod on (and the agent's other mods off so they don't overlap). */
+  activate?: boolean;
+}
+
+export interface WorkshopBuildResponse {
+  mod: ModManifest | null;
+  shareCode: string;
+  isNsfw: boolean;
+  nsfwReasons: string[];
+  warnings: string[];
+  missingFiles: string[];
+}
+
+export interface WorkshopResolvedRecipe {
+  recipe: WorkshopRecipe;
+  parts: Array<{
+    part: string;
+    source: WorkshopSourceInfo;
+    /** Installed mod that matches the source, if any. */
+    modUuid: string | null;
+    /** The installed mod still has this part. */
+    hasPart: boolean;
+  }>;
 }

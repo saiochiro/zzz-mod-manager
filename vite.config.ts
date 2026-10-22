@@ -125,6 +125,18 @@ function fairyBackendMiddlewarePlugin(): Plugin {
             case 'zzz:undoOrganizeFolders':
               result = { ...svc.undoOrganizeFolders(), state: svc.getFullState() };
               break;
+            case 'workshop:catalog':
+              result = svc.getWorkshopCatalog(args[0]);
+              break;
+            case 'workshop:build':
+              result = { ...(await svc.buildWorkshopMod(args[0])), state: svc.getFullState() };
+              break;
+            case 'workshop:shareCode':
+              result = svc.getWorkshopShareCode(args[0]);
+              break;
+            case 'workshop:resolveCode':
+              result = svc.resolveWorkshopCode(args[0]);
+              break;
             case 'zzz:fetchGameBananaMod':
               result = await fetchGameBananaModProfile(Number(args[0]));
               break;

@@ -6,6 +6,7 @@ import {
   Rocket,
   Eye,
   EyeOff,
+  FlaskConical,
   FolderCog,
   FolderOpen,
   FolderSearch,
@@ -55,6 +56,7 @@ const SECTIONS = [
   { id: 'mods', label: 'Mod behavior', icon: SlidersHorizontal },
   { id: 'library', label: 'Library tools', icon: Package },
   { id: 'appearance', label: 'Appearance', icon: Palette },
+  { id: 'experimental', label: 'Experimental', icon: FlaskConical },
   { id: 'about', label: 'About', icon: Info },
 ] as const;
 
@@ -328,6 +330,28 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = (p) => {
                     <Palette />
                     Browse themes
                   </button>
+                </div>
+              </section>
+
+              <section id="settings-experimental" className="card card--pad">
+                <h2 className="h3" style={{ marginBottom: 4 }}>
+                  Experimental
+                </h2>
+                <p className="small muted" style={{ marginBottom: 8 }}>
+                  New features that are still being worked on. They might not work with every mod.
+                </p>
+                <div className="setting">
+                  <div className="setting__text">
+                    <div className="setting__title">Mod Workshop</div>
+                    <div className="setting__desc">
+                      Mix parts from mods you have (hair from one, jacket from another) into your own mod. Adds a Workshop page under Themes.
+                    </div>
+                  </div>
+                  <Switch
+                    checked={Boolean(config.workshopEnabled)}
+                    onChange={() => p.onSaveConfig({ workshopEnabled: !config.workshopEnabled })}
+                    label="Mod Workshop"
+                  />
                 </div>
               </section>
 

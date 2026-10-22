@@ -1,16 +1,15 @@
-What's new in 2.7.1
+What's new in 2.8.0
 
-Ready for the new game update and the latest XXMI Launcher.
+New and experimental: the Mod Workshop. Make your own mods out of the ones you already have.
 
-- New agent: Phoenix is in the roster. Her GameBanana mods install straight into her folder, and picking her in Browse shows her mods.
-- Real character data: mod detection now uses the official ZZMI hashes for every agent, so mods are sorted to the right character far more reliably and outfit cycling with H works on real mods.
-- XXMI Launcher 2.4 support: ProxyLaunch now finds your ZZMI folder even if you moved it in XXMI's settings or use the portable XXMI.
-- No more repeat warnings: when XXMI turns off a duplicate library file inside a mod, ProxyLaunch keeps it off instead of putting it back on every launch.
+- Turn it on in Settings > Experimental > Mod Workshop. A Workshop page shows up under Themes.
+- Pick an agent, then pick a mod for each part: hair from one Jane mod, jacket from another, and so on. Parts you skip stay as the original model.
+- Name it and build it. Your new mod lands in your Library, and the original mods' toggle keys keep working.
+- Share it with a code. Friends paste the code in the Workshop, ProxyLaunch downloads the mods it needs from GameBanana and builds it for them. The original creators keep their credit and downloads.
+- 18+ labels carry over. If any part comes from a mod labeled NSFW or skimpy, the new mod is labeled too, and you can label it yourself.
 
-New theme:
+The setup tutorial has a new Workshop step, so it will show once more for everyone.
 
-- Undying Flame (Phoenix): crimson fire and molten gold with a rebirth halo that burns down to ash and reignites, rising embers, drifting golden plumes and a burning quill cursor.
-
-Pick it in Themes. That's 16 themes now.
+It's experimental, so some mods might not split cleanly. Tell me which ones on Discord.
 
 Requires XXMI Launcher with ZZMI set up. Questions or bugs? Reach out on Discord: ghxty

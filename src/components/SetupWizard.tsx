@@ -6,6 +6,10 @@ import {
   CircleAlert,
   Compass,
   Download,
+  FlaskConical,
+  Hammer,
+  Share2,
+  Shirt,
   FolderSearch,
   Library,
   Loader2,
@@ -20,7 +24,9 @@ import { ThemeIcon } from './ThemeIcon';
 import { useEscape } from '../ui';
 
 const XXMI_URL = 'https://github.com/SpectrumQT/XXMI-Launcher/releases/latest';
-const SETUP_KEY = 'proxylaunch_setup_v1';
+// Bump the version to show the tutorial to everyone again after a big new feature.
+// v2: Mod Workshop.
+const SETUP_KEY = 'proxylaunch_setup_v2';
 
 export function isSetupDone(): boolean {
   try {
@@ -37,8 +43,8 @@ export function markSetupDone() {
   }
 }
 
-type Step = 'welcome' | 'check' | 'theme' | 'done';
-const STEPS: Step[] = ['welcome', 'check', 'theme', 'done'];
+type Step = 'welcome' | 'check' | 'theme' | 'workshop' | 'done';
+const STEPS: Step[] = ['welcome', 'check', 'theme', 'workshop', 'done'];
 
 interface Props {
   open: boolean;
@@ -47,10 +53,12 @@ interface Props {
   /** Persist path changes (also refreshes app state). */
   onSaveConfig: (partial: Partial<AppConfig>) => Promise<void>;
   onClose: () => void;
+  /** Experimental Mod Workshop is turned on. */
+  workshopEnabled?: boolean;
 }
 
 /** First-run setup: welcome → find game + XXMI → pick a theme → ready. */
-export const SetupWizard: React.FC<Props> = ({ open, activeTheme, onThemeChange, onSaveConfig, onClose }) => {
+export const SetupWizard: React.FC<Props> = ({ open, activeTheme, onThemeChange, onSaveConfig, onClose, workshopEnabled }) => {
   const [step, setStep] = useState<Step>('welcome');
   const [status, setStatus] = useState<SetupStatus | null>(null);
   const [checking, setChecking] = useState(false);
@@ -233,6 +241,37 @@ export const SetupWizard: React.FC<Props> = ({ open, activeTheme, onThemeChange,
                   {t.id === activeTheme && <CheckCircle2 className="setup-theme__check" style={{ color: t.colors.primary }} />}
                 </button>
               ))}
+            </div>
+          </div>
+        )}
+
+        {step === 'workshop' && (
+          <div className="setup__body">
+            <div className="eyebrow">
+              <FlaskConical style={{ width: 14, height: 14, verticalAlign: '-2px' }} /> New · Experimental
+            </div>
+            <h2 id="setup-title" className="setup__h2">
+              Make your own mods
+            </h2>
+            <p className="muted">
+              The <b>Mod Workshop</b> lets you mix parts from mods you already have. Take the hair from one Jane mod and the jacket from
+              another, and save it as a new mod.
+            </p>
+            <div className="setup-tips">
+              <Tip icon={<FlaskConical />} title="1. Turn it on" text="Settings → Experimental → Mod Workshop. A Workshop page appears under Themes." />
+              <Tip icon={<Shirt />} title="2. Pick parts" text="Choose an agent, then pick a mod for each part. Parts you skip stay as the original model." />
+              <Tip icon={<Hammer />} title="3. Build it" text="Name it and build. It lands in your Library like any other mod, already labeled 18+ if any part is." />
+              <Tip icon={<Share2 />} title="4. Share it" text="Copy its share code. Friends paste it in the Workshop and ProxyLaunch grabs the mods it needs from GameBanana." />
+            </div>
+            <div className="row" style={{ marginTop: 12 }}>
+              <button
+                className={`btn ${workshopEnabled ? 'btn--secondary' : 'btn--primary'} btn--sm`}
+                onClick={() => onSaveConfig({ workshopEnabled: !workshopEnabled })}
+              >
+                {workshopEnabled ? <CheckCircle2 /> : <FlaskConical />}
+                {workshopEnabled ? 'Workshop is on' : 'Turn on the Workshop'}
+              </button>
+              <span className="small muted">You can change this anytime in Settings.</span>
             </div>
           </div>
         )}

@@ -9,6 +9,10 @@ import {
   ModManifest,
   ParsedIniDocument,
   SetupStatus,
+  WorkshopBuildRequest,
+  WorkshopBuildResponse,
+  WorkshopCatalogEntry,
+  WorkshopResolvedRecipe,
 } from '../shared/types';
 
 declare global {
@@ -207,6 +211,13 @@ export const fairyClient = {
     message: string;
     state: FullAppState;
   }> => invokeBackend('zzz:undoOrganizeFolders'),
+
+  // Mod Workshop (experimental)
+  workshopCatalog: (agentId: string): Promise<WorkshopCatalogEntry[]> => invokeBackend('workshop:catalog', agentId),
+  workshopBuild: (req: WorkshopBuildRequest): Promise<WorkshopBuildResponse & { state: FullAppState }> =>
+    invokeBackend('workshop:build', req),
+  workshopShareCode: (modUuid: string): Promise<string> => invokeBackend('workshop:shareCode', modUuid),
+  workshopResolveCode: (code: string): Promise<WorkshopResolvedRecipe> => invokeBackend('workshop:resolveCode', code),
 
   fetchGameBananaMod: (modId: number): Promise<GameBananaModItem> =>
     invokeBackend('zzz:fetchGameBananaMod', modId),

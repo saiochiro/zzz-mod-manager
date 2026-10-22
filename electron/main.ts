@@ -320,6 +320,15 @@ ipcMain.handle('zzz:undoOrganizeFolders', async () => {
   return { ...res, state: modService.getFullState() };
 });
 
+// Mod Workshop (experimental)
+ipcMain.handle('workshop:catalog', async (_e, agentId: string) => modService.getWorkshopCatalog(agentId));
+ipcMain.handle('workshop:build', async (_e, req: any) => {
+  const res = await modService.buildWorkshopMod(req);
+  return { ...res, state: modService.getFullState() };
+});
+ipcMain.handle('workshop:shareCode', async (_e, modUuid: string) => modService.getWorkshopShareCode(modUuid));
+ipcMain.handle('workshop:resolveCode', async (_e, code: string) => modService.resolveWorkshopCode(code));
+
 ipcMain.handle('zzz:fetchGameBananaMod', async (_e, modId: number) => {
   return fetchGameBananaModProfile(modId);
 });

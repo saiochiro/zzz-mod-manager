@@ -21,6 +21,11 @@ import {
   MultiAgentCandidate,
   ParsedIniDocument,
   VisionModerationResult,
+  WorkshopBuildRequest,
+  WorkshopBuildResponse,
+  WorkshopCatalogEntry,
+  WorkshopRecipe,
+  WorkshopResolvedRecipe,
 } from '../shared/types';
 import {
   copyDirRecursive,
@@ -35,6 +40,7 @@ import {
   fetchLiveGameBananaFeed,
   isModRecordNsfw,
   makeModCoverSvg,
+  NSFW_KEYWORD_REGEX,
   searchAndFetchGameBananaPreviewForFolder,
   upgradeGameBananaImageUrl,
 } from './gamebananaService';
@@ -44,6 +50,15 @@ import {
   setCachedVisionResult,
 } from './nsfwVisionService';
 import { buildMasterSwapIniContent, syncAgentHSwapOnDisk } from './hSwapEngine';
+import { ZZMI_COMPONENTS } from '../shared/zzmiComponents';
+import {
+  analyzeModParts,
+  buildWorkshopMod,
+  decodeRecipe,
+  encodeRecipe,
+  safeFolderName,
+  type WorkshopPick,
+} from './workshopEngine';
 import {
   classifyMeshPartsFromTokens,
   classifyStandardKeySlot,
@@ -3535,5 +3550,213 @@ endif
 
     return detected;
   }
-}
 
+  /* ---------------------------------------------------------------- */
+  /* Mod Workshop (experimental)                                      */
+  /* ---------------------------------------------------------------- */
+
+  private workshopPartIndex(agentId: string): Record<string, string> {
+    return ZZMI_COMPONENTS[agentId] ?? {};
+  }
+
+  private modAbsDir(mod: ModManifest): string {
+    return path.join(this.zzmiRootPath, mod.install_path);
+  }
+
+  /** Installed mods for one agent and the parts each one can donate. */
+  public getWorkshopCatalog(agentId: string): WorkshopCatalogEntry[] {
+    const index = this.workshopPartIndex(agentId);
+    return this.scanInstalledMods()
+      .filter((m) => m.agent_id === agentId)
+      .map((m) => ({
+        mod_uuid: m.mod_uuid,
+        title: m.title,
+        author: m.author,
+        gamebanana_id: m.gamebanana_id,
+        thumbnail_url: m.thumbnail_url,
+        is_nsfw: Boolean(m.is_nsfw),
+        is_workshop: (m.tags || []).includes('Workshop'),
+        parts: analyzeModParts(this.modAbsDir(m), index),
+      }))
+      .filter((e) => e.parts.length > 0)
+      .sort((a, b) => a.title.localeCompare(b.title));
+  }
+
+  /**
+   * Labels a Workshop mod. Any source mod already flagged (GameBanana content ratings,
+   * keywords, or the AI image check) makes the new mod NSFW too. Labels only ever get added.
+   */
+  private async workshopNsfwCheck(name: string, sources: ModManifest[], markNsfw: boolean): Promise<string[]> {
+    const reasons: string[] = [];
+    if (markNsfw) reasons.push('Marked by you');
+    if (NSFW_KEYWORD_REGEX.test(name)) reasons.push('The name suggests adult content');
+    for (const src of sources) {
+      if (src.is_nsfw) {
+        reasons.push(`"${src.title}" is labeled NSFW or skimpy`);
+        continue;
+      }
+      if (src.gamebanana_id && src.thumbnail_url?.startsWith('http')) {
+        try {
+          const vision = await moderateModThumbnailVision({
+            id: src.gamebanana_id,
+            thumbnail_url: src.thumbnail_url,
+            title: src.title,
+            category: '',
+          } as any);
+          if (vision.isNsfw) reasons.push(`AI image check flagged "${src.title}" (${vision.reason})`);
+        } catch {
+          // Image check unavailable; keyword and rating labels still apply.
+        }
+      }
+    }
+    return [...new Set(reasons)];
+  }
+
+  public async buildWorkshopMod(req: WorkshopBuildRequest): Promise<WorkshopBuildResponse> {
+    const hashDb = this.getHashDb();
+    const agent = hashDb.agents[req.agentId];
+    if (!agent) throw new Error('Pick an agent first.');
+    const name = safeFolderName(req.name || '');
+    if (!req.name?.trim()) throw new Error('Give your mod a name.');
+
+    const mods = this.scanInstalledMods();
+    const byUuid = new Map(mods.map((m) => [m.mod_uuid, m]));
+    const picks: WorkshopPick[] = req.picks.map((p) => {
+      const mod = byUuid.get(p.modUuid);
+      if (!mod) throw new Error('One of the mods you picked from was removed. Pick that part again.');
+      if (mod.agent_id !== req.agentId) throw new Error(`"${mod.title}" isn't a ${agent.display_name} mod.`);
+      return {
+        part: p.part,
+        modDir: this.modAbsDir(mod),
+        source: { title: mod.title, author: mod.author, gamebanana_id: mod.gamebanana_id, mod_uuid: mod.mod_uuid },
+      };
+    });
+    const sources = [...new Set(req.picks.map((p) => byUuid.get(p.modUuid)!))];
+
+    const nsfwReasons = await this.workshopNsfwCheck(name, sources, Boolean(req.markNsfw));
+    const isNsfw = nsfwReasons.length > 0;
+    const recipe: WorkshopRecipe = {
+      format: 'proxylaunch-recipe',
+      version: 1,
+      name,
+      agent_id: req.agentId,
+      is_nsfw: isNsfw,
+      created_at: new Date().toISOString(),
+      parts: picks.map((p) => ({
+        part: p.part,
+        source: { title: p.source.title, author: p.source.author, gamebanana_id: p.source.gamebanana_id },
+      })),
+    };
+
+    const agentDir = path.join(this.zzmiRootPath, 'Mods', '_ZZZMM_Managed', agent.folder_name);
+    for (const existing of [name, `DISABLED_${name}`]) {
+      if (fs.existsSync(path.join(agentDir, existing))) {
+        throw new Error('You already have a mod with this name for this agent. Pick another name.');
+      }
+    }
+    const folder = req.activate ? name : `DISABLED_${name}`;
+    const outDir = path.join(agentDir, folder);
+
+    const built = buildWorkshopMod({
+      name,
+      agentName: agent.display_name,
+      picks,
+      partIndex: this.workshopPartIndex(req.agentId),
+      outDir,
+      recipe,
+    });
+
+    const firstThumb = sources.find((s) => s.thumbnail_url?.startsWith('http'))?.thumbnail_url;
+    const credits = recipe.parts.map((p) => `${p.part} from "${p.source.title}"${p.source.author ? ` by ${p.source.author}` : ''}`);
+    fs.writeFileSync(
+      path.join(outDir, 'mod.json'),
+      JSON.stringify(
+        {
+          title: name,
+          author: 'You (Workshop)',
+          agent_id: req.agentId,
+          is_nsfw: isNsfw,
+          thumbnail_url: firstThumb,
+          description: `Made in the Mod Workshop. ${credits.join('; ')}.`,
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
+
+    // Tag it so the Library and Workshop can tell it apart.
+    let created = this.scanInstalledMods().find((m) => path.resolve(this.modAbsDir(m)) === path.resolve(outDir)) ?? null;
+    if (created) {
+      try {
+        const manifestPath = path.join(outDir, 'mod_manifest.json');
+        const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+        manifest.tags = ['Workshop', agent.display_name];
+        manifest.is_nsfw = isNsfw;
+        manifest.in_h_swap_cycle = false;
+        fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
+      } catch {
+        // tags are cosmetic
+      }
+    }
+
+    if (req.activate && created) {
+      for (const other of this.scanInstalledMods()) {
+        if (other.agent_id === req.agentId && other.enabled && other.mod_uuid !== created.mod_uuid) {
+          try {
+            this.toggleModEnabled(other.mod_uuid);
+          } catch {
+            // leave it on if it can't be toggled
+          }
+        }
+      }
+    }
+
+    this.syncModsToXxmiLauncher();
+    created = this.scanInstalledMods().find((m) => path.resolve(this.modAbsDir(m)) === path.resolve(outDir)) ?? created;
+    this.addLog(
+      'info',
+      'FAIRY_CORE',
+      `Workshop: built "${name}" for ${agent.display_name} from ${sources.length} mod(s), ${built.sectionsWritten} sections, ${built.filesCopied} files.`
+    );
+    return {
+      mod: created,
+      shareCode: encodeRecipe(recipe),
+      isNsfw,
+      nsfwReasons,
+      warnings: built.warnings,
+      missingFiles: built.missingFiles,
+    };
+  }
+
+  /** Share code for a Workshop mod (its recipe: which part came from which mod). */
+  public getWorkshopShareCode(modUuid: string): string {
+    const mod = this.scanInstalledMods().find((m) => m.mod_uuid === modUuid);
+    if (!mod) throw new Error('Mod not found.');
+    const recipePath = path.join(this.modAbsDir(mod), 'workshop_recipe.json');
+    if (!fs.existsSync(recipePath)) throw new Error('This mod wasn’t made in the Workshop.');
+    const recipe = JSON.parse(fs.readFileSync(recipePath, 'utf-8')) as WorkshopRecipe;
+    recipe.is_nsfw = recipe.is_nsfw || Boolean(mod.is_nsfw);
+    return encodeRecipe(recipe);
+  }
+
+  /** Matches a shared recipe against installed mods so it can be rebuilt here. */
+  public resolveWorkshopCode(code: string): WorkshopResolvedRecipe {
+    const recipe = decodeRecipe(code);
+    const hashDb = this.getHashDb();
+    if (!hashDb.agents[recipe.agent_id]) throw new Error('This recipe is for an agent ProxyLaunch doesn’t know yet. Update the app and try again.');
+    const index = this.workshopPartIndex(recipe.agent_id);
+    const mods = this.scanInstalledMods().filter((m) => m.agent_id === recipe.agent_id && !(m.tags || []).includes('Workshop'));
+    return {
+      recipe,
+      parts: recipe.parts.map((p) => {
+        const match =
+          (p.source.gamebanana_id && mods.find((m) => m.gamebanana_id === p.source.gamebanana_id)) ||
+          mods.find((m) => m.title.toLowerCase() === p.source.title.toLowerCase()) ||
+          null;
+        const hasPart = match ? analyzeModParts(this.modAbsDir(match), index).some((x) => x.name === p.part) : false;
+        return { part: p.part, source: p.source, modUuid: match ? match.mod_uuid : null, hasPart };
+      }),
+    };
+  }
+}

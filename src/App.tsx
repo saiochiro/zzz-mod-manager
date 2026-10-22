@@ -10,6 +10,7 @@ import { LibraryScreen } from './screens/LibraryScreen';
 import { SyncScreen, FolderStatus } from './screens/SyncScreen';
 import { ThemesScreen } from './screens/ThemesScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
+import { WorkshopScreen } from './screens/WorkshopScreen';
 import { fairyClient, FullAppState } from './services/fairyClient';
 import {
   AgentHashEntry,
@@ -170,17 +171,9 @@ const AppInner: React.FC = () => {
 
       refreshFolderStatus();
 
-      // First launch: show the setup wizard, unless this is an existing user
-      // whose game, XXMI and mods are already in place.
-      if (!isSetupDone()) {
-        fairyClient
-          .getSetupStatus()
-          .then((s) => {
-            if (s.game.ok && s.loader.ok && s.zzmi.ok && s.modsCount > 0) markSetupDone();
-            else setSetupOpen(true);
-          })
-          .catch(() => setSetupOpen(true));
-      }
+      // Show the tutorial on first launch, and once more for everyone whenever
+      // it gets a new step (see SETUP_KEY in SetupWizard).
+      if (!isSetupDone()) setSetupOpen(true);
 
       // The feed loads separately so a slow network never blocks the library.
       fairyClient
@@ -1032,6 +1025,7 @@ const AppInner: React.FC = () => {
           onLaunch={handleLaunchGame}
           onReloadInGame={handleSendF10}
           isLaunching={isLaunching}
+          showWorkshop={Boolean(config.workshopEnabled)}
         />
 
         <main className="main" key={screen}>
@@ -1138,6 +1132,25 @@ const AppInner: React.FC = () => {
             />
           )}
 
+          {screen === 'workshop' && config.workshopEnabled && (
+            <WorkshopScreen
+              theme={theme}
+              mods={mods}
+              hashDb={hashDb}
+              nsfwFilterState={nsfwFilterState}
+              onState={setAppState}
+              onOpenLibrary={() => setScreen('library')}
+              onDownloadGameBananaMod={async (id) => {
+                try {
+                  const item = await fairyClient.fetchGameBananaMod(id);
+                  await handleInstallFromGameBanana(item);
+                } catch (err) {
+                  notify({ tone: 'error', title: 'Couldn’t download that mod', message: errMsg(err) });
+                }
+              }}
+            />
+          )}
+
           {screen === 'settings' && (
             <SettingsScreen
               appUpdate={appUpdate.status}
@@ -1199,6 +1212,7 @@ const AppInner: React.FC = () => {
 
       <SetupWizard
         open={setupOpen}
+        workshopEnabled={Boolean(appState?.config.workshopEnabled)}
         activeTheme={activeTheme}
         onThemeChange={handleThemeChange}
         onSaveConfig={async (partial) => {

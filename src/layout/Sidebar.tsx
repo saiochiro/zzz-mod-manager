@@ -4,6 +4,7 @@ import {
   Check,
   ChevronDown,
   Compass,
+  FlaskConical,
   Library,
   Loader2,
   Palette,
@@ -20,7 +21,7 @@ import { Motif } from '../themes/Motif';
 import type { MotifKind } from '../themes/types';
 import { usePopover } from '../ui';
 
-export type ScreenId = 'library' | 'browse' | 'sync' | 'themes' | 'settings';
+export type ScreenId = 'library' | 'browse' | 'sync' | 'themes' | 'workshop' | 'settings';
 
 export type SyncHealth = 'ok' | 'warning' | 'error' | 'busy' | 'unknown';
 
@@ -46,6 +47,8 @@ interface SidebarProps {
   onLaunch: (mode: 'modded' | 'vanilla') => void;
   onReloadInGame: () => void;
   isLaunching: boolean;
+  /** Experimental Mod Workshop page is turned on in Settings. */
+  showWorkshop?: boolean;
 }
 
 const BUILT_IN_PROFILES = ['Default', 'Stream Safe', 'Main Team'];
@@ -55,6 +58,7 @@ const NAV: Array<{ id: ScreenId; label: string; icon: React.ComponentType<{ clas
   { id: 'browse', label: 'Browse', icon: Compass },
   { id: 'sync', label: 'Sync', icon: RefreshCw },
   { id: 'themes', label: 'Themes', icon: Palette },
+  { id: 'workshop', label: 'Workshop', icon: FlaskConical },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
@@ -280,7 +284,7 @@ export const Sidebar: React.FC<SidebarProps> = (props) => {
       <ProfileSwitcher {...props} />
 
       <nav className="nav">
-        {NAV.map((item) => {
+        {NAV.filter((item) => item.id !== 'workshop' || props.showWorkshop).map((item) => {
           const Icon = item.icon;
           const active = screen === item.id;
           return (
