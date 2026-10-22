@@ -74,11 +74,6 @@ export function rateImage(s: NsfwScores): ImageRating {
   return 'unsure';
 }
 
-/** Stricter bar for ADDING a label to a mod nobody flagged (fewer false alarms). */
-export function clearlyNsfw(s: NsfwScores): boolean {
-  return s.porn + s.hentai >= 0.8 || s.porn >= 0.6 || s.sexy >= 0.85;
-}
-
 export interface NsfwEvidence {
   /** Labeled NSFW before the AI looked (GameBanana ratings, keywords). */
   flagged: boolean;
@@ -105,10 +100,9 @@ export function decideNsfwLevel(e: NsfwEvidence): NsfwVerdict {
   }
   const [cover, ...rest] = e.images.map(rateImage);
 
-  if (!e.flagged) {
-    if (clearlyNsfw(e.images[0])) return { level: 'nsfw', reason: 'The AI check found nudity or skimpy clothing in the cover picture.' };
-    return { level: 'sfw', reason: 'The AI check found nothing NSFW in the cover picture.' };
-  }
+  // The AI check only double-checks existing labels. It never adds one: image models like this
+  // one sometimes mistake clothed anime-style characters for NSFW.
+  if (!e.flagged) return { level: 'sfw', reason: 'Not labeled NSFW.' };
 
   if (cover === 'explicit') return { level: 'nsfw', reason: 'The AI check found nudity in the cover picture.' };
   if (cover === 'skimpy') return { level: 'nsfw', reason: 'The AI check found skimpy clothing in the cover picture.' };

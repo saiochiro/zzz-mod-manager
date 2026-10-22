@@ -151,7 +151,7 @@ export interface AppConfig {
   hideNsfw?: boolean;
   nsfwMode?: 'hide' | 'blur';
   nsfwFilterState?: NsfwFilterState; // 'hide' | 'toggle' | 'blur' | 'show'
-  /** Run the on-device AI check on mods labeled NSFW (and on covers of unlabeled ones). Default on. */
+  /** Run the on-device AI check on mods labeled NSFW. Default on. */
   nsfwAiCheck?: boolean;
   singleActivePerAgent?: boolean;
   activeProfile?: string;

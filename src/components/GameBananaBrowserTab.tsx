@@ -410,7 +410,7 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
     }
   };
 
-  // On-device AI check of NSFW labels for what's loaded (flagged mods first, then covers of the rest).
+  // On-device AI check of NSFW labels for what's loaded (only mods labeled NSFW).
   useEffect(() => {
     if (!nsfwAiCheck) return;
     queueNsfwReview(

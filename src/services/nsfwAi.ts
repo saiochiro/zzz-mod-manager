@@ -107,10 +107,11 @@ export function onNsfwReviewed(fn: Listener): () => void {
   return () => listeners.delete(fn);
 }
 
-/** Adds mods to check. Flagged mods have every screenshot checked, others just the cover. */
+/** Adds mods labeled NSFW to check (every screenshot). Unlabeled mods are skipped. */
 export function queueNsfwReview(items: NsfwReviewItem[]): void {
   if (!nsfwAiAvailable()) return;
   for (const it of items) {
+    if (!it.flagged) continue;
     if (queued.has(it.key) || done.has(it.key)) continue;
     const images = it.images.filter((u) => u && !u.startsWith('data:image/svg'));
     if (images.length === 0) continue;

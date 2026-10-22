@@ -46,11 +46,8 @@ describe('NSFW verdicts', () => {
     expect(decideNsfwLevel({ ...base, images: [] }).level).toBe('nsfw');
   });
 
-  it('only adds a label to an unflagged mod when the cover is clearly NSFW', () => {
-    const unflagged = { ...base, flagged: false };
-    expect(decideNsfwLevel({ ...unflagged, images: [meh] }).level).toBe('sfw');
-    expect(decideNsfwLevel({ ...unflagged, images: [skimpy] }).level).toBe('sfw');
-    expect(decideNsfwLevel({ ...unflagged, images: [{ ...nude, hentai: 0.85 }] }).level).toBe('nsfw');
+  it('never adds a label to a mod that had none', () => {
+    expect(decideNsfwLevel({ ...base, flagged: false, images: [nude] }).level).toBe('sfw');
   });
 
   it('spots toggle wording on mod pages and hotkeys', () => {
