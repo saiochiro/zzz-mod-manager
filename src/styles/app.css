@@ -4383,7 +4383,12 @@ html[data-scene] .card {
   }
 }
 .sx-orbit {
-  animation: sx-road 30s linear infinite;
+  animation: sx-orbit 30s linear infinite;
+}
+@keyframes sx-orbit {
+  to {
+    stroke-dashoffset: -580;
+  }
 }
 .sx-laser {
   animation: sx-laser 7s ease-in-out infinite alternate;
@@ -4522,7 +4527,7 @@ html[data-scene] .card {
     transform: translate(900px, 120px);
   }
   100% {
-    transform: translate(100px, 170px);
+    transform: translate(-400px, 180px);
   }
 }
 .sx-swing {
@@ -4602,4 +4607,110 @@ html[data-scene] .card {
 .sx-grain--light {
   opacity: 0.06;
   mix-blend-mode: multiply;
+}
+
+/* Rain v2: streak tiles moving exactly one tile per loop (seamless) */
+.sx-rainwrap {
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+}
+.sx-rain2 {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(-1 * var(--tile));
+  bottom: 0;
+  background-repeat: repeat;
+  animation: sx-rain2 0.55s linear infinite;
+  opacity: 0.7;
+}
+.sx-rain2--near {
+  animation-duration: 0.42s;
+  opacity: 0.85;
+}
+@keyframes sx-rain2 {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(0, var(--tile), 0);
+  }
+}
+.sx-splash {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sx-splash 1.2s ease-out infinite;
+}
+@keyframes sx-splash {
+  0% {
+    transform: scale(0.2);
+    opacity: 0.9;
+  }
+  70% {
+    opacity: 0.35;
+  }
+  100% {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
+.sx-neon {
+  animation: sx-neon 6s steps(1) infinite;
+}
+@keyframes sx-neon {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  62% {
+    opacity: 0.35;
+  }
+  64% {
+    opacity: 1;
+  }
+  66% {
+    opacity: 0.25;
+  }
+  68% {
+    opacity: 1;
+  }
+}
+.sx-approach {
+  animation: sx-approach 9s ease-in infinite;
+}
+@keyframes sx-approach {
+  0% {
+    transform: translate(0, 0) scale(0.6);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(70px, 240px) scale(3);
+    opacity: 0;
+  }
+}
+.sx-depart {
+  animation: sx-depart 8s ease-out infinite;
+}
+@keyframes sx-depart {
+  0% {
+    transform: translate(-60px, 260px) scale(2.4);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translate(0, 0) scale(0.4);
+    opacity: 0;
+  }
 }

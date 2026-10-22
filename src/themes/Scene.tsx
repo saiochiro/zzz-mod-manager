@@ -309,17 +309,20 @@ const Stars: React.FC<{ seed: string; count?: number; maxY?: number; color?: str
   );
 };
 
-/** Soft drifting cloud/mist band. */
+/** Soft cloud/mist band exactly 1600 wide, so two copies tile seamlessly while drifting. */
 function cloudPath(seed: string, y: number, h: number): string {
   const r = rng(hash(seed + 'cloud'));
-  let d = `M-40 ${y + h}`;
-  let x = -40;
-  while (x < 3240) {
+  const widths: number[] = [];
+  let total = 0;
+  while (total < 1600) {
     const w = 80 + r() * 160;
-    d += ` q${w / 2} ${-h * (0.6 + r() * 0.8)} ${w} 0`;
-    x += w;
+    widths.push(w);
+    total += w;
   }
-  return d + ` L3240 ${y + h + 40} L-40 ${y + h + 40} Z`;
+  const k = 1600 / total;
+  let d = `M0 ${y + h}`;
+  for (const w of widths) d += ` q${(w * k) / 2} ${-h * (0.6 + r() * 0.8)} ${w * k} 0`;
+  return d + ` L1600 ${y + h + 60} L0 ${y + h + 60} Z`;
 }
 
 const Clouds: React.FC<{ seed: string; y: number; h: number; fill: string; opacity: number; speed: number; reverse?: boolean; blur?: number }> = ({
@@ -333,7 +336,10 @@ const Clouds: React.FC<{ seed: string; y: number; h: number; fill: string; opaci
   blur = 6,
 }) => (
   <g className={`sx-drift ${reverse ? 'sx-drift--rev' : ''}`} style={{ animationDuration: `${speed}s` }}>
-    <path d={cloudPath(seed, y, h)} fill={fill} opacity={opacity} style={{ filter: `blur(${blur}px)` }} />
+    <g opacity={opacity} style={{ filter: `blur(${blur}px)` }}>
+      <path d={cloudPath(seed, y, h)} fill={fill} />
+      <path d={cloudPath(seed, y, h)} fill={fill} transform="translate(1600 0)" />
+    </g>
   </g>
 );
 
@@ -451,6 +457,57 @@ const Spot: React.FC<{ x: number; y: number; color: string; length?: number; wid
   </g>
 );
 
+/** Falling rain: a tiled sheet of streaks, slanted, moving exactly one tile per loop. */
+function rainTile(seed: string, w: number, h: number, n: number, len: [number, number], width: number, color: string): string {
+  const r = rng(hash(seed + 'rain'));
+  const lines = Array.from({ length: n }, () => {
+    const x = (r() * w).toFixed(1);
+    const y = (r() * h).toFixed(1);
+    const l = (len[0] + r() * (len[1] - len[0])).toFixed(1);
+    const o = (0.25 + r() * 0.6).toFixed(2);
+    return `<line x1='${x}' y1='${y}' x2='${x}' y2='${(Number(y) + Number(l)).toFixed(1)}' stroke='${color}' stroke-opacity='${o}' stroke-width='${width}' stroke-linecap='round'/>`;
+  });
+  // Draw each streak again one tile higher so streaks crossing the bottom edge wrap cleanly.
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}'>${lines.join('')}<g transform='translate(0 -${h})'>${lines.join('')}</g></svg>`;
+  return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}")`;
+}
+
+const Rain: React.FC<{ seed: string; color?: string; near?: boolean; angle?: number }> = ({ seed, color = '#c8d6ff', near, angle = 12 }) => {
+  const tileH = near ? 360 : 240;
+  const bg = useMemo(
+    () => rainTile(seed + (near ? 'n' : 'f'), near ? 260 : 180, tileH, near ? 14 : 22, near ? [26, 46] : [12, 24], near ? 1.6 : 1, color),
+    [seed, near, color, tileH]
+  );
+  return (
+    <div className="sx-rainwrap" style={{ transform: `rotate(${angle}deg)` }}>
+      <div className={`sx-rain2 ${near ? 'sx-rain2--near' : ''}`} style={{ backgroundImage: bg, ['--tile' as string]: `${tileH}px` } as React.CSSProperties} />
+    </div>
+  );
+};
+
+/** Little splash rings where rain lands (inside a Stage). */
+const Splashes: React.FC<{ seed: string; y: [number, number]; x?: [number, number]; count?: number; color?: string }> = ({ seed, y, x = [260, 1600], count = 26, color = '#d6e2ff' }) => {
+  const r = rng(hash(seed + 'splash'));
+  return (
+    <g>
+      {Array.from({ length: count }, (_, i) => (
+        <ellipse
+          key={i}
+          cx={x[0] + r() * (x[1] - x[0])}
+          cy={y[0] + r() * (y[1] - y[0])}
+          rx={7 + r() * 6}
+          ry={1.6 + r() * 1.2}
+          fill="none"
+          stroke={color}
+          strokeWidth="1.2"
+          className="sx-splash"
+          style={{ animationDelay: `${-r() * 1.4}s`, animationDuration: `${0.9 + r() * 0.7}s` }}
+        />
+      ))}
+    </g>
+  );
+};
+
 /** Film grain + soft light falloff shared by every scene. */
 const Atmos: React.FC<{ light?: boolean }> = ({ light }) => <div className={`sx-grain ${light ? 'sx-grain--light' : ''}`} />;
 
@@ -565,6 +622,9 @@ function sceneFor(t: ThemeDefinition): React.ReactNode {
             <path d="M1300 610 L1340 540 L1470 540 L1500 610 Z" fill="#2a110a" />
             <path d="M560 900 L1150 610 L1210 610 L1520 900 Z" fill={u('road')} />
             <path d="M1180 612 L1180 900" stroke="#ffd166" strokeWidth="5" strokeDasharray="26 34" className="sx-road" opacity="0.8" />
+            <g className="sx-depart" style={{ transformOrigin: '1180px 612px' }}>
+              <circle cx="1180" cy="612" r="5" fill="#ff3d1f" style={{ filter: 'drop-shadow(0 0 8px #ff3d1f)' }} />
+            </g>
             <FlameWall id={id} base={900} colors={['#ffe066', '#ff7a1a', '#ff3d1f']} height={240} seed={id} />
           </Stage>
           <div className="sx-haze" />
@@ -595,13 +655,21 @@ function sceneFor(t: ThemeDefinition): React.ReactNode {
             <g transform="translate(1380 560)" fill="#07040b">
               <path d="M-50 0 L-46 -96 Q0 -116 46 -96 L50 0 Z M-44 0 L-60 120 L-52 120 L-36 0 Z M44 0 L60 120 L52 120 L36 0 Z M-40 50 L40 50 L40 56 L-40 56 Z" />
             </g>
+            {/* neon sign */}
+            <g transform="translate(1040 470)" className="sx-neon">
+              <rect x="-36" y="-28" width="72" height="56" rx="10" fill="none" stroke={c.secondary} strokeWidth="4" style={{ filter: `drop-shadow(0 0 8px ${c.secondary})` }} />
+              <path d="M0 -16 L18 -3 L0 17 L-18 -3 Z M-18 -3 L18 -3 M-8 -3 L0 17 L8 -3 M-8 -3 L0 -16 L8 -3" stroke={c.accent} strokeWidth="3" fill="none" strokeLinejoin="round" style={{ filter: `drop-shadow(0 0 6px ${c.accent})` }} />
+            </g>
+            <Splashes seed={id} y={[812, 890]} color="#f0d8ff" />
             <g className="sx-laser">
               {[0, 1, 2, 3, 4].map((i) => (
                 <line key={i} x1={300 + i * 260} y1="900" x2={700 + i * 230} y2="420" stroke="#ff3d7f" strokeWidth="2" opacity="0.5" style={{ filter: 'drop-shadow(0 0 6px #ff3d7f)' }} />
               ))}
             </g>
           </Stage>
-          <Particles glyph="gem" count={10} colors={[c.accent, '#ffffff', c.secondary]} motion="drift" size={[10, 16]} speed={[20, 34]} opacity={[0.3, 0.7]} seed={id} />
+          <Rain seed={id} color="#e6d4ff" />
+          <Rain seed={id} color="#f3e8ff" near />
+          <Particles glyph="gem" count={6} colors={[c.accent, '#ffffff', c.secondary]} motion="drift" size={[10, 16]} speed={[20, 34]} opacity={[0.3, 0.7]} seed={id} />
         </>
       );
 
@@ -711,11 +779,12 @@ function sceneFor(t: ThemeDefinition): React.ReactNode {
               <rect x="600" y="772" width="8" height="90" fill="#ffd27a" opacity="0.6" />
               <rect x="1320" y="772" width="8" height="90" fill="#ffd27a" opacity="0.5" />
             </g>
+            <Splashes seed={id} y={[790, 890]} />
             <circle cx="1000" cy="740" r="140" fill={c.primary} className="sx-siren-r" style={{ filter: 'blur(50px)' }} />
             <circle cx="1060" cy="740" r="140" fill="#3d7bff" className="sx-siren-b" style={{ filter: 'blur(50px)' }} />
           </Stage>
-          <div className="sx-rain" />
-          <div className="sx-rain sx-rain--near" />
+          <Rain seed={id} />
+          <Rain seed={id} near />
         </>
       );
 
@@ -991,7 +1060,9 @@ function sceneFor(t: ThemeDefinition): React.ReactNode {
             <path d="M-20 900 L-20 680 L1640 680 L1640 900 Z" fill={u('ground')} />
             <path d="M620 900 L1130 640 L1170 640 L1480 900 Z" fill="#4a2e1c" />
             <path d="M1150 642 L1150 900" stroke="#f8f0e1" strokeWidth="5" strokeDasharray="22 30" className="sx-road" opacity="0.85" />
-            <circle cx="1150" cy="652" r="4" fill="#fffbe8" className="sx-twinkle" style={{ filter: 'drop-shadow(0 0 6px #fff)' }} />
+            <g className="sx-approach" style={{ transformOrigin: '1150px 652px' }}>
+              <circle cx="1150" cy="652" r="4" fill="#fffbe8" style={{ filter: 'drop-shadow(0 0 6px #fff)' }} />
+            </g>
           </Stage>
           <div className="sx-dust" />
           <Particles glyph="dot" count={30} colors={[c.primary, c.secondary, '#f8e4c2']} motion="drift" size={[3, 8]} speed={[8, 16]} opacity={[0.2, 0.5]} seed={id} />
