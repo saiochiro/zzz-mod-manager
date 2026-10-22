@@ -252,6 +252,8 @@ const AppInner: React.FC = () => {
           modUuid: m.mod_uuid,
           title: m.title,
           description: m.description,
+          category: m.category_tag || 'Skins',
+          pictureCount: (m.preview_images || []).length || 1,
           flagged: Boolean(m.nsfw_flagged ?? m.is_nsfw),
           images: [m.thumbnail_url, ...(m.preview_images || [])].filter((u, i, a): u is string => Boolean(u) && a.indexOf(u) === i),
         }))

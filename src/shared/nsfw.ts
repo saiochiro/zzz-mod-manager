@@ -83,6 +83,12 @@ export interface NsfwEvidence {
   toggleHint: boolean;
   /** GameBanana content ratings list nudity or sexual content (not just skimpy clothing). */
   strongRating: boolean;
+  /** A character skin. Only skins can be "NSFW toggle"; UI and other mods are SFW or 18+. Default true. */
+  isSkin?: boolean;
+  /** The title or page reads like a nude edit (nude, naked, topless...) and doesn't say it's optional. */
+  nudeEditText?: boolean;
+  /** How many pictures the mod page has. A real outfit mod usually shows it off from several angles. */
+  pictureCount?: number;
 }
 
 export interface NsfwVerdict {
@@ -92,41 +98,67 @@ export interface NsfwVerdict {
 
 const n = (k: number, w: string) => `${k} ${w}${k === 1 ? '' : 's'}`;
 
+/**
+ * "NSFW toggle" is for real outfit mods that are only a little NSFW: safe by default with an
+ * NSFW option, or a full new outfit that's a bit revealing. Nude edits and mods whose pictures
+ * are mostly nudity stay 18+.
+ */
 export function decideNsfwLevel(e: NsfwEvidence): NsfwVerdict {
   if (e.images.length === 0) {
     return e.flagged
       ? { level: 'nsfw', reason: 'No pictures to check, so the label stays.' }
       : { level: 'sfw', reason: 'No pictures to check.' };
   }
-  const [cover, ...rest] = e.images.map(rateImage);
-
   // The AI check only double-checks existing labels. It never adds one: image models like this
   // one sometimes mistake clothed anime-style characters for NSFW.
   if (!e.flagged) return { level: 'sfw', reason: 'Not labeled NSFW.' };
 
+  const rated = e.images.map(rateImage);
+  const [cover, ...rest] = rated;
+  const total = rated.length;
+  const explicit = rated.filter((r) => r === 'explicit').length;
+  const allClean = rated.every((r) => r === 'clean');
+
+  if (e.isSkin === false) {
+    return allClean
+      ? { level: 'sfw', reason: `The AI check found nothing NSFW in ${n(total, 'picture')}, so the label was removed.` }
+      : { level: 'nsfw', reason: 'Only character skins can be NSFW toggle. This mod has NSFW pictures, so it stays 18+.' };
+  }
   if (cover === 'explicit') return { level: 'nsfw', reason: 'The AI check found nudity in the cover picture.' };
-  if (cover === 'skimpy') return { level: 'nsfw', reason: 'The AI check found skimpy clothing in the cover picture.' };
-  if (cover === 'unsure') return { level: 'nsfw', reason: "The AI check couldn't clearly tell if the cover is safe, so the label stays." };
+  if (e.nudeEditText && !allClean) return { level: 'nsfw', reason: 'This looks like a nude edit rather than a new outfit, so it stays 18+.' };
+  if (explicit / total > 0.34) return { level: 'nsfw', reason: `${n(explicit, 'picture')} out of ${total} show nudity, so it stays 18+.` };
+
+  const effort = (e.pictureCount ?? total) >= 3 && !e.nudeEditText;
+  const slight = explicit <= 1 && explicit / total <= 0.2;
+
+  if (cover === 'skimpy' || cover === 'unsure') {
+    if (effort && slight) {
+      return {
+        level: 'toggle',
+        reason:
+          cover === 'skimpy'
+            ? 'A full outfit mod that is a bit revealing, so it shows with NSFW toggles.'
+            : "A full outfit mod. The AI check wasn't sure about the cover, so it shows with NSFW toggles, not as SFW.",
+      };
+    }
+    return {
+      level: 'nsfw',
+      reason: cover === 'skimpy' ? 'The cover is revealing and the mod doesn’t look like a full outfit, so it stays 18+.' : "The AI check couldn't tell if the cover is safe, so the label stays.",
+    };
+  }
 
   // Safe cover from here on.
   const hot = rest.filter((r) => r === 'explicit' || r === 'skimpy').length;
   const unsure = rest.filter((r) => r === 'unsure').length;
-  if (hot > 0) {
-    return { level: 'toggle', reason: `The cover is safe, but ${n(hot, 'screenshot')} show NSFW options.` };
-  }
-  if (unsure > 0) {
-    return { level: 'toggle', reason: `The cover is safe, but the AI check wasn't sure about ${n(unsure, 'screenshot')}.` };
-  }
+  if (hot > 0) return { level: 'toggle', reason: `The cover is safe, but ${n(hot, 'screenshot')} show NSFW options.` };
+  if (unsure > 0) return { level: 'toggle', reason: `The cover is safe, but the AI check wasn't sure about ${n(unsure, 'screenshot')}.` };
   if (e.toggleHint) {
-    return { level: 'toggle', reason: `All ${n(e.images.length, 'picture')} look safe, and the mod mentions an NSFW toggle or option.` };
+    return { level: 'toggle', reason: `All ${n(total, 'picture')} look safe, and the mod mentions an NSFW toggle or option.` };
   }
   if (e.strongRating) {
-    return {
-      level: 'toggle',
-      reason: `All ${n(e.images.length, 'picture')} look safe, but GameBanana lists nudity, so it's likely a toggle.`,
-    };
+    return { level: 'toggle', reason: `All ${n(total, 'picture')} look safe, but GameBanana lists nudity, so it's likely a toggle.` };
   }
-  return { level: 'sfw', reason: `The AI check found nothing NSFW in ${n(e.images.length, 'picture')}, so the label was removed.` };
+  return { level: 'sfw', reason: `The AI check found nothing NSFW in ${n(total, 'picture')}, so the label was removed.` };
 }
 
 /* ------------------------------------------------------------------ */
@@ -139,6 +171,10 @@ export const TOGGLE_TEXT_RE =
 
 /** Hotkey names inside a mod that switch on NSFW content. */
 export const TOGGLE_KEY_RE = /nud(e|ity)|nsfw|naked|lewd|topless|bottomless|nipple|uncensor|strip|lingerie|underwear|xxx|18\+|r18/i;
+
+/** Titles and pages of nude edits (only counts when the page doesn't say the NSFW part is optional). */
+export const NUDE_EDIT_RE =
+  /\b(nude|naked|nudity|topless|bottomless|nipples?|uncensored|futa(nari)?|hentai|porn|pussy|penis|xxx|lewd|stripped|no\s*clothes|without\s*clothes|bare\s*(body|skin))\b/i;
 
 /** GameBanana content-rating labels that mean more than skimpy clothing. */
 export const STRONG_RATING_RE = /nud(e|ity)|sexual|explicit|porn|genital|intercourse/i;

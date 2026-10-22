@@ -46,6 +46,23 @@ describe('NSFW verdicts', () => {
     expect(decideNsfwLevel({ ...base, images: [] }).level).toBe('nsfw');
   });
 
+  it('puts real outfit mods that are a bit revealing under NSFW toggle', () => {
+    // Like a full new outfit with a revealing cover, many screenshots, at most one nude shot.
+    const outfit = [skimpy, skimpy, clean, skimpy, nude, clean, skimpy, clean];
+    expect(decideNsfwLevel({ ...base, images: outfit.slice(0, 6), pictureCount: 16 }).level).toBe('toggle');
+    // Same pictures, but the page reads like a nude edit.
+    expect(decideNsfwLevel({ ...base, images: outfit.slice(0, 6), pictureCount: 16, nudeEditText: true }).level).toBe('nsfw');
+    // A revealing cover with just one or two pictures: not enough to tell, stays 18+.
+    expect(decideNsfwLevel({ ...base, images: [skimpy, clean], pictureCount: 2 }).level).toBe('nsfw');
+    // Mostly nudity.
+    expect(decideNsfwLevel({ ...base, images: [clean, nude, nude, clean], pictureCount: 10 }).level).toBe('nsfw');
+  });
+
+  it('only lets skins be NSFW toggle', () => {
+    expect(decideNsfwLevel({ ...base, images: [clean, nude, clean], isSkin: false }).level).toBe('nsfw');
+    expect(decideNsfwLevel({ ...base, images: [clean, clean], isSkin: false }).level).toBe('sfw');
+  });
+
   it('never adds a label to a mod that had none', () => {
     expect(decideNsfwLevel({ ...base, flagged: false, images: [nude] }).level).toBe('sfw');
   });

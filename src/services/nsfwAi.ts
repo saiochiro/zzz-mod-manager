@@ -81,6 +81,8 @@ export interface NsfwReviewItem {
   title: string;
   description?: string;
   contentRating?: string;
+  category?: string;
+  pictureCount?: number;
   /** Labeled NSFW before the check. */
   flagged: boolean;
   /** Cover first. */
@@ -161,6 +163,8 @@ async function pump() {
           title: it.title,
           description: it.description,
           contentRating: it.contentRating,
+          category: it.category,
+          pictureCount: it.pictureCount,
           scores,
         })) as NsfwReviewOutcome;
         done.add(it.key);

@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import {
   decideNsfwLevel,
+  NUDE_EDIT_RE,
   nsfwKeyOf,
   STRONG_RATING_RE,
   TOGGLE_KEY_RE,
@@ -40,7 +41,9 @@ export interface NsfwReviewFields {
   nsfw_flagged?: boolean;
 }
 
-const VERSION = 1;
+// 2: stricter rules (nude edits stay 18+, only skins can be NSFW toggle). Older AI results are
+// dropped so mods get checked again; your own calls are kept.
+const VERSION = 2;
 let filePath: string | null = null;
 const store = new Map<string, StoredVerdict>();
 
@@ -51,8 +54,10 @@ export function initNsfwReview(appDataPath: string): void {
     filePath = path.join(dir, 'nsfw_review.json');
     if (fs.existsSync(filePath)) {
       const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-      if (raw?.version === VERSION && raw.items && typeof raw.items === 'object') {
-        for (const [k, v] of Object.entries(raw.items)) store.set(k, v as StoredVerdict);
+      if (raw?.items && typeof raw.items === 'object') {
+        for (const [k, v] of Object.entries(raw.items)) {
+          if (raw.version === VERSION || (v as StoredVerdict).source === 'you') store.set(k, v as StoredVerdict);
+        }
       }
     }
   } catch (err) {
@@ -153,6 +158,10 @@ export interface NsfwReviewRequest {
   contentRating?: string;
   /** Names of the mod's hotkeys (installed mods only). */
   hotkeyNames?: string[];
+  /** Skins, UI, Audio, Weapons... (GameBanana category or the app's category tag). */
+  category?: string;
+  /** How many pictures the mod page has. */
+  pictureCount?: number;
   scores: NsfwScores[];
 }
 
@@ -165,7 +174,8 @@ export async function submitNsfwReview(req: NsfwReviewRequest): Promise<NsfwRevi
   const existing = store.get(req.key);
   if (existing?.source === 'you') return { key: req.key, level: existing.level, reason: existing.reason, source: 'you' };
 
-  let text = `${req.title} ${req.description ?? ''}`;
+  const ownText = `${req.title} ${req.description ?? ''}`;
+  let text = ownText;
   const ratings: string[] = req.contentRating ? [req.contentRating] : [];
   // Only worth a page fetch when the label might come off.
   if (req.flagged && req.gamebananaId) {
@@ -180,6 +190,9 @@ export async function submitNsfwReview(req: NsfwReviewRequest): Promise<NsfwRevi
     images: req.scores,
     toggleHint: TOGGLE_TEXT_RE.test(text) || (req.hotkeyNames ?? []).some((h) => TOGGLE_KEY_RE.test(h)),
     strongRating: ratings.some((r) => STRONG_RATING_RE.test(r)),
+    isSkin: !req.category || /skin|character|outfit/i.test(req.category),
+    nudeEditText: NUDE_EDIT_RE.test(ownText) && !TOGGLE_TEXT_RE.test(ownText),
+    pictureCount: req.pictureCount,
   });
   store.set(req.key, { ...verdict, source: 'ai', flagged: req.flagged, checkedAt: new Date().toISOString() });
   persist();

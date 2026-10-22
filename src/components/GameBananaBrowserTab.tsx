@@ -102,6 +102,53 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
   const [modalDescription, setModalDescription] = useState<string>('');
   const [isLoadingDetails, setIsLoadingDetails] = useState<boolean>(false);
 
+  const galleryImageList = useMemo(
+    () =>
+      galleryMod && galleryMod.preview_images && galleryMod.preview_images.length > 0
+        ? galleryMod.preview_images
+        : galleryMod
+        ? [galleryMod.thumbnail_url]
+        : [],
+    [galleryMod?.preview_images, galleryMod?.thumbnail_url, galleryMod?.id]
+  );
+  // The full mod page often arrives with a different picture list (bigger sizes, more shots).
+  // Stay on the picture you were looking at instead of jumping to another one.
+  const prevGalleryRef = React.useRef<{ id?: number; list: string[] }>({ list: [] });
+  useEffect(() => {
+    const prev = prevGalleryRef.current;
+    prevGalleryRef.current = { id: galleryMod?.id, list: galleryImageList };
+    if (!galleryMod || prev.id !== galleryMod.id || prev.list === galleryImageList) return;
+    const key = (u?: string) => (u || '').split('?')[0].split('/').pop()!.replace(/^\d+-\d+_/, '').toLowerCase();
+    setCurrentGalleryIdx((idx) => {
+      const cur = key(prev.list[idx]);
+      const found = galleryImageList.findIndex((u) => key(u) === cur);
+      return found >= 0 ? found : Math.min(idx, galleryImageList.length - 1);
+    });
+  }, [galleryImageList, galleryMod?.id]);
+  // Preload the pictures next to the current one so switching is instant.
+  useEffect(() => {
+    if (galleryImageList.length < 2) return;
+    const i = Math.min(currentGalleryIdx, galleryImageList.length - 1);
+    for (const d of [1, -1]) {
+      const img = new Image();
+      img.src = galleryImageList[(i + d + galleryImageList.length) % galleryImageList.length];
+    }
+  }, [currentGalleryIdx, galleryImageList]);
+  // Arrow keys flip through the pictures.
+  useEffect(() => {
+    if (!galleryMod || galleryImageList.length < 2) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const n = galleryImageList.length;
+        setCurrentGalleryIdx((p) => (Math.min(p, n - 1) + (e.key === 'ArrowRight' ? 1 : -1) + n) % n);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [galleryMod?.id, galleryImageList]);
+
   useEffect(() => {
     if (!galleryMod) {
       setModalDescription('');
@@ -422,6 +469,8 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
           title: m.title,
           description: m.description,
           contentRating: m.content_rating,
+          category: m.category_tag || 'Skins',
+          pictureCount: m.preview_images?.length ?? 1,
           flagged: Boolean(m.nsfw_flagged ?? m.is_nsfw),
           images: [m.thumbnail_url, ...(m.preview_images || [])].filter((u, i, a) => Boolean(u) && a.indexOf(u) === i),
         }))
@@ -518,12 +567,13 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
     quickTab === 'featured' && !debouncedSearch && selectedAgentId === 'ALL' && !selectedAuthor && spotlightMods.length >= 3;
   const showDirectory = quickTab === 'character' && selectedAgentId === 'ALL' && !selectedAuthor;
   const gridMods = showSpotlight ? displayedMods.filter((m) => !spotlightMods.some((s) => s.id === m.id)) : displayedMods;
-  const galleryImages =
-    galleryMod && galleryMod.preview_images && galleryMod.preview_images.length > 0
-      ? galleryMod.preview_images
-      : galleryMod
-      ? [galleryMod.thumbnail_url]
-      : [];
+  const galleryImages = galleryImageList;
+  const galleryIdx = Math.min(currentGalleryIdx, Math.max(0, galleryImages.length - 1));
+  const stepGallery = (dir: 1 | -1) =>
+    setCurrentGalleryIdx((prev) => {
+      const n = galleryImages.length;
+      return n ? (Math.min(prev, n - 1) + dir + n) % n : 0;
+    });
 
   return (
     <div className="screen">
@@ -956,25 +1006,18 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
             <div className="gallery">
               <div className="gallery__stage">
                 <div className="gallery__img">
-                  <img key={currentGalleryIdx} src={galleryImages[currentGalleryIdx] || galleryMod.thumbnail_url} alt={galleryMod.title} />
+                  <img key={galleryImages[galleryIdx]} src={galleryImages[galleryIdx] || galleryMod.thumbnail_url} alt={galleryMod.title} />
                   {galleryImages.length > 1 && (
                     <>
-                      <button
-                        className="gallery__nav"
-                        style={{ left: 8 }}
-                        aria-label="Previous image"
-                        onClick={() => setCurrentGalleryIdx((prev) => (prev === 0 ? galleryImages.length - 1 : prev - 1))}
-                      >
+                      <button className="gallery__nav" style={{ left: 8 }} aria-label="Previous image" onClick={() => stepGallery(-1)}>
                         <ChevronLeft />
                       </button>
-                      <button
-                        className="gallery__nav"
-                        style={{ right: 8 }}
-                        aria-label="Next image"
-                        onClick={() => setCurrentGalleryIdx((prev) => (prev === galleryImages.length - 1 ? 0 : prev + 1))}
-                      >
+                      <button className="gallery__nav" style={{ right: 8 }} aria-label="Next image" onClick={() => stepGallery(1)}>
                         <ChevronRight />
                       </button>
+                      <span className="gallery__count">
+                        {galleryIdx + 1} / {galleryImages.length}
+                      </span>
                     </>
                   )}
                 </div>
@@ -982,12 +1025,13 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
                   <div className="gallery__thumbs">
                     {galleryImages.map((img, idx) => (
                       <button
-                        key={idx}
-                        className={currentGalleryIdx === idx ? 'is-active' : ''}
+                        key={`${idx}-${img}`}
+                        className={galleryIdx === idx ? 'is-active' : ''}
                         onClick={() => setCurrentGalleryIdx(idx)}
                         aria-label={`Image ${idx + 1}`}
+                        ref={galleryIdx === idx ? (el) => el?.scrollIntoView({ block: 'nearest', inline: 'nearest' }) : undefined}
                       >
-                        <img src={img} alt="" />
+                        <img src={img} alt="" loading="lazy" />
                       </button>
                     ))}
                   </div>
