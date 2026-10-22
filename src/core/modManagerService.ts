@@ -96,23 +96,70 @@ function computeDirectorySizeBytes(dirPath: string): number {
  * Scans a mod directory (root and 1 level deep) for `preview.*`, `thumb.*`, `cover.*`,
  * or the first `.png`/`.jpg`/`.webp`/`.gif` image, returning a Data URL if found.
  */
-function resolveLocalModThumbnailDataUrl(modAbsDir: string): string | undefined {
-  const imageExts = ['.webp', '.png', '.jpg', '.jpeg', '.gif'];
-  const priorityPrefixes = ['preview', 'thumb', 'thumbnail', 'cover', 'icon'];
+/** Width/height from a PNG, JPEG, GIF or WebP header (null if unknown). */
+function readImageSize(buf: Buffer): { w: number; h: number } | null {
+  try {
+    if (buf.length > 24 && buf.readUInt32BE(0) === 0x89504e47) return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
+    if (buf.length > 10 && buf.toString('ascii', 0, 3) === 'GIF') return { w: buf.readUInt16LE(6), h: buf.readUInt16LE(8) };
+    if (buf.length > 30 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') {
+      const kind = buf.toString('ascii', 12, 16);
+      if (kind === 'VP8X') return { w: 1 + buf.readUIntLE(24, 3), h: 1 + buf.readUIntLE(27, 3) };
+      if (kind === 'VP8 ') return { w: buf.readUInt16LE(26) & 0x3fff, h: buf.readUInt16LE(28) & 0x3fff };
+      if (kind === 'VP8L') {
+        const b = buf.readUInt32LE(21);
+        return { w: (b & 0x3fff) + 1, h: ((b >> 14) & 0x3fff) + 1 };
+      }
+    }
+    if (buf[0] === 0xff && buf[1] === 0xd8) {
+      let i = 2;
+      while (i + 9 < buf.length) {
+        if (buf[i] !== 0xff) return null;
+        const marker = buf[i + 1];
+        const len = buf.readUInt16BE(i + 2);
+        if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
+          return { w: buf.readUInt16BE(i + 7), h: buf.readUInt16BE(i + 5) };
+        }
+        i += 2 + len;
+      }
+    }
+  } catch {
+    // unreadable header
+  }
+  return null;
+}
 
-  const readAsDataUrl = (filePath: string): string | undefined => {
+// Names modders give to textures rather than screenshots.
+const TEXTURE_NAME_RE =
+  /(diffuse|normal|light\s*map|lightmap|material|mask|ramp|shadow|stocking|texture|\btex\b|_tex|tex_|\b(d|n|lm|mt|sm)\b|_(d|n|lm|mt|sm)$|face|hair|body|eye|skin|head|metal|emiss|glow|alpha|atlas|uv|spec|rough|ao\b)/i;
+const PREVIEW_NAME_RE = /^(preview|thumb|thumbnail|cover|icon|screenshot|screen|showcase|banner|poster|promo|image|img|pic|photo)/i;
+
+function looksLikeTexture(filePath: string, buf: Buffer): boolean {
+  const base = path.basename(filePath, path.extname(filePath));
+  const folder = path.basename(path.dirname(filePath));
+  if (TEXTURE_NAME_RE.test(base) || /textures?|tex|buffers?|meshes/i.test(folder)) return true;
+  const size = readImageSize(buf);
+  if (!size) return false;
+  const pow2 = (n: number) => n >= 64 && (n & (n - 1)) === 0;
+  // Game textures are square or power-of-two sized (512, 1024, 2048...). Screenshots aren't.
+  return (pow2(size.w) && pow2(size.h)) || size.w === size.h;
+}
+
+/**
+ * Picks a mod's cover from its own folder. Named previews (preview.png, cover.jpg,
+ * screenshot.png...) always win. Any other image is only used if it doesn't look like
+ * a game texture, so a face or hair texture never ends up as the cover.
+ */
+export function resolveLocalModThumbnailDataUrl(modAbsDir: string): string | undefined {
+  const imageExts = ['.webp', '.png', '.jpg', '.jpeg', '.gif'];
+  const priorityPrefixes = ['preview', 'thumb', 'thumbnail', 'cover', 'screenshot', 'showcase', 'banner', 'icon'];
+
+  const mimeFor = (filePath: string) => {
+    const ext = path.extname(filePath).toLowerCase();
+    return ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : ext === '.gif' ? 'image/gif' : 'image/jpeg';
+  };
+  const read = (filePath: string): Buffer | undefined => {
     try {
-      const buf = fs.readFileSync(filePath);
-      const ext = path.extname(filePath).toLowerCase();
-      const mime =
-        ext === '.png'
-          ? 'image/png'
-          : ext === '.webp'
-          ? 'image/webp'
-          : ext === '.gif'
-          ? 'image/gif'
-          : 'image/jpeg';
-      return `data:${mime};base64,${buf.toString('base64')}`;
+      return fs.readFileSync(filePath);
     } catch {
       return undefined;
     }
@@ -145,13 +192,19 @@ function resolveLocalModThumbnailDataUrl(modAbsDir: string): string | undefined 
     if (allCandidates.length === 0) return undefined;
 
     for (const prefix of priorityPrefixes) {
-      const matched = allCandidates.find((p) =>
-        path.basename(p).toLowerCase().startsWith(prefix)
-      );
-      if (matched) return readAsDataUrl(matched);
+      const matched = allCandidates.find((p) => path.basename(p).toLowerCase().startsWith(prefix));
+      const buf = matched && read(matched);
+      if (matched && buf) return `data:${mimeFor(matched)};base64,${buf.toString('base64')}`;
     }
 
-    return readAsDataUrl(allCandidates[0]);
+    const ordered = [...allCandidates].sort(
+      (a, b) => Number(PREVIEW_NAME_RE.test(path.basename(b))) - Number(PREVIEW_NAME_RE.test(path.basename(a)))
+    );
+    for (const candidate of ordered) {
+      const buf = read(candidate);
+      if (buf && !looksLikeTexture(candidate, buf)) return `data:${mimeFor(candidate)};base64,${buf.toString('base64')}`;
+    }
+    return undefined;
   } catch {
     return undefined;
   }
@@ -1139,6 +1192,23 @@ endif
 
         if (localPreviewDataUrl) {
           stored.thumbnail_url = localPreviewDataUrl;
+        } else if (stored.thumbnail_url?.startsWith('data:image/') && !stored.thumbnail_url.startsWith('data:image/svg')) {
+          // An older version picked a texture from the mod folder as the cover. Use the
+          // GameBanana preview instead, or a generated cover if there isn't one.
+          const gbThumb = [metaInfo?.thumbnail_url, ...(stored.preview_images || []), ...(metaInfo?.preview_images || [])].find(
+            (u: unknown): u is string => typeof u === 'string' && u.startsWith('http')
+          );
+          stored.thumbnail_url = gbThumb
+            ? upgradeGameBananaImageUrl(gbThumb)
+            : makeModCoverSvg(
+                cleanFolder.slice(0, 20).toUpperCase(),
+                matchedAgent ? matchedAgent.display_name.toUpperCase() : 'CUSTOM PACKAGE',
+                matchedAgent?.accent_color || '#00F0FF',
+                '#B8FF01',
+                'LOCAL MOD'
+              );
+          stored.preview_images = (stored.preview_images || []).filter((u) => !u.startsWith('data:image/') || u.startsWith('data:image/svg'));
+          if (stored.preview_images.length === 0) stored.preview_images = [stored.thumbnail_url];
         } else if (metaInfo?.thumbnail_url && !stored.thumbnail_url) {
           stored.thumbnail_url = upgradeGameBananaImageUrl(metaInfo.thumbnail_url);
         } else if (stored.thumbnail_url) {

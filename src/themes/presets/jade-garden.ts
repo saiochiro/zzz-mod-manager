@@ -31,9 +31,9 @@ const theme: ThemeDefinition = {
   glow: { color: '#34d399', strength: 0.35 },
   motif: 'leaves',
   typography: {
-    displayFont: '"Outfit", "Inter", system-ui, sans-serif',
-    displayWeight: 600,
-    displayTracking: '-0.01em',
+    displayFont: '"Michroma", "Inter", system-ui, sans-serif',
+    displayWeight: 400,
+    displayTracking: '0.02em',
   },
   legacyIds: ['matcha-jade'],
 };

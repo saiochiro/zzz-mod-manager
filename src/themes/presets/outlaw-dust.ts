@@ -31,10 +31,9 @@ const theme: ThemeDefinition = {
   glow: { color: '#c48a2c', strength: 0.28 },
   motif: 'shields',
   typography: {
-    displayFont: '"Rye", Rockwell, Georgia, serif',
+    displayFont: '"Bebas Neue", Impact, "Arial Narrow", sans-serif',
     displayWeight: 400,
-    displayCase: 'uppercase',
-    displayTracking: '0.04em',
+    displayTracking: '0.05em',
   },
 };
 

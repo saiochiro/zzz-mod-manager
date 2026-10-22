@@ -31,8 +31,8 @@ const theme: ThemeDefinition = {
   glow: { color: '#d36bff', strength: 0.45 },
   motif: 'sparkles',
   typography: {
-    displayFont: '"Sora", "Inter", system-ui, sans-serif',
-    displayWeight: 700,
+    displayFont: '"Syne", "Inter", system-ui, sans-serif',
+    displayWeight: 800,
     displayTracking: '-0.01em',
   },
   legacyIds: ['jane-doe'],

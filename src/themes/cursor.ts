@@ -47,196 +47,257 @@ function stickerBadge(theme: ThemeDefinition, cx: number, cy: number, r: number)
 }
 
 /* ------------------------------------------------------------------ */
-/* Signature cursors: one silhouette per agent theme                   */
+/* Signature cursors: the pointer, dressed up as each agent            */
 /* ------------------------------------------------------------------ */
-// Every design points with its top-left tip at (3, 3) on a 32×32 grid.
+// Drawn on a 44×44 grid with the tip at (7, 7). Features (ears, wings, tails,
+// thrusters...) are extra parts around the pointer; every part gets the same
+// white sticker outline, so the whole thing reads as one silhouette.
 type Part =
-  | { d: string; fill: string } // filled shape (gets the white sticker outline)
-  | { d: string; line: number; color: string }; // stroked shape (handles, poles…)
+  | { d: string; fill: string; t?: string } // filled shape
+  | { d: string; line: number; color: string; t?: string }; // stroked shape (tails, handles)
 
 interface Signature {
-  parts: Part[];
-  /** Extra detail drawn on top, no outline (shine, facets, glyph accents). */
+  /** Parts drawn behind the pointer (wings, tails, shields). */
+  back?: Part[];
+  /** Parts drawn on top of the pointer (ears, hats, bow ties). */
+  front?: Part[];
+  /** Extra detail without an outline (shine, inner ear, stripes). */
   detail?: string;
-  /** Click point if it isn't the usual (3, 3) tip. */
-  hot?: [number, number];
+  /** Pointer fill override (default: theme gradient). */
+  body?: string;
 }
 
+const SIG_GRID = 44;
+const SIG_TIP: [number, number] = [7, 7];
+const POINTER = 'M7 7 L7 30.5 L12.9 25 L17.1 34 L21.5 32 L17.3 23.1 L25.6 23.1 Z';
 const INK = '#15161d';
 const GOLD = '#e9c46a';
+// Local +y runs along the pointer from tip to tail.
+const AXIS = 'rotate(-25)';
+
+/** Flame jet pointing down the pointer's axis, rooted at (x, y). */
+const jet = (x: number, y: number, len = 9, w = 3.6): Part => ({
+  d: `M${-w} 0 C${-w * 0.9} ${len * 0.4} ${-w * 0.3} ${len * 0.75} 0 ${len} C${w * 0.3} ${len * 0.75} ${w * 0.9} ${len * 0.4} ${w} 0 Z`,
+  fill: 'url(#flame)',
+  t: `translate(${x} ${y}) ${AXIS}`,
+});
+const FLAME_DEF = `<linearGradient id="flame" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff3b0"/><stop offset=".45" stop-color="#ff8a1f"/><stop offset="1" stop-color="#e5264f"/></linearGradient>`;
+
+/** Pointed ear sticking out of the pointer's upper edge (which runs at ~40°). */
+const ear = (x: number, y: number, h: number, w: number, fill: string, tilt = 0): Part => ({
+  d: `M${-w / 2} 1 Q${-w * 0.35} ${-h * 0.5} ${tilt} ${-h} Q${w * 0.35} ${-h * 0.5} ${w / 2} 1 Z`,
+  fill,
+  t: `translate(${x} ${y}) rotate(40)`,
+});
+const innerEar = (x: number, y: number, h: number, w: number, color: string, tilt = 0) =>
+  `<path transform="translate(${x} ${y}) rotate(40)" d="M${-w / 4} 0 Q${-w * 0.18} ${-h * 0.45} ${tilt * 0.8} ${-h * 0.78} Q${w * 0.18} ${-h * 0.45} ${w / 4} 0 Z" fill="${color}"/>`;
 
 function signature(theme: ThemeDefinition): Signature {
   const c = theme.colors;
   const acc = c.accent;
   switch (theme.id) {
-    case 'frostblade': // katana: icy blade, gold guard, wrapped hilt
+    case 'frostblade': // fox ears and a fluffy tail
       return {
-        parts: [
-          { d: 'M27.6 27.6 L21.6 21.6', line: 3.6, color: INK },
-          { d: 'M3 3 Q12 9.6 20.2 17.2 L17.2 20.2 Q9.6 12 3 3 Z', fill: 'url(#fill)' },
-          { d: 'M16.2 21.6 L21.6 16.2 L23.4 18 L18 23.4 Z', fill: GOLD },
+        back: [{ d: 'M19 31 C22 37.4 30.4 40.4 36.4 36.2 C40 33.6 40.4 28 37.2 23.6 C36.4 26.6 35 28.4 32.6 29.4 C33.6 26.8 33.2 24.4 31.8 22.4 C31 26 28.2 28.8 24.8 29 C22.8 29.2 21 28.6 20 27.6 Z', fill: 'url(#fill)' }],
+        front: [ear(11.2, 10.4, 10.5, 6.4, 'url(#fill)', -1), ear(16.8, 15, 10.5, 6.4, 'url(#fill)', 1)],
+        detail: `${innerEar(11.2, 10.4, 10.5, 6.4, acc, -1)}${innerEar(16.8, 15, 10.5, 6.4, acc, 1)}
+          <path d="M37.2 23.6 C40.4 28 40 33.6 36.4 36.2 C37 33 36.4 29.6 34.6 27.8 C36 26.8 36.8 25.4 37.2 23.6 Z" fill="#fff" fill-opacity=".95"/>
+          <path d="M23.6 33.6 C26.6 35.4 30 35.6 32.8 34.4" stroke="#fff" stroke-opacity=".6" stroke-width=".9" fill="none" stroke-linecap="round"/>
+          <path d="M9 12 L9 24" stroke="#fff" stroke-opacity=".75" stroke-width="1.2" stroke-linecap="round"/>`,
+      };
+    case 'riptide': // dorsal fin and a shark tail
+      return {
+        back: [
+          { d: 'M18 31 L13.5 41 C17 39.6 19.5 38.4 21.6 37.6 C24.4 38.4 28 40.4 31.5 42.5 L23.4 30.4 Z', fill: '#4d5d72' },
+          { d: 'M13.4 12.6 C16.6 8.6 20.4 5.8 24.6 4.6 C23.4 8.6 22.6 12.6 21.6 17.6 Z', fill: '#4d5d72' },
         ],
-        detail: `<path d="M5.2 5.6 Q11.6 10.6 17.6 16.8" stroke="#fff" stroke-opacity=".85" stroke-width=".9" fill="none" stroke-linecap="round"/>
-          <path d="M23 23 l1.6 1.6 M25 25 l1.4 1.4" stroke="${acc}" stroke-width="1.6" stroke-linecap="round"/>`,
+        detail: `<path d="M14.6 25.6 L16.4 23.6 M16.6 27.6 L18.4 25.6 M18.6 29.6 L20.4 27.6" stroke="#fff" stroke-opacity=".7" stroke-width="1" stroke-linecap="round"/>
+          <path d="M9 12 L9 24" stroke="#fff" stroke-opacity=".7" stroke-width="1.2" stroke-linecap="round"/>
+          <path d="M15.2 11.6 C17.6 8.8 20.2 7 22.8 6.2" stroke="#9fb3c8" stroke-width="1" fill="none" stroke-linecap="round"/>`,
       };
-    case 'sakura-storm': // curved polearm blade with a petal at the collar
+    case 'velvet-heist': // round mouse ears and a long curling tail
       return {
-        parts: [
-          { d: 'M28.5 28.5 L16.5 16.5', line: 2.6, color: INK },
-          { d: 'M3 3 C9.5 3.2 15 7.5 16.8 14.4 L14.4 16.8 C12.4 11 8.6 6.6 3 3 Z', fill: 'url(#fill)' },
-          { d: 'M18 19.5 C15.4 18.4 15.6 15.4 18 14.2 C19.2 16.6 20.4 17.6 18 19.5 Z', fill: acc },
+        back: [
+          { d: 'M20 33 C23.5 39.5 32.5 40.5 34.5 34.5 C36 30 32 26.5 29.6 29.8', line: 1.8, color: '#e9a6c9' },
+          { d: 'M9.2 8.2 a4.8 4.8 0 1 0 9.6 0 a4.8 4.8 0 1 0 -9.6 0 Z', fill: 'url(#fill)' },
+          { d: 'M16.2 12.6 a4.8 4.8 0 1 0 9.6 0 a4.8 4.8 0 1 0 -9.6 0 Z', fill: 'url(#fill)' },
         ],
-        detail: `<path d="M5.4 4.6 C10 5.6 13.6 8.8 15 12.8" stroke="#fff" stroke-opacity=".8" stroke-width=".9" fill="none" stroke-linecap="round"/>`,
+        detail: `<circle cx="14.4" cy="7.8" r="2.6" fill="${c.secondary}"/><circle cx="21.4" cy="12.2" r="2.6" fill="${c.secondary}"/>
+          <path d="M9 13 L9 24" stroke="#fff" stroke-opacity=".7" stroke-width="1.2" stroke-linecap="round"/>
+          <path d="M11.5 22 l1.4 -1.4 l1.4 1.4 l-1.4 1.4 z" fill="${acc}"/>`,
       };
-    case 'ink-seal': // calligraphy brush with a red seal on the handle
+    case 'ember-rush': // twin rocket thrusters with flame jets
       return {
-        parts: [
-          { d: 'M27.4 27.4 L13.2 13.2', line: 3.4, color: '#7a4b2a' },
-          { d: 'M3 3 C8.4 4 13 7.8 13.8 11.6 L11.6 13.8 C7.8 13 4 8.4 3 3 Z', fill: INK },
-          { d: 'M11.2 13.4 L13.4 11.2 L15.6 13.4 L13.4 15.6 Z', fill: GOLD },
+        back: [
+          jet(20.4, 35.6, 12, 4),
+          jet(27.2, 25.4, 11, 3.6),
+          { d: 'M-3.8 0 L3.8 0 L4.8 5.6 L-4.8 5.6 Z', fill: '#3a2a20', t: `translate(18 30.6) ${AXIS}` },
+          { d: 'M-3.4 0 L3.4 0 L4.3 5 L-4.3 5 Z', fill: '#3a2a20', t: `translate(24.8 20.8) ${AXIS}` },
         ],
-        detail: `<rect x="20.6" y="20.6" width="3.4" height="3.4" rx=".6" transform="rotate(45 22.3 22.3)" fill="#d64545"/>
-          <path d="M5.2 5.4 C7.6 7.8 9.4 9.6 11 11" stroke="${acc}" stroke-opacity=".7" stroke-width=".8" stroke-linecap="round" fill="none"/>`,
+        detail: `<defs>${FLAME_DEF}</defs>
+          <path d="M9 12 L9 24" stroke="#fff" stroke-opacity=".75" stroke-width="1.2" stroke-linecap="round"/>
+          <path d="M12 17.5 L15 15.4 M13.5 21 L17.4 18.4" stroke="#fff3b0" stroke-width="1.1" stroke-linecap="round"/>`,
       };
-    case 'riptide': // shark fin cutting through a wave
+    case 'undying-flame': // blazing wings and a fiery tail
       return {
-        parts: [
-          { d: 'M3 3 C9.6 8 15.6 15.4 18.4 22.6 L6.4 22.6 C7.4 16.4 6.4 9.4 3 3 Z', fill: 'url(#fill)' },
-          { d: 'M3.6 24.2 Q7 21.6 10.4 24.2 T17.2 24.2 T24 24.2 L24 27.6 Q20.6 25.4 17.2 27.6 T10.4 27.6 T3.6 27.6 Z', fill: '#ffffff' },
+        back: [
+          jet(19.8, 33.4, 9, 3.2),
+          { d: 'M15.5 16 C19 10.5 26 6 38 3.5 C35.6 6.4 34.2 7.6 31.4 9.2 C34.4 9 36.8 9 39.4 8.6 C36.4 11.8 33.8 12.8 30.2 13.8 C32.8 14.2 35 14.8 37 15.6 C32.8 17.8 28.4 18.6 23.2 18.8 Z', fill: 'url(#wing)' },
+          { d: 'M23.4 21.6 C28.8 22.2 34.4 24.2 40 28.8 C36.6 28.4 34.8 28.6 32.6 28.6 C34.6 30.2 36.2 31.8 37.4 34 C33.6 32.2 31 31.8 28.8 31.4 C29.6 32.8 30.2 34 30.6 35.6 C27.4 33.2 24.6 31 22.6 28.6 Z', fill: 'url(#wing)' },
         ],
-        detail: `<path d="M5.4 6.4 C8 10 9.4 14.4 9.2 19.6" stroke="#fff" stroke-opacity=".7" stroke-width="1" fill="none" stroke-linecap="round"/>
-          <path d="M4 25.4 Q7 23.4 10.4 25.4 T17.2 25.4 T23.6 25.4" stroke="${acc}" stroke-width="1.2" fill="none"/>`,
+        detail: `<defs>${FLAME_DEF}<linearGradient id="wing" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#fff3b0"/><stop offset=".5" stop-color="${c.secondary}"/><stop offset="1" stop-color="${c.primary}"/></linearGradient></defs>
+          <path d="M19 15.6 C24 11 30 8 36 6 M25 20.6 C29 21.6 33 23.6 36.4 26.6" stroke="#fff6e0" stroke-opacity=".8" stroke-width=".9" fill="none" stroke-linecap="round"/>
+          <path d="M9 12 L9 24" stroke="#fff" stroke-opacity=".75" stroke-width="1.2" stroke-linecap="round"/>`,
       };
-    case 'ember-rush': // arrowhead trailing a flame
+    case 'silver-fang': // wolf ears and a red bow tie
       return {
-        parts: [
-          { d: 'M4.4 17.6 C7.6 21.4 10.4 25.6 15.4 28.8 C13.8 26.2 15 24.6 14.8 22.8 C17.4 25.6 21.4 26.6 25.6 28.4 C22.4 24.8 22.6 21.6 20.4 19.6 C22.4 19.4 23.6 18.6 26 19 C22.4 15.8 18.2 14.6 14.6 14.2 Z', fill: 'url(#flame)' },
-          { d: 'M3 3 L3 18.6 L7.8 14.6 L15.6 13.8 Z', fill: 'url(#fill)' },
+        back: [{ d: 'M19.5 31.5 C24 35 30 35.5 33.5 32 C31.5 31.5 29.5 30.4 28.6 29 C30.6 28.8 32.2 27.8 33 26.4 C29 27.2 24.6 27.6 21 27 Z', fill: '#8f949e' }],
+        front: [
+          ear(11, 10.2, 9, 6.6, '#8f949e', -1.6),
+          ear(16.8, 15, 9, 6.6, '#8f949e', 1.6),
+          { d: 'M10.4 21.8 L13 23.4 L15.6 21.8 L15.6 26 L13 24.4 L10.4 26 Z', fill: acc },
         ],
-        detail: `<defs><linearGradient id="flame" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe066"/><stop offset=".55" stop-color="#ff7a1a"/><stop offset="1" stop-color="#e5261a"/></linearGradient></defs>
-          <path d="M9.4 19.6 C12 22.4 14.6 24.2 17.6 25.4 M14.6 17.4 C17.4 19.4 19.6 21.6 21.8 24.8" stroke="#fff3b0" stroke-width="1" fill="none" stroke-linecap="round"/>
-          <path d="M5 7 L5 14.4" stroke="#fff" stroke-opacity=".7" stroke-width="1.1" stroke-linecap="round"/>`,
+        detail: `${innerEar(11, 10.2, 9, 6.6, '#3a3d45', -1.6)}${innerEar(16.8, 15, 9, 6.6, '#3a3d45', 1.6)}
+          <circle cx="13" cy="23.9" r="1.1" fill="#fff" fill-opacity=".8"/>
+          <path d="M9 12 L9 19" stroke="#fff" stroke-opacity=".8" stroke-width="1.2" stroke-linecap="round"/>`,
       };
-    case 'velvet-heist': // faceted gem arrow
+    case 'sakura-storm': // a polearm haft with a tassel, petals and a spark
       return {
-        parts: [{ d: 'M3 3 L3 23.4 L8.6 18.6 L12.4 26.8 L16.2 25 L12.6 17.2 L20 17.2 Z', fill: 'url(#fill)' }],
-        detail: `<path d="M3 3 L8.6 18.6 M3 3 L12.6 17.2 M3 3 L6.6 12.4 L12.6 17.2 M6.6 12.4 L8.6 18.6" stroke="#fff" stroke-opacity=".55" stroke-width=".7" fill="none"/>
-          <path d="M23.4 21 l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" fill="#fff"/>`,
-      };
-    case 'starlight-encore': // shooting star: slim arrow with a star tail
-      return {
-        parts: [
-          { d: 'M3 3 L3 17.6 L7 14.2 L14.4 13.6 Z', fill: 'url(#fill)' },
-          { d: 'M20.6 13.4 L22.2 18 L27 18.2 L23.2 21.2 L24.6 25.8 L20.6 23.1 L16.6 25.8 L18 21.2 L14.2 18.2 L19 18 Z', fill: GOLD },
+        back: [
+          { d: 'M18.6 30.6 L31.6 42', line: 2.6, color: '#2a1d3f' },
+          { d: 'M31 41.2 C33 42.6 35 42.6 36 41 C34.6 40.2 33.4 39.4 32.8 38 Z', fill: c.secondary },
         ],
-        detail: `<path d="M7.6 14.6 L15.2 20.4 M10 12.6 L16.6 17" stroke="#fff" stroke-opacity=".75" stroke-width="1" stroke-linecap="round"/>
-          <circle cx="26.6" cy="11.6" r="1" fill="#fff"/><circle cx="12" cy="24.6" r=".8" fill="#fff"/>`,
+        front: [{ d: 'M20.4 20.4 C18.8 17.8 19.6 15.6 22.4 15.2 C23.4 17.4 23.4 19.4 20.4 20.4 Z', fill: '#ffb3cf' }],
+        detail: `<path d="M12.6 15 L10.8 19.4 L12.8 19.2 L11 24" stroke="#f2e9ff" stroke-width="1.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M8.8 10 L8.8 16" stroke="#fff" stroke-opacity=".75" stroke-width="1.1" stroke-linecap="round"/>`,
       };
-    case 'night-patrol': // tactical arrow with patrol chevrons
+    case 'night-patrol': // police cap with a gold badge
       return {
-        parts: [{ d: 'M3 3 L3 23.4 L8.6 18.6 L12.4 26.8 L16.2 25 L12.6 17.2 L20 17.2 Z', fill: 'url(#fill)' }],
-        detail: `<path d="M3.6 9.6 L7.2 12.6 M3.6 13.4 L7.2 16.4" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/>
-          <circle cx="12.6" cy="14.2" r="1.3" fill="#7fd4ff"/>`,
-      };
-    case 'rose-requiem': // quill feather with a dark nib
-      return {
-        parts: [
-          { d: 'M3 3 C11.8 4.2 19.8 10.4 22.6 19.6 C18.8 18.6 17.6 20.6 15.6 18.8 C14 21 11.4 20 10.2 17.4 C7.6 17.2 5.4 14.6 6.2 12.2 C3.4 10.6 3 6.4 3 3 Z', fill: 'url(#fill)' },
-          { d: 'M27.8 27.8 L20.6 20.6', line: 1.8, color: INK },
+        front: [
+          { d: 'M-6.4 0 C-6.6 -5 -4.4 -8 0 -8.4 C5 -8.4 7.8 -6.2 7.8 -2.8 L6.4 0 Z', fill: '#1d2333', t: 'translate(15.6 13.8) rotate(40)' },
+          { d: 'M-6.8 0 L9 0 L10.6 2.4 L-5.2 2.4 Z', fill: INK, t: 'translate(15.6 13.8) rotate(40)' },
         ],
-        detail: `<path d="M3 3 C9.4 8 15.4 13.6 21.4 20.4" stroke="#fff" stroke-opacity=".85" stroke-width="1" fill="none" stroke-linecap="round"/>
-          <path d="M3 3 L5.6 4.6 L4.6 5.6 Z" fill="${INK}"/>`,
+        detail: `<g transform="translate(15.6 13.8) rotate(40)"><rect x="-6.4" y="-2.4" width="13.6" height="2" fill="${c.primary}"/>
+            <path d="M0.6 -7 L1.4 -5.2 L3.2 -5 L1.8 -3.8 L2.2 -2 L0.6 -3 L-1 -2 L-0.6 -3.8 L-2 -5 L-0.2 -5.2 Z" fill="${GOLD}"/></g>
+          <path d="M9 14 L9 24" stroke="#fff" stroke-opacity=".7" stroke-width="1.2" stroke-linecap="round"/>`,
       };
-    case 'jade-garden': // leaf with a midrib and stem
+    case 'rose-requiem': // a lace parasol and a rose
       return {
-        parts: [
-          { d: 'M28 28 L20.4 20.4', line: 1.8, color: '#3c7a3a' },
-          { d: 'M3 3 C13.6 3.6 21.6 10.8 21.2 21.2 C10.8 21.6 3.6 13.6 3 3 Z', fill: 'url(#fill)' },
+        back: [
+          { d: 'M0 0 L0 13', line: 1.4, color: '#2a1630', t: 'translate(27.4 12.6) rotate(28)' },
+          { d: 'M-10 0 A10 8.6 0 0 1 10 0 Q7.5 2.2 5 0 Q2.5 2.2 0 0 Q-2.5 2.2 -5 0 Q-7.5 2.2 -10 0 Z', fill: '#2a1630', t: 'translate(27.4 12.6) rotate(28)' },
         ],
-        detail: `<path d="M3 3 L20.6 20.6 M9 9 L9.6 14 M12.4 12.4 L13 17.6 M9 9 L14 9.6 M12.4 12.4 L17.6 13" stroke="#fff" stroke-opacity=".7" stroke-width=".8" fill="none" stroke-linecap="round"/>`,
+        front: [{ d: 'M11 26.4 a2.8 2.8 0 1 1 4.4 2.6 a2.8 2.8 0 1 1 -4.4 -2.6 Z', fill: acc }],
+        detail: `<g transform="translate(27.4 12.6) rotate(28)"><path d="M-6 -1.4 Q-4 -7 0 -8.6 M6 -1.4 Q4 -7 0 -8.6 M0 -8.6 L0 -0.4" stroke="${c.primary}" stroke-width=".9" fill="none"/></g>
+          <circle cx="13.2" cy="27.7" r="1.2" fill="${c.primary}"/>
+          <path d="M9 12 L9 22" stroke="#fff" stroke-opacity=".75" stroke-width="1.2" stroke-linecap="round"/>`,
       };
-    case 'silver-fang': // polished silver fang with a red-tie glint
+    case 'ink-seal': // an ink brush with a red seal
       return {
-        parts: [{ d: 'M3 3 C9.4 6.2 14.6 11.6 17 19 C17.8 21.6 16.2 23.4 13.8 22.6 C10 21.4 6 13.4 3 3 Z', fill: 'url(#fill)' }],
-        detail: `<path d="M5.4 6.4 C8.6 10.8 11.4 15 13.2 19.4" stroke="#fff" stroke-width="1" fill="none" stroke-linecap="round"/>
-          <path d="M20.8 22.6 l1.6 1.6 -1.6 1.6 -1.6 -1.6z" fill="${acc}"/>`,
-      };
-    case 'gale-fletcher': // arrow with a gold head and teal fletching
-      return {
-        parts: [
-          { d: 'M8 8 L26.4 26.4', line: 1.8, color: '#eadfc4' },
-          { d: 'M3 3 L11.6 5.4 L5.4 11.6 Z', fill: acc },
-          { d: 'M21 23.6 L19.4 28.4 L23.4 25.6 Z M23.6 21 L28.4 19.4 L25.6 23.4 Z', fill: 'url(#fill)' },
+        body: INK,
+        back: [
+          { d: 'M18.8 31 L28.6 41.6', line: 3.2, color: '#8a5a32' },
+          { d: 'M-2.2 0 L2.2 0 L2.2 3.2 L-2.2 3.2 Z', fill: GOLD, t: 'translate(18.4 30.2) rotate(-42)' },
         ],
-        detail: `<path d="M4.6 4.6 L8.6 6.2" stroke="#fff" stroke-opacity=".8" stroke-width=".8" stroke-linecap="round"/>`,
+        detail: `<rect x="20.6" y="16.8" width="5" height="5" rx=".8" transform="rotate(12 23.1 19.3)" fill="#d64545"/>
+          <path d="M21.8 18.4 h2.6 M23.1 18 v3" stroke="#fff" stroke-width=".7"/>
+          <circle cx="4" cy="34" r="1.3" fill="${INK}"/><circle cx="6.6" cy="37.4" r=".8" fill="${INK}"/>
+          <path d="M9 12 L9 24" stroke="#fff" stroke-opacity=".35" stroke-width="1.1" stroke-linecap="round"/>`,
       };
-    case 'hard-hat': // demolition hammer
+    case 'jade-garden': // robot antennae and a bamboo leaf
       return {
-        parts: [
-          { d: 'M9.6 9.6 L27 27', line: 3, color: '#5b3a1e' },
-          { d: 'M1.4 8.6 L8.6 1.4 L13 5.8 L5.8 13 Z', fill: 'url(#fill)' },
+        back: [{ d: 'M22 30 C26 27 31 27.4 35 30.4 C31 32.6 26.4 33 22 30 Z', fill: c.secondary }],
+        front: [
+          { d: 'M0 0 L0 -7.6', line: 1.6, color: '#c9f5dc', t: 'translate(11.6 10.8) rotate(40)' },
+          { d: 'M0 0 L0 -7.6', line: 1.6, color: '#c9f5dc', t: 'translate(17.6 15.8) rotate(40)' },
+          { d: 'M-2.4 0 a2.4 2.4 0 1 0 4.8 0 a2.4 2.4 0 1 0 -4.8 0 Z', fill: acc, t: 'translate(11.6 10.8) rotate(40) translate(0 -8.6)' },
+          { d: 'M-2.4 0 a2.4 2.4 0 1 0 4.8 0 a2.4 2.4 0 1 0 -4.8 0 Z', fill: acc, t: 'translate(17.6 15.8) rotate(40) translate(0 -8.6)' },
         ],
-        detail: `<path d="M19.6 19.6 l1.2 1.2 M22 22 l1.2 1.2 M24.4 24.4 l1.2 1.2" stroke="${c.primary}" stroke-width="2.6"/>
-          <path d="M3.4 8.4 L8.4 3.4" stroke="#fff" stroke-opacity=".8" stroke-width="1.1" stroke-linecap="round"/>`,
-        hot: [5, 5],
+        detail: `<path d="M23.6 30 L33 30.2" stroke="#0a120e" stroke-opacity=".5" stroke-width=".7"/>
+          <path d="M10 19 h5 M10 22 h3.4" stroke="#0a120e" stroke-opacity=".45" stroke-width="1" stroke-linecap="round"/>
+          <path d="M9 12 L9 16" stroke="#fff" stroke-opacity=".75" stroke-width="1.2" stroke-linecap="round"/>`,
       };
-    case 'outlaw-dust': // kite shield with a brass boss
+    case 'starlight-encore': // a microphone and a star
       return {
-        parts: [{ d: 'M3 3 L16 6.4 Q21 13.4 20.4 20.4 Q13.4 21 6.4 16 Z', fill: 'url(#fill)' }],
-        detail: `<path d="M5.4 5.4 L14.6 7.8 Q18.4 13.4 18.2 18.2 Q13.4 18.4 7.8 14.6 Z" stroke="#f3d9a8" stroke-opacity=".75" stroke-width=".9" fill="none"/>
-          <circle cx="12.6" cy="12.6" r="2.2" fill="#e8b04a" stroke="#5b3a1e" stroke-width=".6"/>`,
-      };
-    case 'undying-flame': // golden quill feather with a burning tip
-      return {
-        parts: [
-          { d: 'M18.6 18.6 C21.8 19.4 24.8 21.8 26.8 26.8 C24.6 25.2 22.6 25.2 21 26.2 C21.6 23.8 20.4 21 18.6 18.6 Z', fill: 'url(#flame)' },
-          { d: 'M3 3 C10.2 4.2 17.4 9.8 21 18.6 C18.6 18 16.6 18.6 15.2 20.4 C13.4 16.6 10 14.2 6.6 14.4 C7.6 10.8 6.2 6.6 3 3 Z', fill: 'url(#fill)' },
+        back: [
+          { d: 'M19.2 36.4 a3.6 2.7 -22 1 0 7.2 -1.4 a3.6 2.7 -22 1 0 -7.2 1.4 Z M25.4 34.6 L25.4 23.4 L27 23.4 C27.6 26 30 27 31.4 29.4 C29.4 28 28 27.6 27 27.6 L27 34.6 Z', fill: c.primary },
+          { d: 'M30.6 17 L32.2 21 L36.4 21.4 L33.2 24.1 L34.2 28.2 L30.6 25.9 L27 28.2 L28 24.1 L24.8 21.4 L29 21 Z', fill: GOLD },
         ],
-        detail: `<defs><linearGradient id="flame" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe066"/><stop offset=".55" stop-color="#ff6a2a"/><stop offset="1" stop-color="#e5264f"/></linearGradient></defs>
-          <path d="M3.6 3.6 C9 8.6 13.6 13.4 18 18.6" stroke="#fff6e0" stroke-opacity=".85" stroke-width="1" fill="none" stroke-linecap="round"/>
-          <path d="M8 9 L10.6 8.4 M11 12 L13.8 11.4 M10 13.6 L9.4 16.2" stroke="#fff" stroke-opacity=".45" stroke-width=".8" stroke-linecap="round"/>`,
+        detail: `<path d="M21 35.6 C22 34.6 23.4 34.2 24.4 34.4" stroke="#fff" stroke-opacity=".7" stroke-width=".8" fill="none" stroke-linecap="round"/>
+          <path d="M9 12 L9 24" stroke="#fff" stroke-opacity=".75" stroke-width="1.2" stroke-linecap="round"/>`,
       };
-    default: // graphite / anything new: sleek proxy arrow with a data line
+    case 'gale-fletcher': // a real arrow: shaft and teal fletching
       return {
-        parts: [{ d: 'M3 3 L3 23.4 L8.6 18.6 L12.4 26.8 L16.2 25 L12.6 17.2 L20 17.2 Z', fill: 'url(#fill)' }],
-        detail: `<path d="M5.2 8 L5.2 17.6" stroke="#fff" stroke-opacity=".7" stroke-width="1.1" stroke-linecap="round"/>
-          <path d="M8.4 13.2 L11.6 15.6" stroke="${acc}" stroke-width="1.2" stroke-linecap="round"/>`,
+        back: [
+          { d: 'M17.4 25.6 L34.6 41', line: 2, color: '#eadfc4' },
+          { d: 'M28.6 35.6 L27.4 43 L32.4 38.6 Z', fill: 'url(#fill)' },
+          { d: 'M29.2 34.4 L36.8 33.4 L32.8 38.4 Z', fill: 'url(#fill)' },
+        ],
+        detail: `<path d="M9 12 L9 24" stroke="#fff" stroke-opacity=".75" stroke-width="1.2" stroke-linecap="round"/>
+          <path d="M11 16 L16.6 20.4" stroke="${GOLD}" stroke-width="1.2" stroke-linecap="round"/>`,
+      };
+    case 'hard-hat': // a hard hat and a sledgehammer
+      return {
+        back: [
+          { d: 'M22 24.6 L33.4 36', line: 2.8, color: '#7a4b2a' },
+          { d: 'M-5 -2.6 L5 -2.6 L5 2.6 L-5 2.6 Z', fill: '#4a4f5a', t: 'translate(34 36.6) rotate(45)' },
+        ],
+        front: [
+          { d: 'M-6.6 0 C-6.6 -5.4 -3.6 -8.2 0.4 -8.2 C4.4 -8.2 7.2 -5.4 7.2 0 Z', fill: '#ffcc1f', t: 'translate(15.4 13.6) rotate(40)' },
+          { d: 'M-8.6 0 L9.4 0 L9.4 1.8 L-8.6 1.8 Z', fill: '#e0a800', t: 'translate(15.4 13.6) rotate(40)' },
+        ],
+        detail: `<g transform="translate(15.4 13.6) rotate(40)"><path d="M0.4 -8 L0.4 0" stroke="#fff3b0" stroke-width="1.6"/></g>
+          <path d="M9 14 L9 24" stroke="#fff" stroke-opacity=".7" stroke-width="1.2" stroke-linecap="round"/>`,
+      };
+    case 'outlaw-dust': // a round shield behind the pointer
+      return {
+        back: [{ d: 'M18 26.5 a9 9 0 1 0 18 0 a9 9 0 1 0 -18 0 Z', fill: '#7a3a14' }],
+        detail: `<circle cx="27" cy="26.5" r="6.4" fill="none" stroke="${c.secondary}" stroke-width="1.4"/>
+          <circle cx="27" cy="26.5" r="2.4" fill="${GOLD}" stroke="#4a2410" stroke-width=".6"/>
+          <path d="M27 18.6 L27 21 M27 32 L27 34.4 M19.1 26.5 L21.5 26.5 M32.5 26.5 L34.9 26.5" stroke="${GOLD}" stroke-width="1.2" stroke-linecap="round"/>
+          <path d="M9 12 L9 24" stroke="#fff" stroke-opacity=".7" stroke-width="1.2" stroke-linecap="round"/>`,
+      };
+    default: // graphite / anything new: the proxy pointer with a Hollow's orbit ring
+      return {
+        detail: `<ellipse cx="15.4" cy="21" rx="13.4" ry="3.6" transform="rotate(-32 15.4 21)" fill="none" stroke="#fff" stroke-width="2.6"/>
+          <ellipse cx="15.4" cy="21" rx="13.4" ry="3.6" transform="rotate(-32 15.4 21)" fill="none" stroke="${acc}" stroke-width="1.2"/>
+          <path d="M9 12 L9 24" stroke="#fff" stroke-opacity=".7" stroke-width="1.2" stroke-linecap="round"/>`,
       };
   }
 }
 
-function renderParts(parts: Part[]): string {
-  const shadow = parts
-    .map((p) =>
-      'fill' in p
-        ? `<path d="${p.d}" fill="#000"/>`
-        : `<path d="${p.d}" stroke="#000" stroke-width="${p.line}" stroke-linecap="round" fill="none"/>`
-    )
+function renderParts(parts: Part[], layer: 'shadow' | 'outline' | 'color'): string {
+  return parts
+    .map((p) => {
+      const t = p.t ? ` transform="${p.t}"` : '';
+      if ('fill' in p) {
+        if (layer === 'shadow') return `<path${t} d="${p.d}" fill="#000"/>`;
+        if (layer === 'outline') return `<path${t} d="${p.d}" fill="#fff" stroke="#fff" stroke-width="3.6" stroke-linejoin="round"/>`;
+        return `<path${t} d="${p.d}" fill="${p.fill}" stroke="#0b0d12" stroke-width=".9" stroke-linejoin="round"/>`;
+      }
+      if (layer === 'shadow') return `<path${t} d="${p.d}" stroke="#000" stroke-width="${p.line}" stroke-linecap="round" fill="none"/>`;
+      if (layer === 'outline') return `<path${t} d="${p.d}" stroke="#fff" stroke-width="${p.line + 3.6}" stroke-linecap="round" fill="none"/>`;
+      return `<path${t} d="${p.d}" stroke="${p.color}" stroke-width="${p.line}" stroke-linecap="round" fill="none"/>`;
+    })
     .join('');
-  const outline = parts
-    .map((p) =>
-      'fill' in p
-        ? `<path d="${p.d}" fill="#fff" stroke="#fff" stroke-width="3.4" stroke-linejoin="round"/>`
-        : `<path d="${p.d}" stroke="#fff" stroke-width="${p.line + 3.4}" stroke-linecap="round" fill="none"/>`
-    )
-    .join('');
-  const color = parts
-    .map((p) =>
-      'fill' in p
-        ? `<path d="${p.d}" fill="${p.fill}" stroke="#0b0d12" stroke-width=".9" stroke-linejoin="round"/>`
-        : `<path d="${p.d}" stroke="${p.color}" stroke-width="${p.line}" stroke-linecap="round" fill="none"/>`
-    )
-    .join('');
-  return `<g transform="translate(1.3 1.7)" opacity=".45">${shadow}</g>${outline}${color}`;
 }
 
-function signatureSvg(theme: ThemeDefinition, withBadge: boolean): string {
+/** Little "click" burst at the tip, shown when hovering anything clickable. */
+const CLICK_BURST = `<g stroke-linecap="round">
+  <path d="M4.2 7 L1.4 7 M7 4.2 L7 1.4 M4.9 4.9 L2.8 2.8" stroke="#fff" stroke-width="3.4"/>
+  <path d="M4.2 7 L1.4 7 M7 4.2 L7 1.4 M4.9 4.9 L2.8 2.8" stroke="#0b0d12" stroke-width="1.5"/></g>`;
+
+function signatureSvg(theme: ThemeDefinition, hand: boolean): string {
   const [from, to] = theme.gradients.accent;
   const sig = signature(theme);
+  const pointer: Part = { d: POINTER, fill: sig.body ?? 'url(#fill)' };
+  const all = [...(sig.back ?? []), pointer, ...(sig.front ?? [])];
   return `<defs><linearGradient id="fill" x1="0" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/></linearGradient></defs>
-  ${renderParts(sig.parts)}
+  <g transform="translate(1.3 1.7)" opacity=".4">${renderParts(all, 'shadow')}</g>
+  ${renderParts(all, 'outline')}
+  ${renderParts(sig.back ?? [], 'color')}${renderParts([pointer], 'color')}${renderParts(sig.front ?? [], 'color')}
   ${sig.detail ?? ''}
-  ${withBadge ? stickerBadge(theme, 24, 8, 5.4) : ''}`;
+  ${hand ? CLICK_BURST : ''}`;
 }
 
 /** Classic shapes (when the user picks Arrow / Blade instead of the signature). */
@@ -276,13 +337,13 @@ export function buildCursorSvg(
   opts: { shape?: CursorShapePref; size?: CursorSize } = {}
 ): string {
   const shape = resolveShape(theme, opts.shape);
-  const px = opts.size === 'large' ? 48 : 32;
   const reticleHand = kind === 'hand' && (shape === 'reticle' || (shape === 'signature' && theme.cursorShape === 'reticle'));
-  const inner = reticleHand
-    ? reticleSvg(theme)
-    : shape === 'signature'
-    ? signatureSvg(theme, kind === 'hand')
-    : arrowSvg(theme, shape === 'blade' ? 'blade' : 'arrow', kind === 'hand');
+  if (shape === 'signature' && !reticleHand) {
+    const px = opts.size === 'large' ? 66 : SIG_GRID;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${px}" height="${px}" viewBox="0 0 ${SIG_GRID} ${SIG_GRID}">${signatureSvg(theme, kind === 'hand')}</svg>`;
+  }
+  const px = opts.size === 'large' ? 48 : 32;
+  const inner = reticleHand ? reticleSvg(theme) : arrowSvg(theme, shape === 'blade' ? 'blade' : 'arrow', kind === 'hand');
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${px}" height="${px}" viewBox="0 0 32 32">${inner}</svg>`;
 }
 
@@ -290,7 +351,7 @@ export function cursorCss(theme: ThemeDefinition, kind: 'arrow' | 'hand', opts: 
   const shape = resolveShape(theme, opts.shape);
   const k = opts.size === 'large' ? 1.5 : 1;
   const reticleHand = kind === 'hand' && (shape === 'reticle' || (shape === 'signature' && theme.cursorShape === 'reticle'));
-  const [hx, hy] = reticleHand ? [16, 16] : shape === 'signature' ? signature(theme).hot ?? [3, 3] : [5, 3];
+  const [hx, hy] = reticleHand ? [16, 16] : shape === 'signature' ? SIG_TIP : [5, 3];
   return `url("${svgToDataUrl(buildCursorSvg(theme, kind, opts))}") ${Math.round(hx * k)} ${Math.round(hy * k)}, ${kind === 'arrow' ? 'default' : 'pointer'}`;
 }
 

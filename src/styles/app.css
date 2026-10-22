@@ -4218,3 +4218,375 @@ html[data-scene] .card {
 .cm-like.is-on svg {
   fill: currentColor;
 }
+
+/* ------------------------------------------------------------------ */
+/* Scene kit v2                                                        */
+/* ------------------------------------------------------------------ */
+.sx-stage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.sx-breathe,
+.sx-rebirth {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.sx-twinkle {
+  animation: sx-twinkle 4s ease-in-out infinite;
+}
+@keyframes sx-twinkle {
+  50% {
+    opacity: 0.08;
+  }
+}
+.sx-breathe {
+  animation: sx-breathe 9s ease-in-out infinite;
+}
+@keyframes sx-breathe {
+  50% {
+    transform: scale(1.06);
+    opacity: 0.8;
+  }
+}
+.sx-drift {
+  animation: sx-drift 120s linear infinite;
+}
+.sx-drift--rev {
+  animation-direction: reverse;
+}
+@keyframes sx-drift {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-1600px);
+  }
+}
+.sx-rays {
+  animation: sx-rays 18s ease-in-out infinite alternate;
+}
+@keyframes sx-rays {
+  from {
+    transform: rotate(-2deg);
+  }
+  to {
+    transform: rotate(2deg);
+  }
+}
+.sx-ray {
+  animation: sx-ray 7s ease-in-out infinite;
+}
+@keyframes sx-ray {
+  50% {
+    opacity: 0.03;
+  }
+}
+.sx-flicker {
+  animation: sx-flicker 1.6s ease-in-out infinite alternate;
+}
+@keyframes sx-flicker {
+  0% {
+    transform: scaleY(0.82) skewX(-3deg);
+  }
+  50% {
+    transform: scaleY(1.06) skewX(2deg);
+  }
+  100% {
+    transform: scaleY(0.92) skewX(4deg);
+  }
+}
+.sx-sweep {
+  animation: sx-sweep 9s ease-in-out infinite alternate;
+}
+@keyframes sx-sweep {
+  from {
+    transform: rotate(var(--from, -18deg));
+  }
+  to {
+    transform: rotate(var(--to, 18deg));
+  }
+}
+.sx-aurora {
+  animation: sx-aurora 16s ease-in-out infinite alternate;
+}
+.sx-aurora--b {
+  animation-duration: 22s;
+  animation-direction: alternate-reverse;
+}
+@keyframes sx-aurora {
+  from {
+    transform: translateX(-60px) skewX(-4deg);
+    opacity: 0.7;
+  }
+  to {
+    transform: translateX(60px) skewX(4deg);
+    opacity: 1;
+  }
+}
+.sx-wave-x {
+  animation: sx-wave-x 9s linear infinite;
+}
+@keyframes sx-wave-x {
+  to {
+    transform: translateX(-440px);
+  }
+}
+.sx-swim {
+  animation: sx-swim 46s linear infinite;
+}
+@keyframes sx-swim {
+  0% {
+    transform: translate(1750px, 0);
+  }
+  50% {
+    transform: translate(650px, 30px);
+  }
+  100% {
+    transform: translate(-500px, -10px);
+  }
+}
+.sx-sway {
+  animation: sx-sway 6s ease-in-out infinite alternate;
+}
+.sx-sway--slow {
+  animation-duration: 11s;
+}
+@keyframes sx-sway {
+  from {
+    transform: rotate(-1.6deg);
+  }
+  to {
+    transform: rotate(1.6deg);
+  }
+}
+.sx-road {
+  animation: sx-road 7s linear infinite;
+}
+@keyframes sx-road {
+  to {
+    stroke-dashoffset: -780;
+  }
+}
+.sx-orbit {
+  animation: sx-road 30s linear infinite;
+}
+.sx-laser {
+  animation: sx-laser 7s ease-in-out infinite alternate;
+}
+@keyframes sx-laser {
+  0%,
+  40% {
+    opacity: 0;
+    transform: translateX(-80px);
+  }
+  55%,
+  100% {
+    opacity: 1;
+    transform: translateX(80px);
+  }
+}
+.sx-wave-stick {
+  animation: sx-stick 1.4s ease-in-out infinite alternate;
+}
+@keyframes sx-stick {
+  from {
+    transform: rotate(-14deg);
+  }
+  to {
+    transform: rotate(14deg);
+  }
+}
+.sx-bolt {
+  opacity: 0;
+  animation: sx-bolt 13s linear infinite;
+}
+.sx-flash {
+  position: absolute;
+  inset: 0;
+  background: #e9dcff;
+  opacity: 0;
+  animation: sx-flash 13s linear infinite;
+}
+@keyframes sx-bolt {
+  0%,
+  91%,
+  93.5%,
+  100% {
+    opacity: 0;
+  }
+  91.5%,
+  92.5%,
+  94% {
+    opacity: 1;
+  }
+  95% {
+    opacity: 0;
+  }
+}
+@keyframes sx-flash {
+  0%,
+  91%,
+  100% {
+    opacity: 0;
+  }
+  91.5% {
+    opacity: 0.18;
+  }
+  92.5% {
+    opacity: 0.04;
+  }
+  94% {
+    opacity: 0.12;
+  }
+  96% {
+    opacity: 0;
+  }
+}
+.sx-rain {
+  position: absolute;
+  left: -20%;
+  right: -20%;
+  top: -100%;
+  height: 200%;
+  background: repeating-linear-gradient(104deg, transparent 0 26px, rgba(190, 210, 255, 0.16) 26px 27px, transparent 27px 61px);
+  animation: sx-rain 0.7s linear infinite;
+}
+.sx-rain--near {
+  background: repeating-linear-gradient(106deg, transparent 0 58px, rgba(210, 225, 255, 0.22) 58px 60px, transparent 60px 131px);
+  animation-duration: 0.45s;
+}
+@keyframes sx-rain {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-60px, 240px, 0);
+  }
+}
+.sx-siren-r {
+  animation: sx-siren 1.2s steps(1) infinite;
+}
+.sx-siren-b {
+  animation: sx-siren 1.2s steps(1) infinite;
+  animation-delay: -0.6s;
+}
+@keyframes sx-siren {
+  0% {
+    opacity: 0.6;
+  }
+  25% {
+    opacity: 0.1;
+  }
+  50% {
+    opacity: 0.05;
+  }
+}
+.sx-mist {
+  position: absolute;
+  left: -50%;
+  right: -50%;
+  bottom: -5%;
+  height: 40%;
+  background: radial-gradient(ellipse at 30% 100%, rgba(201, 184, 232, 0.16), transparent 60%),
+    radial-gradient(ellipse at 75% 100%, rgba(243, 198, 220, 0.12), transparent 55%);
+  animation: sx-mist 30s ease-in-out infinite alternate;
+}
+@keyframes sx-mist {
+  to {
+    transform: translateX(12%);
+  }
+}
+.sx-fly {
+  animation: sx-fly 70s linear infinite;
+}
+@keyframes sx-fly {
+  0% {
+    transform: translate(1700px, 160px);
+  }
+  50% {
+    transform: translate(900px, 120px);
+  }
+  100% {
+    transform: translate(100px, 170px);
+  }
+}
+.sx-swing {
+  animation: sx-swing 5s ease-in-out infinite alternate;
+}
+@keyframes sx-swing {
+  from {
+    transform: rotate(-3deg);
+  }
+  to {
+    transform: rotate(3deg);
+  }
+}
+.sx-weld {
+  animation: sx-weld 0.18s steps(2) infinite alternate;
+}
+@keyframes sx-weld {
+  to {
+    opacity: 0.2;
+  }
+}
+.sx-dust {
+  position: absolute;
+  left: -50%;
+  right: -50%;
+  bottom: 0;
+  height: 45%;
+  background: radial-gradient(ellipse at 20% 90%, rgba(255, 236, 205, 0.4), transparent 55%), radial-gradient(ellipse at 70% 100%, rgba(232, 180, 120, 0.3), transparent 50%);
+  animation: sx-mist 18s ease-in-out infinite alternate;
+}
+.sx-haze {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 35%;
+  background: linear-gradient(0deg, rgba(255, 120, 40, 0.18), transparent);
+  animation: sx-breathe 3s ease-in-out infinite;
+}
+.sx-wing {
+  animation: sx-wing 5s ease-in-out infinite alternate;
+}
+@keyframes sx-wing {
+  from {
+    transform: rotate(calc(var(--side) * -4deg)) scale(0.97);
+  }
+  to {
+    transform: rotate(calc(var(--side) * 5deg)) scale(1.03);
+  }
+}
+.sx-rebirth {
+  animation: sx-rebirth 9s ease-in-out infinite;
+}
+@keyframes sx-rebirth {
+  0%,
+  100% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  55% {
+    opacity: 0.15;
+    transform: scale(0.92);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+/* Film grain over every scene: one static texture, no animation. */
+.sx-grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.09;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 1.2 -0.1'/></filter><rect width='220' height='220' filter='url(%23n)'/></svg>");
+}
+.sx-grain--light {
+  opacity: 0.06;
+  mix-blend-mode: multiply;
+}

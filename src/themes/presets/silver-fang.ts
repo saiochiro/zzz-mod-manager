@@ -34,7 +34,7 @@ const theme: ThemeDefinition = {
     displayFont: '"Bodoni Moda", Didot, Georgia, serif',
     displayWeight: 700,
     displayCase: 'uppercase',
-    displayTracking: '0.06em',
+    displayTracking: '0.08em',
   },
 };
 

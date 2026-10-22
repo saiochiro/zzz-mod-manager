@@ -30,9 +30,9 @@ const theme: ThemeDefinition = {
   glow: { color: '#6b7cff', strength: 0.35 },
   motif: 'stars',
   typography: {
-    displayFont: '"Plus Jakarta Sans", "Inter", system-ui, sans-serif',
+    displayFont: '"Space Grotesk", "Inter", system-ui, sans-serif',
     displayWeight: 700,
-    displayTracking: '-0.02em',
+    displayTracking: '-0.01em',
   },
   legacyIds: ['cyberpunk-neon'],
 };

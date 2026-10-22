@@ -31,8 +31,8 @@ const theme: ThemeDefinition = {
   glow: { color: '#ffcc1f', strength: 0.4 },
   motif: 'gears',
   typography: {
-    displayFont: '"Oswald", Bahnschrift, "Arial Narrow", sans-serif',
-    displayWeight: 700,
+    displayFont: '"Black Ops One", Impact, "Arial Narrow", sans-serif',
+    displayWeight: 400,
     displayCase: 'uppercase',
     displayTracking: '0.03em',
   },

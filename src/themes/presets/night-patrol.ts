@@ -31,10 +31,10 @@ const theme: ThemeDefinition = {
   glow: { color: '#d42a3a', strength: 0.45 },
   motif: 'crosshairs',
   typography: {
-    displayFont: '"Chakra Petch", "Inter", system-ui, sans-serif',
+    displayFont: '"Rajdhani", "Inter", system-ui, sans-serif',
     displayWeight: 700,
     displayCase: 'uppercase',
-    displayTracking: '0.05em',
+    displayTracking: '0.06em',
   },
   legacyIds: ['crimson-flame', 'crimson-eclipse'],
 };

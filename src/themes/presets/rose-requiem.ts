@@ -31,10 +31,10 @@ const theme: ThemeDefinition = {
   glow: { color: '#c06aa8', strength: 0.4 },
   motif: 'roses',
   typography: {
-    displayFont: '"Fraunces", Georgia, "Times New Roman", serif',
-    displayWeight: 600,
+    displayFont: '"Cormorant Garamond", Georgia, serif',
+    displayWeight: 700,
     displayStyle: 'italic',
-    displayTracking: '-0.01em',
+    displayTracking: '0.01em',
   },
   legacyIds: ['chisa-crimson'],
 };

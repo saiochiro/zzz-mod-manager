@@ -31,9 +31,10 @@ const theme: ThemeDefinition = {
   glow: { color: '#e05a9a', strength: 0.2 },
   motif: 'notes',
   typography: {
-    displayFont: '"Fraunces", Georgia, "Times New Roman", serif',
-    displayWeight: 600,
-    displayTracking: '-0.01em',
+    displayFont: '"Playfair Display", Georgia, serif',
+    displayWeight: 700,
+    displayStyle: 'italic',
+    displayTracking: '0',
   },
   legacyIds: ['furina-salon', 'grand-encore'],
 };

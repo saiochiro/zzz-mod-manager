@@ -31,11 +31,11 @@ const theme: ThemeDefinition = {
   glow: { color: '#2fd6c3', strength: 0.42 },
   motif: 'arrows',
   typography: {
-    displayFont: '"Exo 2", "Inter", system-ui, sans-serif',
-    displayWeight: 700,
+    displayFont: '"Kanit", "Inter", system-ui, sans-serif',
+    displayWeight: 800,
     displayStyle: 'italic',
     displayCase: 'uppercase',
-    displayTracking: '0.03em',
+    displayTracking: '0.02em',
   },
 };
 

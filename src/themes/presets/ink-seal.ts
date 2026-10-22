@@ -31,8 +31,8 @@ const theme: ThemeDefinition = {
   glow: { color: '#b8321f', strength: 0.16 },
   motif: 'clouds',
   typography: {
-    displayFont: '"Shippori Mincho B1", "Noto Serif JP", Georgia, serif',
-    displayWeight: 700,
+    displayFont: '"Yuji Syuku", "Shippori Mincho B1", Georgia, serif',
+    displayWeight: 400,
     displayTracking: '0.02em',
   },
   legacyIds: ['vermilion-court', 'changli-phoenix'],

@@ -31,9 +31,8 @@ const theme: ThemeDefinition = {
   glow: { color: '#ff8a1f', strength: 0.5 },
   motif: 'flames',
   typography: {
-    displayFont: '"Chakra Petch", "Inter", system-ui, sans-serif',
-    displayWeight: 700,
-    displayStyle: 'italic',
+    displayFont: '"Bungee", "Inter", system-ui, sans-serif',
+    displayWeight: 400,
     displayTracking: '0.01em',
   },
   legacyIds: ['burnice-solar', 'hollow-gold'],

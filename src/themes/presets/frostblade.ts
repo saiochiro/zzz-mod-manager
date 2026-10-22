@@ -31,10 +31,9 @@ const theme: ThemeDefinition = {
   glow: { color: '#5cc8ff', strength: 0.45 },
   motif: 'snow',
   typography: {
-    displayFont: '"Chakra Petch", "Inter", system-ui, sans-serif',
-    displayWeight: 600,
-    displayCase: 'uppercase',
-    displayTracking: '0.04em',
+    displayFont: '"Kaisei Decol", "Shippori Mincho B1", Georgia, serif',
+    displayWeight: 700,
+    displayTracking: '0.02em',
   },
   legacyIds: ['miyabi-frost'],
 };

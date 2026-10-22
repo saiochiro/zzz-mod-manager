@@ -33,7 +33,7 @@ const theme: ThemeDefinition = {
   typography: {
     displayFont: '"Shippori Mincho B1", "Noto Serif JP", Georgia, serif',
     displayWeight: 700,
-    displayTracking: '0.01em',
+    displayTracking: '0.02em',
   },
   legacyIds: ['raiden-euthymia', 'midnight-purple'],
 };

@@ -1,14 +1,13 @@
-What's new in 2.9.0
+What's new in 2.10.0
 
-The Mod Workshop now has a Community tab, a page just for ProxyLaunch.
+Themes got a big upgrade.
 
-- Browse mods other people made in the Workshop, sort by newest or most liked, and filter by agent.
-- Click Get and ProxyLaunch downloads the GameBanana mods it needs and builds it for you.
-- Sign in with Discord to post your own Workshop mods, like posts and report problems.
-- Posts never include mod files. They list which part came from which GameBanana mod, so the original creators keep their credit and downloads.
-- 18+ labels are checked on the server against each mod's GameBanana content ratings, so a post can't skip them. Your Content filter setting decides whether you see 18+ posts.
-- 3 reports hide a post until a moderator reviews it.
+- New backgrounds for all 16 themes. Each one is now a full animated scene with depth and lighting: snowy peaks and aurora for Frostblade, an underwater world with a passing shark for Riptide, a burning sunset highway for Ember Rush, a glowing rose window for Rose Requiem, blazing wings for Undying Flame, and more.
+- New fonts. Every theme has its own heading font now, picked to match the agent. Outlaw Dust has a cleaner look.
+- Character cursors. Each theme's mouse pointer now wears its agent's look: fox ears and tail for Frostblade, shark fins for Riptide, mouse ears and tail for Velvet Heist, rocket thrusters for Ember Rush, fiery wings for Undying Flame, wolf ears and a bow tie for Silver Fang, and so on.
 
-The Community tab is inside the Workshop. Turn the Workshop on in Settings > Experimental.
+Fixes
+
+- Some mods showed a game texture (like a face or hair texture) as their cover image. ProxyLaunch now skips textures and uses the GameBanana preview instead, and fixes mods that already had a wrong cover.
 
 Requires XXMI Launcher with ZZMI set up. Questions or bugs? Reach out on Discord: ghxty

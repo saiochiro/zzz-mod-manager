@@ -31,9 +31,9 @@ const theme: ThemeDefinition = {
   glow: { color: '#e8304f', strength: 0.4 },
   motif: 'waves',
   typography: {
-    displayFont: '"Plus Jakarta Sans", "Inter", system-ui, sans-serif',
-    displayWeight: 800,
-    displayTracking: '-0.02em',
+    displayFont: '"Fredoka", "Inter", system-ui, sans-serif',
+    displayWeight: 700,
+    displayTracking: '0.005em',
   },
   legacyIds: ['ellen-joe'],
 };
