@@ -841,17 +841,17 @@ type = cycle
 $monocle = 0,1
 
 [TextureOverrideEllenPosition]
-hash = 6291a8c4
+hash = b78f3616
 vb0 = ResourceEllenPosition
 
 [TextureOverrideEllenBlend]
-hash = 3d10f9a2
+hash = ed9cb852
 vb1 = ResourceEllenBlend
 handling = skip
 draw = 21840, 0
 
 [TextureOverrideEllenIB]
-hash = 9f4e21b0
+hash = e30fae03
 handling = skip
 ib = ResourceEllenIB
 Resource\\ZZMI\\Diffuse = ref ResourceEllenDiffuse
@@ -870,11 +870,11 @@ type = cycle
 $vest = 0,1
 
 [TextureOverrideLycaonPosition]
-hash = 30f8a12d
+hash = 8c7775ae
 vb0 = ResourceLycaonPosition
 
 [TextureOverrideLycaonIB]
-hash = c8201f4a
+hash = 6749b6e7
 handling = skip
 ib = ResourceLycaonIB
 run = CommandList\\ZZMI\\SetTextures

@@ -174,7 +174,10 @@ export function syncAgentHSwapOnDisk(
       );
     });
 
-  if (activeCycleMods.length >= 2 && allHaveCanonicalBuffers) {
+  // A master swap needs the agent's real buffer hashes; brand-new agents may not have them yet.
+  const hasAgentHashes = Boolean(agent.current_hashes.position_vb && agent.current_hashes.ib);
+
+  if (activeCycleMods.length >= 2 && allHaveCanonicalBuffers && hasAgentHashes) {
     // 1. Isolate raw .ini files inside each active cycle mod by renaming mod.ini -> DISABLED_source_mod.ini
     const cyclePayload: { manifest: ModManifest; modAbsPath: string }[] = [];
 

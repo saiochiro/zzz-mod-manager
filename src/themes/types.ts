@@ -22,7 +22,8 @@ export type MotifKind =
   | 'paws'
   | 'arrows'
   | 'gears'
-  | 'shields';
+  | 'shields'
+  | 'plumes';
 
 export interface ThemeColors {
   /** App background behind everything. */

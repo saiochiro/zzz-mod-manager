@@ -34,6 +34,11 @@ export const G: Record<string, Glyph> = {
     w: 1.6,
   },
   shield: { d: 'M12 2 20 5v6.4c0 5-3.4 8.7-8 10.6-4.6-1.9-8-5.6-8-10.6V5l8-3ZM12 6.2v11.6M7.2 10.4h9.6', mode: 'stroke', w: 1.6 },
+  plume: {
+    d: 'M12 22.5V10.2M12 10.2c-3.7 1.9-5.7 5.2-5.5 9.4 1.9-.4 3.8-1.4 5.5-3.1 1.7 1.7 3.6 2.7 5.5 3.1.2-4.2-1.8-7.5-5.5-9.4ZM12 10.2c-2.4-2-2.4-4.8-.2-8.7.6 2.2 2.6 3.1 2.6 5.5 0 1.5-.9 2.7-2.4 3.2Z',
+    mode: 'stroke',
+    w: 1.6,
+  },
   cloud: { d: 'M2 15.5c2-.2 3.2-1.4 3.4-3.2.3-2.6 2.6-4.4 5.2-4 1.2-2.3 4.4-3 6.4-1.2 1.4 1.2 1.8 3 1.2 4.6 1.8.2 3.2 1.6 3.4 3.4M5.5 19.5c3.5 0 4.5-2 8-2s4.5 2 8.5 2', mode: 'stroke', w: 1.6 },
 };
 
@@ -56,6 +61,7 @@ export const SETS: Record<MotifKind, string[]> = {
   arrows: ['arrow', 'dot', 'arrow'],
   gears: ['gear', 'dot', 'gear'],
   shields: ['shield', 'dot', 'shield'],
+  plumes: ['plume', 'flame', 'dot', 'plume'],
 };
 
 /** The single most recognisable glyph for each motif (used on the app icon and cursor). */
@@ -78,4 +84,5 @@ export const HERO_GLYPH: Record<MotifKind, string> = {
   arrows: 'arrow',
   gears: 'gear',
   shields: 'shield',
+  plumes: 'plume',
 };

@@ -359,6 +359,18 @@ function sceneFor(t: ThemeDefinition): React.ReactNode {
           <Particles glyph="dot" count={26} colors={[c.primary, c.secondary]} motion="drift" size={[4, 9]} speed={[10, 20]} opacity={[0.2, 0.5]} seed={id} />
         </>
       );
+    case 'undying-flame':
+      return (
+        <>
+          <Glows colors={[c.primary, c.secondary, c.accent]} strength={1.1} />
+          {/* Rebirth halo: flares, burns down to ash, then reignites */}
+          <span className="scene-rebirth" style={{ '--halo': c.primary, '--halo2': c.secondary } as React.CSSProperties} />
+          <div className="scene-heat" style={{ background: `radial-gradient(ellipse at 50% 115%, ${c.primary}66, transparent 62%)` }} />
+          <Particles glyph="flame" count={26} colors={['#ffe08a', c.primary, c.accent]} motion="rise" size={[5, 13]} speed={[9, 17]} seed={id} />
+          <Particles glyph="plume" count={9} colors={[c.secondary, '#ffd9a0', c.accent]} motion="fall" size={[14, 24]} speed={[20, 34]} opacity={[0.25, 0.55]} seed={id + 'p'} />
+          <Particles glyph="dot" count={18} colors={['#b9a7a4']} motion="rise" size={[3, 6]} speed={[16, 28]} opacity={[0.15, 0.35]} seed={id + 'a'} />
+        </>
+      );
     default:
       return (
         <>

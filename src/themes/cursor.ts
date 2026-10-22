@@ -186,6 +186,16 @@ function signature(theme: ThemeDefinition): Signature {
         detail: `<path d="M5.4 5.4 L14.6 7.8 Q18.4 13.4 18.2 18.2 Q13.4 18.4 7.8 14.6 Z" stroke="#f3d9a8" stroke-opacity=".75" stroke-width=".9" fill="none"/>
           <circle cx="12.6" cy="12.6" r="2.2" fill="#e8b04a" stroke="#5b3a1e" stroke-width=".6"/>`,
       };
+    case 'undying-flame': // golden quill feather with a burning tip
+      return {
+        parts: [
+          { d: 'M18.6 18.6 C21.8 19.4 24.8 21.8 26.8 26.8 C24.6 25.2 22.6 25.2 21 26.2 C21.6 23.8 20.4 21 18.6 18.6 Z', fill: 'url(#flame)' },
+          { d: 'M3 3 C10.2 4.2 17.4 9.8 21 18.6 C18.6 18 16.6 18.6 15.2 20.4 C13.4 16.6 10 14.2 6.6 14.4 C7.6 10.8 6.2 6.6 3 3 Z', fill: 'url(#fill)' },
+        ],
+        detail: `<defs><linearGradient id="flame" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe066"/><stop offset=".55" stop-color="#ff6a2a"/><stop offset="1" stop-color="#e5264f"/></linearGradient></defs>
+          <path d="M3.6 3.6 C9 8.6 13.6 13.4 18 18.6" stroke="#fff6e0" stroke-opacity=".85" stroke-width="1" fill="none" stroke-linecap="round"/>
+          <path d="M8 9 L10.6 8.4 M11 12 L13.8 11.4 M10 13.6 L9.4 16.2" stroke="#fff" stroke-opacity=".45" stroke-width=".8" stroke-linecap="round"/>`,
+      };
     default: // graphite / anything new: sleek proxy arrow with a data line
       return {
         parts: [{ d: 'M3 3 L3 23.4 L8.6 18.6 L12.4 26.8 L16.2 25 L12.6 17.2 L20 17.2 Z', fill: 'url(#fill)' }],

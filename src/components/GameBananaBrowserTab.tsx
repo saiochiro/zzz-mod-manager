@@ -390,7 +390,8 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
         : null;
     const subcatId = selectedAgent?.gb_category_id;
     const hide = nsfwFilterState === 'hide';
-    const cleanQ = debouncedSearch.trim();
+    // Agents without a GameBanana category id yet (new releases) are browsed by name instead.
+    const cleanQ = debouncedSearch.trim() || (selectedAgent && !subcatId ? selectedAgent.folder_name : '');
     const cacheKey = makeClientCacheKey(
       page,
       sortOption,

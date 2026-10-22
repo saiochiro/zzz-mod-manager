@@ -23,7 +23,9 @@ export function matchHashesToAgent(
 
   for (const agent of Object.values(hashDb.agents)) {
     const currentSet = new Set(
-      Object.values(agent.current_hashes).map((h) => h.toLowerCase())
+      [...Object.values(agent.current_hashes), ...(agent.component_hashes ?? [])]
+        .filter(Boolean)
+        .map((h) => h.toLowerCase())
     );
     const legacyMap = agent.legacy_hash_migrations || {};
 
@@ -98,6 +100,7 @@ export const AGENT_ALIASES: Record<string, string> = {
   claret: 'claret_flint',
   aria: 'aria',
   roxy: 'roxy_ifrita_pryce',
+  phoenix: 'phoenix_reffaella',
   ifrita: 'roxy_ifrita_pryce',
   lucia: 'lucia_elowen',
   alice: 'alice_thymefield',

@@ -1,0 +1,31 @@
+# Runs the test suite and a strict type check on every branch push and PR,
+# so problems show up before a version bump on main triggers a release.
+
+name: Check
+
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        shell: bash
+        run: npm ci || npm install
+      - name: Type check (electron + core)
+        run: node ./node_modules/typescript/bin/tsc -p tsconfig.electron.json --noEmit
+      - name: Type check (UI)
+        run: node ./node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
+      - name: Tests
+        run: npm test
+      - name: Build
+        run: node ./node_modules/vite/bin/vite.js build

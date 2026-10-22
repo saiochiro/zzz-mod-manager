@@ -99,6 +99,8 @@ export interface AgentHashEntry {
   portrait_svg: string;
   current_hashes: AgentHashes;
   legacy_hash_migrations: Record<string, string>;
+  /** Every vb/ib hash ZZMI publishes for this agent (hair, face, outfits...), used for mod detection. */
+  component_hashes?: string[];
   stride_patch?: StridePatchRule;
   gb_category_id?: number;
   gb_icon_url?: string;

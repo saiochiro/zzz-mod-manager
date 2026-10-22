@@ -40,18 +40,18 @@ type = cycle
 $jacket = 0,1
 
 [TextureOverrideEllenPosition]
-hash = 6291a8c4
+hash = b78f3616
 vb0 = ResourceEllenPosition
 
 [TextureOverrideEllenIB]
-hash = 9f4e21b0
+hash = e30fae03
 handling = skip
 ps-t0 = ResourceEllenDiffuse
 drawindexed = auto
 `;
 
     const parsed = parseIniContent(sampleIni, 'Streetwear_Ellen.ini');
-    expect(parsed.detectedHashes).toEqual(['6291a8c4', '9f4e21b0']);
+    expect(parsed.detectedHashes).toEqual(['b78f3616', 'e30fae03']);
     expect(parsed.hasLegacyShaderSlots).toBe(true);
     expect(parsed.subToggles).toHaveLength(1);
     expect(parsed.subToggles[0]).toMatchObject({
@@ -75,9 +75,9 @@ drawindexed = auto
   });
 
   it('fingerprints current and legacy buffer hashes against hash_db.json', () => {
-    const ellenMatch = matchHashesToAgent(['6291a8c4', '9f4e21b0'], DEFAULT_HASH_DB);
+    const ellenMatch = matchHashesToAgent(['b78f3616', 'e30fae03'], DEFAULT_HASH_DB);
     expect(ellenMatch.agent?.agent_id).toBe('ellen_joe');
-    expect(ellenMatch.matchedCurrentHashes).toEqual(['6291a8c4', '9f4e21b0']);
+    expect(ellenMatch.matchedCurrentHashes).toEqual(['b78f3616', 'e30fae03']);
     expect(ellenMatch.matchedLegacyHashes).toHaveLength(0);
 
     const legacyMiyabiMatch = matchHashesToAgent(['deadbeef', 'b40192f1'], DEFAULT_HASH_DB);
@@ -90,7 +90,7 @@ drawindexed = auto
     const zip = new AdmZip();
     zip.addFile(
       'OuterWrapper/NestedFolder/TrueModRoot/EllenMod.ini',
-      Buffer.from('[TextureOverrideEllenPosition]\nhash = 6291a8c4\n', 'utf-8')
+      Buffer.from('[TextureOverrideEllenPosition]\nhash = b78f3616\n', 'utf-8')
     );
     zip.addFile(
       'OuterWrapper/NestedFolder/TrueModRoot/malicious_hook.dll',

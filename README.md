@@ -26,7 +26,7 @@
 - **Outfit switching.** Turn outfits on and off per character, and cycle them in-game with H.
 - **Fix after game patches.** Finds mods that broke after an update and repairs them in one click.
 - **Import from other launchers.** Bring your existing mod setup over in a few clicks.
-- **Agent themes and cursors.** 15 themes inspired by ZZZ agents, each with its own colors, background, animated effects, app icon and mouse cursor.
+- **Agent themes and cursors.** 16 themes inspired by ZZZ agents, each with its own colors, background, animated effects, app icon and mouse cursor.
 
 <p align="center">
   <img src="docs/screenshot-themes.png" width="860" alt="Themes screen">

@@ -3861,3 +3861,34 @@ html[data-scene] .card {
     stroke-dashoffset: -32;
   }
 }
+/* Undying Flame rebirth halo: flares, fades to ash, reignites */
+.scene-rebirth {
+  position: absolute;
+  left: 50%;
+  bottom: -18vmin;
+  width: 70vmin;
+  height: 70vmin;
+  margin-left: -35vmin;
+  border-radius: 50%;
+  background: radial-gradient(circle, transparent 52%, var(--halo2) 58%, var(--halo) 63%, transparent 72%);
+  opacity: 0.3;
+  animation: scene-rebirth 9s ease-in-out infinite;
+}
+@keyframes scene-rebirth {
+  0%,
+  100% {
+    opacity: 0.32;
+    transform: scale(1);
+    filter: saturate(1);
+  }
+  55% {
+    opacity: 0.08;
+    transform: scale(0.94);
+    filter: saturate(0);
+  }
+  70% {
+    opacity: 0.45;
+    transform: scale(1.04);
+    filter: saturate(1.3);
+  }
+}

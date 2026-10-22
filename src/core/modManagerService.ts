@@ -348,21 +348,21 @@ type = cycle
 $weapon_glow = 0,1
 
 [TextureOverrideEllenPosition]
-hash = 6291a8c4
+hash = b78f3616
 vb0 = ResourceEllenPosition
 
 [TextureOverrideEllenBlend]
-hash = 3d10f9a2
+hash = ed9cb852
 vb1 = ResourceEllenBlend
 handling = skip
 draw = 21840, 0
 
 [TextureOverrideEllenTexcoord]
-hash = 7b82e110
+hash = 5ac6d5ee
 vb1 = ResourceEllenTexcoord
 
 [TextureOverrideEllenIB]
-hash = 9f4e21b0
+hash = e30fae03
 handling = skip
 ib = ResourceEllenIB
 Resource\\ZZMI\\Diffuse = ref ResourceEllenDiffuse
@@ -415,17 +415,17 @@ type = cycle
 $headphones = 0,1
 
 [TextureOverrideEllenPosition]
-hash = 6291a8c4
+hash = b78f3616
 vb0 = ResourceEllenPosition
 
 [TextureOverrideEllenBlend]
-hash = 3d10f9a2
+hash = ed9cb852
 vb1 = ResourceEllenBlend
 handling = skip
 draw = 21840, 0
 
 [TextureOverrideEllenIB]
-hash = 9f4e21b0
+hash = e30fae03
 handling = skip
 ib = ResourceEllenIB
 Resource\\ZZMI\\Diffuse = ref ResourceEllenDiffuse
@@ -472,11 +472,11 @@ type = cycle
 $apron = 0,1
 
 [TextureOverrideEllenPosition]
-hash = 6291a8c4
+hash = b78f3616
 vb0 = ResourceEllenPosition
 
 [TextureOverrideEllenIB]
-hash = 9f4e21b0
+hash = e30fae03
 handling = skip
 ib = ResourceEllenIB
 run = CommandList\\ZZMI\\SetTextures
@@ -655,11 +655,11 @@ type = cycle
 $shield_fx = 0,1
 
 [TextureOverrideCaesarPosition]
-hash = 78b210f4
+hash = 7b6d4dab
 vb0 = ResourceCaesarPosition
 
 [TextureOverrideCaesarIB]
-hash = 90e123c7
+hash = 92061e5e
 handling = skip
 ib = ResourceCaesarIB
 Resource\\ZZMI\\Diffuse = ref ResourceCaesarDiffuse
@@ -723,7 +723,7 @@ endif
     this.addLog(
       'cyan',
       'ROUTER',
-      'Vertex Buffer [6291a8c4] identified. Routing asset to Agent: Ellen Joe.'
+      'Vertex Buffer [b78f3616] identified. Routing asset to Agent: Ellen Joe.'
     );
     this.addLog(
       'success',
@@ -1269,13 +1269,55 @@ endif
   }
 
   /**
+   * Finds the XXMI Launcher install and its ZZMI folder the same way XXMI itself does:
+   * `XXMI Launcher Config.json` sits in the launcher root, and the ZZMI folder is
+   * `Importers.ZZMI.Importer.importer_folder` (absolute, or relative to the root; default `ZZMI`).
+   * Checks the configured loader's root first (portable installs), then %APPDATA%\XXMI Launcher.
+   */
+  public resolveXxmiInstall(): { rootDir: string; cfgPath: string; zzmiDir: string; modsDir: string } | null {
+    const appData =
+      process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:\\Users\\Default', 'AppData', 'Roaming');
+    const roots: string[] = [];
+    try {
+      const loader = this.getConfig().zzmiLoaderPath || '';
+      if (/xxmi launcher\.exe$/i.test(loader)) {
+        // <root>\Resources\Bin\XXMI Launcher.exe
+        roots.push(path.resolve(path.dirname(loader), '..', '..'));
+      }
+    } catch {
+      // config not readable yet
+    }
+    roots.push(path.join(appData, 'XXMI Launcher'));
+
+    for (const rootDir of roots) {
+      const cfgPath = path.join(rootDir, 'XXMI Launcher Config.json');
+      let zzmiDir = path.join(rootDir, 'ZZMI');
+      if (fs.existsSync(cfgPath)) {
+        try {
+          const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+          const folder = cfg?.Importers?.ZZMI?.Importer?.importer_folder;
+          if (typeof folder === 'string' && folder.trim() && folder.trim() !== '.') {
+            zzmiDir = path.isAbsolute(folder) ? folder : path.join(rootDir, folder);
+          }
+        } catch {
+          // unreadable config: fall back to the default ZZMI folder
+        }
+      } else if (!fs.existsSync(zzmiDir)) {
+        continue;
+      }
+      return { rootDir, cfgPath, zzmiDir, modsDir: path.join(zzmiDir, 'Mods') };
+    }
+    return null;
+  }
+
+  /**
    * Detects standard XXMI Launcher directories on Windows
    */
   public detectXxmiModsPath(): { path: string; isValid: boolean; detectedVia: string } {
-    const appData = process.env.APPDATA || '';
-    const standardXxmiAppData = path.join(appData, 'XXMI Launcher', 'ZZMI', 'Mods');
+    const xxmi = this.resolveXxmiInstall();
     const candidates = [
-      { p: standardXxmiAppData, via: 'XXMI Launcher (%APPDATA%)' },
+      ...(xxmi ? [{ p: xxmi.modsDir, via: 'XXMI Launcher Config (ZZMI folder)' }] : []),
+      { p: path.join(process.env.APPDATA || '', 'XXMI Launcher', 'ZZMI', 'Mods'), via: 'XXMI Launcher (%APPDATA%)' },
       { p: 'C:\\Games\\XXMI-Launcher\\ZZMI\\Mods', via: 'C:\\Games\\XXMI-Launcher' },
       { p: 'D:\\Games\\XXMI-Launcher\\ZZMI\\Mods', via: 'D:\\Games\\XXMI-Launcher' },
       { p: 'C:\\XXMI Launcher\\ZZMI\\Mods', via: 'C:\\XXMI Launcher' },
@@ -2154,7 +2196,8 @@ endif
 
       // 1. Check XXMI Launcher Config.json for configured ZZMI game_folder
       try {
-        const xxmiCfgPath = path.join(appData, 'XXMI Launcher', 'XXMI Launcher Config.json');
+        const xxmiCfgPath =
+          this.resolveXxmiInstall()?.cfgPath || path.join(appData, 'XXMI Launcher', 'XXMI Launcher Config.json');
         if (fs.existsSync(xxmiCfgPath)) {
           const xxmiCfg = JSON.parse(fs.readFileSync(xxmiCfgPath, 'utf-8'));
           const gameFolder = xxmiCfg?.Importers?.ZZMI?.Importer?.game_folder;
@@ -2268,7 +2311,7 @@ endif
     const exists = (p?: string) => Boolean(p) && fs.existsSync(p as string);
     const appData =
       process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:\\Users\\Default', 'AppData', 'Roaming');
-    const zzmiDir = path.join(appData, 'XXMI Launcher', 'ZZMI');
+    const zzmiDir = this.resolveXxmiInstall()?.zzmiDir || path.join(appData, 'XXMI Launcher', 'ZZMI');
     return {
       game: { ok: exists(cfg.zzzExePath), path: cfg.zzzExePath || '' },
       loader: {
@@ -2293,16 +2336,14 @@ endif
       return { synced: false, targetModsDir: '', syncedModsCount: 0 };
     }
 
-    const appData =
-      process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:\\Users\\Default', 'AppData', 'Roaming');
-    const xxmiRootDir = path.join(appData, 'XXMI Launcher');
-    const xxmiZzmiDir = path.join(xxmiRootDir, 'ZZMI');
-    const xxmiModsDir = path.join(xxmiZzmiDir, 'Mods');
+    const xxmi = this.resolveXxmiInstall();
     const localModsDir = path.join(this.zzmiRootPath, 'Mods');
 
-    if (!fs.existsSync(xxmiZzmiDir)) {
+    if (!xxmi || !fs.existsSync(xxmi.zzmiDir)) {
       return { synced: false, targetModsDir: '', syncedModsCount: 0 };
     }
+    const xxmiRootDir = xxmi.rootDir;
+    const xxmiModsDir = xxmi.modsDir;
 
     fs.mkdirSync(xxmiModsDir, { recursive: true });
 
@@ -2381,9 +2422,20 @@ endif
                 copyDirRecursive(srcChildPath, dstChildPath);
               } else {
                 // Sync updated .ini / .json files or missing files without re-copying unchanged multi-MB .buf/.dds files
+                const dstModFiles = new Set(fs.readdirSync(dstChildPath).map((n) => n.toLowerCase()));
                 for (const modFile of fs.readdirSync(srcChildPath, { withFileTypes: true })) {
                   const sFile = path.join(srcChildPath, modFile.name);
                   const dFile = path.join(dstChildPath, modFile.name);
+                  // XXMI Launcher 2.4.6+ renames duplicate library / rogue d3dx inis to DISABLED_<name>.
+                  // Respect that instead of copying the file back, which made XXMI warn on every launch.
+                  if (
+                    modFile.isFile() &&
+                    /\.ini$/i.test(modFile.name) &&
+                    !dstModFiles.has(modFile.name.toLowerCase()) &&
+                    dstModFiles.has(`disabled_${modFile.name.toLowerCase()}`)
+                  ) {
+                    continue;
+                  }
                   if (modFile.isDirectory()) {
                     if (!fs.existsSync(dFile)) {
                       copyDirRecursive(sFile, dFile);
@@ -2501,12 +2553,9 @@ endif
       updateIniFile(loaderD3dx);
     }
 
-    // 3. Configure XXMI Launcher (%APPDATA%\XXMI Launcher) as our connector and sync physical mods
-    const appData =
-      process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:\\Users\\Default', 'AppData', 'Roaming');
-    const xxmiRootDir = path.join(appData, 'XXMI Launcher');
-    const xxmiCfgPath = path.join(xxmiRootDir, 'XXMI Launcher Config.json');
-    if (fs.existsSync(xxmiCfgPath) && zzzExePath) {
+    // 3. Configure XXMI Launcher as our connector and sync physical mods
+    const xxmiCfgPath = this.resolveXxmiInstall()?.cfgPath ?? '';
+    if (xxmiCfgPath && fs.existsSync(xxmiCfgPath) && zzzExePath) {
       try {
         const xxmiCfg = JSON.parse(fs.readFileSync(xxmiCfgPath, 'utf-8'));
         if (xxmiCfg?.Importers?.ZZMI?.Importer) {
@@ -3452,6 +3501,17 @@ endif
     ];
 
     const detected: ExternalLauncherDetection[] = [];
+    // The ZZMI folder XXMI is actually configured to use (it can be moved in XXMI's settings).
+    const xxmi = this.resolveXxmiInstall();
+    if (xxmi && !rawCandidates.some((c) => path.resolve(c.path).toLowerCase() === path.resolve(xxmi.modsDir).toLowerCase())) {
+      rawCandidates.unshift({
+        name: 'XXMI Launcher (configured ZZMI folder)',
+        type: 'XXMI',
+        path: xxmi.modsDir,
+        description: 'ZZMI folder set in XXMI Launcher settings',
+      });
+    }
+
     for (const cand of rawCandidates) {
       if (cand.path && fs.existsSync(cand.path)) {
         let count = 0;
