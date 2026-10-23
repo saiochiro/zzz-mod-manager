@@ -1,8 +1,9 @@
-What's new in 2.14.1
+What's new in 2.14.2
 
-- Much faster. ProxyLaunch no longer checks mod pictures on your PC. Mods are checked ahead of time, and the app just downloads the results, so Browse opens already sorted and nothing gets scanned in front of you.
-- The content filter is for Browse only now. Your Library and the Workshop always show every mod you have installed, with no hiding and no blur.
-- Your installed mods are never changed by the filter anymore. Mods that 2.14.0 edited (Experimental mods with their NSFW options turned off) are put back exactly as they were.
-- Brand new uploads show up in the SFW views once they have been checked, usually within an hour.
+- The content filter is back to three simple choices: SFW only, NSFW (blurred) and Show all. The SFW + toggles option is on hold for now, and anyone who had it picked is moved to SFW only.
+- Browse is fast and full in every view. SFW only now shows the whole list of checked safe mods right away (around a thousand), with search, sorting, categories and characters all working. NSFW and Show all load from GameBanana with fewer requests.
+- The activity panel under the bell now always opens on top of everything and is no longer see-through. Pop-up messages also stay on top of open panels and windows.
+- The Mod Workshop is no longer marked as experimental. It is on for everyone, and you can hide it in Settings under Features.
+- Layout fixes: the Workshop header lines up like the other pages, and Settings sits centered on wide screens.
 
 Requires XXMI Launcher with ZZMI set up. Questions or bugs? Reach out on Discord: ghxty
