@@ -19,7 +19,10 @@ jobs:
           npm i --no-save --no-package-lock @tensorflow/tfjs@4.22.0 sharp@0.33.5
           npm i --no-save --no-package-lock @tensorflow/tfjs-node@4.22.0 || echo "tfjs-node unavailable, using plain tfjs"
       - name: Score mods
-        run: node scripts/nsfw-calibrate2.mjs
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/nsfw-calibrate2.mjs 2>&1 | tee run.log || { tail -12 run.log | while IFS= read -r l; do echo "::error::${l:0:800}"; done; exit 1; }
       - name: Save results
         if: always()
         run: |
