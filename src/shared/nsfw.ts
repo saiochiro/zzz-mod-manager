@@ -134,6 +134,8 @@ export interface NsfwEvidence {
   hotkeyNsfw?: boolean;
   /** The title or description reads like a nude edit. */
   nudeEditText?: boolean;
+  /** The title itself names NSFW content (skimpy, swimsuit, lewd, "-NSFW", bottom heavy...). */
+  nsfwTitle?: boolean;
   /** A character skin. Only skins can be Experimental; other mods are SFW or NSFW. Default true. */
   isSkin?: boolean;
 }
@@ -165,6 +167,8 @@ export function decideNsfwLevel(e: NsfwEvidence): NsfwVerdict {
   const ctx = `${e.flagged ? 'rated/flagged' : 'unrated'}; pictures ${counts}${toggleEvidence ? `; ${toggleEvidence}` : ''}`;
 
   if (e.nudeEditText) return v('nsfw', `nude-edit wording; ${ctx}`);
+  // A mod named after its NSFW content isn't an SFW redesign, whatever its toggles.
+  if (e.nsfwTitle) return v('nsfw', `NSFW words in the title; ${ctx}`);
   if (rated.length === 0) return !e.flagged && !toggleEvidence ? v('sfw', `no pictures; ${ctx}`) : v('nsfw', `no pictures; ${ctx}`);
   if (rated[0] !== 'clean') return v('nsfw', `cover is ${rated[0]}; ${ctx}`);
 
@@ -172,7 +176,7 @@ export function decideNsfwLevel(e: NsfwEvidence): NsfwVerdict {
   if (allClean && !e.flagged && !toggleEvidence) return v('sfw', ctx);
 
   const cleanShare = cleanImages.filter(Boolean).length / rated.length;
-  if (e.isSkin !== false && toggleEvidence && cleanShare >= 0.5) return v('toggle', `clean SFW base with NSFW toggle; ${ctx}`);
+  if (e.isSkin !== false && toggleEvidence && cleanShare >= 0.6) return v('toggle', `clean SFW base with NSFW toggle; ${ctx}`);
   return v('nsfw', `${!toggleEvidence ? 'NSFW signals without a toggle' : e.isSkin === false ? 'not a skin' : 'mostly NSFW pictures'}; ${ctx}`);
 }
 
@@ -200,10 +204,22 @@ export const NUDE_EDIT_RE =
 
 /** NSFW words in a mod's title, tags or page (same list GameBanana items are labeled with). */
 export const NSFW_WORDS_RE =
-  /\b(nsfw|18\+|r18|r-18|nude|nudity|naked|topless|bottomless|uncensored|explicit|adult|skimpy|lewd|hentai|ecchi|erotic|sex|sexual|sexy|strip|lingerie|bikini|microbikini|thong|bondage|bdsm|fetish|latex|boob|boobs|breasts|ass|butt|nipple|pussy|penis|futa|ahegao|bunny\s*suit|bunny\s*girl|slingshot|pasties|lewd|thicc|busty|oppai|swimsuit|swimwear|hot\s*pants|micro|sheer|see[\s-]*through|underboob|sideboob|cleavage|leotard|bodysuit|garter)\b/i;
+  /\b(nsfw|18\+|r18|r-18|nude|nudity|naked|topless|bottomless|uncensored|explicit|adult|skimpy|lewd|hentai|ecchi|erotic|sex|sexual|sexy|strip|lingerie|bikini|microbikini|thong|bondage|bdsm|fetish|latex|boob|boobs|breasts|ass|butt|nipple|pussy|penis|futa|ahegao|bunny\s*suit|bunny\s*girl|slingshot|pasties|lewd|thicc|thick|curvy|busty|oppai|jiggle|bouncy|bottom\s*heavy|big\s*(ass|butt|boobs?|breasts?)|swimsuit|swimwear|hot\s*pants|micro|sheer|see[\s-]*through|underboob|sideboob|cleavage|leotard|bodysuit|garter)\b/i;
 
 /** GameBanana content-rating labels that mean more than skimpy clothing. */
 export const STRONG_RATING_RE = /nud(e|ity)|sexual|explicit|porn|genital|intercourse/i;
+
+/**
+ * NSFW words in a title, ignoring phrases that only say an NSFW toggle exists ("NSFW toggle",
+ * "SFW/NSFW versions") and statements that it's safe ("no NSFW", "SFW").
+ */
+export function titleNamesNsfw(title: string): boolean {
+  const t = title
+    .replace(/\b(no|not|non|without)[\s-]*nsfw\b/gi, ' ')
+    .replace(/\bnsfw[\s-]*(toggle|toggles|switch|option|options|key)s?\b/gi, ' ')
+    .replace(/\b(sfw\s*(\/|&|and|\+)\s*nsfw|nsfw\s*(\/|&|and|\+)\s*sfw)\b/gi, ' ');
+  return NSFW_WORDS_RE.test(t);
+}
 
 /** Where a mod's verdict is stored: by GameBanana id when it has one (shared by Browse and the Library). */
 export function nsfwKeyOf(item: { gamebanana_id?: number | null; id?: number; mod_uuid?: string }): string | null {

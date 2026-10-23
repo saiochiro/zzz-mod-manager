@@ -10,6 +10,7 @@ import {
   NSFW_FILE_RE,
   NSFW_MODEL_CLASSES,
   rateImage,
+  titleNamesNsfw,
   TOGGLE_KEY_RE,
   TOGGLE_TEXT_RE,
   type NsfwImageScores,
@@ -62,6 +63,16 @@ describe('Content tiers', () => {
     expect(decideNsfwLevel({ ...none, images: [clean, nude, skimpy], toggleHint: true }).level).toBe('nsfw');
     expect(decideNsfwLevel({ ...none, images: [clean, clean], toggleHint: true, nudeEditText: true }).level).toBe('nsfw');
     expect(decideNsfwLevel({ ...none, images: [clean, clean], toggleHint: true, isSkin: false }).level).toBe('nsfw');
+  });
+
+  it('a title that names NSFW content is never SFW or Experimental', () => {
+    for (const t of ['Yanagi Skimpy Collection', 'Ye Shunguang Swimsuit NSFW Switch', 'Miyabi - Bottom Heavy', 'Anby spy Lewd order nsfw switch', 'Jufufu-Michele-NSFW', 'Ellen Thicc & Simple']) {
+      expect(titleNamesNsfw(t)).toBe(true);
+    }
+    for (const t of ['Sweety Miyabi', 'Burnice Outfit Toggles', 'Velina with Shawl and Skirt', 'Cute outfit (no NSFW)', 'Phoenix with NSFW toggle']) {
+      expect(titleNamesNsfw(t)).toBe(false);
+    }
+    expect(decideNsfwLevel({ ...none, images: [clean, clean], toggleHint: true, nsfwTitle: true }).level).toBe('nsfw');
   });
 
   it('a picture is clean only if both models agree', () => {

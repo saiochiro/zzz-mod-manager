@@ -6,6 +6,7 @@ import {
   NSFW_FILE_RE,
   NSFW_WORDS_RE,
   NUDE_EDIT_RE,
+  titleNamesNsfw,
   nsfwKeyOf,
   STRONG_RATING_RE,
   TOGGLE_KEY_RE,
@@ -230,6 +231,7 @@ export async function submitNsfwReview(req: NsfwReviewRequest): Promise<NsfwRevi
     fileTreeNsfw: fileNames.some((f) => NSFW_FILE_RE.test(f)),
     hotkeyNsfw: Boolean(req.hotkeyNsfw) || (req.hotkeyNames ?? []).some((h) => TOGGLE_KEY_RE.test(h)),
     nudeEditText: NUDE_EDIT_RE.test(ownText) && !TOGGLE_TEXT_RE.test(ownText),
+    nsfwTitle: titleNamesNsfw(req.title),
     isSkin: !req.category || /skin|character|outfit/i.test(req.category),
   };
   const verdict = decideNsfwLevel(evidence);
