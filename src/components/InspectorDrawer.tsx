@@ -17,7 +17,6 @@ import {
 import type { AgentHashEntry, GameBananaModItem, ModManifest, ParsedIniDocument } from '../shared/types';
 import type { MotifKind } from '../themes/types';
 import { Avatar, Switch, ThumbImage, useEscape } from '../ui';
-import { NsfwLabelControl } from './NsfwLabel';
 import type { FullAppState } from '../services/fairyClient';
 import { formatBytes, getModHealth, HEALTH_META } from '../ui/modStatus';
 
@@ -224,12 +223,6 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                   </p>
                 </div>
               ) : null}
-
-              {onStateChange && (
-                <div className="card card--pad">
-                  <NsfwLabelControl item={mod} onChanged={onStateChange} />
-                </div>
-              )}
 
               {parts.length > 0 && (
                 <div>

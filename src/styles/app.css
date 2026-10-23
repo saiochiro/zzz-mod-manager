@@ -4933,3 +4933,30 @@ html[data-scene] .card {
 .nsfw-label .btn {
   align-self: flex-start;
 }
+
+/* Content scan */
+.scan-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: var(--s-3);
+}
+.scan-note svg {
+  width: 14px;
+  height: 14px;
+}
+.gallery__img img.is-blurred,
+.gallery__thumbs img.is-blurred {
+  filter: blur(22px) saturate(0.6);
+}
+.gallery__img .nsfw-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+.gallery__empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}

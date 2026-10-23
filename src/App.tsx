@@ -238,14 +238,13 @@ const AppInner: React.FC = () => {
     }
   };
 
-  // On-device AI check of installed mods' NSFW labels, in the background.
-  const nsfwAiOn = appState?.config.nsfwAiCheck !== false;
+  // Content scan of installed mods, in the background (always on; users can't skip it).
   const libraryMods = appState?.mods;
   useEffect(() => {
-    if (!nsfwAiOn || !libraryMods) return;
+    if (!libraryMods) return;
     queueNsfwReview(
       libraryMods
-        .filter((m) => !m.nsfw_checked && m.nsfw_source !== 'you')
+        .filter((m) => !m.nsfw_checked)
         .map((m) => ({
           key: nsfwKeyOf(m)!,
           gamebananaId: m.gamebanana_id,
@@ -253,13 +252,12 @@ const AppInner: React.FC = () => {
           title: m.title,
           description: m.description,
           category: m.category_tag || 'Skins',
-          pictureCount: (m.preview_images || []).length || 1,
           flagged: Boolean(m.nsfw_flagged ?? m.is_nsfw),
           images: [m.thumbnail_url, ...(m.preview_images || [])].filter((u, i, a): u is string => Boolean(u) && a.indexOf(u) === i),
         }))
         .filter((it) => it.key)
     );
-  }, [libraryMods, nsfwAiOn]);
+  }, [libraryMods]);
   useEffect(
     () =>
       onNsfwReviewed((r) =>
@@ -1111,7 +1109,6 @@ const AppInner: React.FC = () => {
               motif={theme.motif}
               onInstallWithFairy={handleInstallFromGameBanana}
               onFetchLiveModId={handleIngestUrlOrPath}
-              nsfwAiCheck={config.nsfwAiCheck !== false}
               onStateChange={setAppState}
             />
           )}

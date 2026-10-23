@@ -54,13 +54,12 @@ import {
   applyNsfwReview,
   initNsfwReview,
   nsfwKey,
-  resetNsfwAiResults,
-  setNsfwOverride,
   submitNsfwReview,
   type NsfwReviewRequest,
   type NsfwReviewResult,
 } from './nsfwReview';
-import type { NsfwLevel } from '../shared/nsfw';
+import { filterShowsAllPictures, type NsfwFilter } from '../shared/nsfw';
+import { findNsfwToggles, isSanitized, listFilesRecursive, restoreMod, sanitizeMod } from './nsfwSanitizer';
 import { buildMasterSwapIniContent, syncAgentHSwapOnDisk } from './hSwapEngine';
 import { ZZMI_COMPONENTS } from '../shared/zzmiComponents';
 import {
@@ -917,6 +916,7 @@ endif
     const updated = { ...current, ...partial };
     fs.writeFileSync(this.configPath, JSON.stringify(updated, null, 2), 'utf-8');
     this.addLog('info', 'FAIRY_CORE', 'System configuration updated in config.json.');
+    if (partial.nsfwFilterState && partial.nsfwFilterState !== current.nsfwFilterState) this.enforceContentTiers();
     return updated;
   }
 
@@ -1051,7 +1051,9 @@ endif
       }
     }
 
-    return results.map((m) => applyNsfwReview(m, nsfwKey(m))).sort((a, b) => a.title.localeCompare(b.title));
+    return results
+      .map((m) => ({ ...applyNsfwReview(m, nsfwKey(m)), nsfw_sanitized: isSanitized(this.sanitizeBackupDir(m)) }))
+      .sort((a, b) => a.title.localeCompare(b.title));
   }
 
   /** Removes leftover install folders (failed or abandoned installs) older than 6 hours. */
@@ -1077,23 +1079,68 @@ endif
 
   /** Stores the AI check's verdict for a mod. Installed mods also pass their hotkey names as hints. */
   public async submitNsfwReview(req: NsfwReviewRequest & { modUuid?: string }): Promise<NsfwReviewResult> {
-    let hotkeyNames = req.hotkeyNames;
-    if (req.modUuid) {
-      const mod = this.scanInstalledMods().find((m) => m.mod_uuid === req.modUuid);
-      if (mod) hotkeyNames = (mod.sub_toggles || []).flatMap((t) => [t.section_name, t.variable, t.label]);
+    // Installed copies (by uuid, or the same GameBanana mod) add evidence from their own files:
+    // hotkey names, NSFW toggles found in the .ini files, and file names.
+    const installed = this.scanInstalledMods().filter(
+      (m) => m.mod_uuid === req.modUuid || (req.gamebananaId && m.gamebanana_id === req.gamebananaId)
+    );
+    const hotkeyNames = [...(req.hotkeyNames ?? [])];
+    const localFileNames: string[] = [];
+    let hotkeyNsfw = false;
+    for (const mod of installed) {
+      const dir = this.modAbsDir(mod);
+      hotkeyNames.push(...(mod.sub_toggles || []).flatMap((t) => [t.section_name, t.variable, t.label]));
+      try {
+        if (findNsfwToggles(dir).length) hotkeyNsfw = true;
+      } catch {
+        // unreadable ini: no evidence either way
+      }
+      localFileNames.push(...listFilesRecursive(dir, 4000).map((f) => path.relative(dir, f)));
     }
-    return submitNsfwReview({ ...req, hotkeyNames });
+    const res = await submitNsfwReview({ ...req, hotkeyNames, hotkeyNsfw, localFileNames });
+    if (installed.length) this.enforceContentTiers();
+    return res;
   }
 
-  /** Your own label for a mod (null = go back to the automatic one). */
-  public setNsfwLevel(key: string, level: NsfwLevel | null, flagged: boolean): void {
-    setNsfwOverride(key, level, flagged);
-    this.addLog('info', 'FAIRY_CORE', level ? `NSFW label for ${key} set to ${level} by you.` : `NSFW label for ${key} reset to automatic.`);
+  private sanitizeBackupDir(mod: ModManifest): string {
+    return path.join(this.appDataPath, 'sanitized', mod.mod_uuid);
   }
 
-  public resetNsfwAiChecks(): number {
-    return resetNsfwAiResults();
+  /**
+   * Keeps installed Experimental mods' files in line with the view: NSFW options disabled in the
+   * SFW views, restored to the original in the NSFW / Show all views. Returns true if files changed.
+   */
+  public enforceContentTiers(): boolean {
+    const filter = (this.getConfig().nsfwFilterState || 'hide') as NsfwFilter;
+    const wantSanitized = !filterShowsAllPictures(filter);
+    let changed = false;
+    for (const mod of this.scanInstalledMods()) {
+      const dir = this.modAbsDir(mod);
+      const backupDir = this.sanitizeBackupDir(mod);
+      try {
+        if (mod.nsfw_level === 'toggle' && mod.nsfw_checked && wantSanitized && !isSanitized(backupDir)) {
+          const r = sanitizeMod(dir, backupDir);
+          if (r.changed) {
+            changed = true;
+            this.addLog('info', 'FAIRY_CORE', `Experimental: disabled NSFW options in [${mod.title}].`, mod.mod_uuid);
+          }
+        } else if (isSanitized(backupDir) && (!wantSanitized || mod.nsfw_level !== 'toggle')) {
+          if (restoreMod(dir, backupDir)) changed = true;
+        }
+      } catch (err) {
+        console.warn(`[NSFW scan] Couldn't update ${mod.title}:`, err);
+      }
+    }
+    if (changed) {
+      try {
+        this.syncModsToXxmiLauncher();
+      } catch {
+        // XXMI not set up yet
+      }
+    }
+    return changed;
   }
+
 
   private loadOrReconstructManifest(
     modAbsDir: string,
@@ -2060,6 +2107,7 @@ endif
           logs
         );
         fs.rmSync(stagingDir, { recursive: true, force: true });
+        this.enforceContentTiers();
         return { success: true, installedMods: installed, logs };
       }
 
@@ -2115,6 +2163,7 @@ endif
         logs
       );
       fs.rmSync(stagingDir, { recursive: true, force: true });
+      this.enforceContentTiers();
       return { success: true, installedMods: installed, logs };
     } catch (err) {
       const errMsg = (err as Error).message;
@@ -3700,6 +3749,7 @@ endif
         thumbnail_url: m.thumbnail_url,
         is_nsfw: Boolean(m.is_nsfw),
         nsfw_level: m.nsfw_level,
+        nsfw_checked: m.nsfw_checked,
         is_workshop: (m.tags || []).includes('Workshop'),
         shareable: (() => {
           try {
@@ -3730,7 +3780,6 @@ endif
    */
   private async workshopNsfwCheck(name: string, sources: ModManifest[], markNsfw: boolean): Promise<string[]> {
     const reasons: string[] = [];
-    if (markNsfw) reasons.push('Marked by you');
     if (NSFW_KEYWORD_REGEX.test(name)) reasons.push('The name suggests adult content');
     for (const src of sources) {
       if (src.is_nsfw) {

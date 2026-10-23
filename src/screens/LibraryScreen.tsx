@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import type { AgentHashEntry, GameBananaModItem, HashDatabase, ModManifest, NsfwFilterState } from '../shared/types';
 import { isHiddenByNsfwFilter } from '../shared/nsfw';
+import { onNsfwScanProgress } from '../services/nsfwAi';
 import type { ThemeDefinition } from '../themes/types';
 import { Motif } from '../themes/Motif';
 import { AgentRosterSidebar } from '../components/AgentRosterSidebar';
@@ -76,6 +77,8 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
     () => p.mods.filter((m) => !isHiddenByNsfwFilter(m, p.nsfwFilterState)),
     [p.mods, p.nsfwFilterState]
   );
+  const [scanPending, setScanPending] = useState(0);
+  React.useEffect(() => onNsfwScanProgress(setScanPending), []);
   const onCount = visibleMods.filter((m) => m.enabled).length;
   const attentionCount = visibleMods.filter((m) => getModHealth(m) !== 'working').length;
   const fixableCount = visibleMods.filter((m) => getModHealth(m) === 'fixable').length;
@@ -302,6 +305,17 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
               </div>
             )}
 
+            {scanPending !== 0 && (p.nsfwFilterState === 'hide' || p.nsfwFilterState === 'toggle') && (
+              <div className="scan-note small muted">
+                {scanPending < 0 ? (
+                      <>The safety check couldn't start on this PC, so unchecked mods can't show in this view.</>
+                    ) : (
+                      <>
+                        <Loader2 className="spin" /> Checking {scanPending} mod{scanPending === 1 ? '' : 's'} for safety. They show up here once they pass.
+                      </>
+                    )}
+              </div>
+            )}
             {libraryEmpty ? (
               <EmptyState
                 icon={<HardDriveDownload />}

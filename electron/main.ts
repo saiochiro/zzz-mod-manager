@@ -410,25 +410,31 @@ ipcMain.handle('nsfw:image', async (_e, url: string) => {
   }
   // Only mod pictures: GameBanana's image servers.
   if (u.protocol !== 'https:' || !/(^|\.)gamebanana\.com$/i.test(u.hostname)) throw new Error('Only GameBanana images are checked.');
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 10000);
-  try {
-    const res = await fetch(u, { signal: ctrl.signal, headers: { 'User-Agent': 'ProxyLaunch' } });
-    if (!res.ok) throw new Error(`Image download failed (${res.status}).`);
-    const buf = new Uint8Array(await res.arrayBuffer());
-    if (buf.byteLength > 12 * 1024 * 1024) throw new Error('Image too large.');
-    return buf;
-  } finally {
-    clearTimeout(timer);
+  const get = async (target: string) => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10000);
+    try {
+      const res = await fetch(target, { signal: ctrl.signal, headers: { 'User-Agent': 'ProxyLaunch' } });
+      if (!res.ok) throw new Error(`Image download failed (${res.status}).`);
+      const buf = new Uint8Array(await res.arrayBuffer());
+      if (buf.byteLength > 12 * 1024 * 1024) throw new Error('Image too large.');
+      return buf;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  // The scan only needs 224 px, so use GameBanana's 530 px version of the screenshot when there is one.
+  const small = u.href.replace(/(\/img\/ss\/mods\/)(?!\d+-\d+_)([^/]+)$/i, '$1530-90_$2');
+  if (small !== u.href) {
+    try {
+      return await get(small);
+    } catch {
+      // fall back to the full picture
+    }
   }
+  return get(u.href);
 });
 ipcMain.handle('nsfw:submit', async (_e, req: any) => modService.submitNsfwReview(req));
-ipcMain.handle('nsfw:setLevel', async (_e, key: string, level: any, flagged: boolean) => {
-  modService.setNsfwLevel(String(key), level === 'sfw' || level === 'toggle' || level === 'nsfw' ? level : null, Boolean(flagged));
-  return { state: modService.getFullState() };
-});
-ipcMain.handle('nsfw:reset', async () => modService.resetNsfwAiChecks());
-
 // XXMI Sync & Auto-Thumbnail Fetching
 ipcMain.handle('xxmi:sync', async () => {
   modService.scanInstalledMods();

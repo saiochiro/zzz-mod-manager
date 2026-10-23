@@ -4,23 +4,26 @@ import path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   decideNsfwLevel,
+  imageKey,
   isBlurredByNsfwFilter,
   isHiddenByNsfwFilter,
+  NSFW_FILE_RE,
   NSFW_MODEL_CLASSES,
   rateImage,
   TOGGLE_KEY_RE,
   TOGGLE_TEXT_RE,
   type NsfwScores,
 } from '../src/shared/nsfw';
-import { applyNsfwReview, initNsfwReview, resetNsfwAiResults, setNsfwOverride, submitNsfwReview } from '../src/core/nsfwReview';
+import { applyNsfwReview, initNsfwReview, submitNsfwReview } from '../src/core/nsfwReview';
+import { findNsfwToggles, restoreMod, sanitizeMod } from '../src/core/nsfwSanitizer';
 
 const clean: NsfwScores = { drawing: 0.7, hentai: 0.05, neutral: 0.2, porn: 0.02, sexy: 0.03 };
 const nude: NsfwScores = { drawing: 0.05, hentai: 0.7, neutral: 0.05, porn: 0.15, sexy: 0.05 };
 const skimpy: NsfwScores = { drawing: 0.1, hentai: 0.08, neutral: 0.05, porn: 0.02, sexy: 0.75 };
 const meh: NsfwScores = { drawing: 0.4, hentai: 0.3, neutral: 0.1, porn: 0.05, sexy: 0.15 };
-const base = { flagged: true, toggleHint: false, strongRating: false };
+const none = { flagged: false, toggleHint: false };
 
-describe('NSFW verdicts', () => {
+describe('Content tiers', () => {
   it('rates single pictures', () => {
     expect(rateImage(clean)).toBe('clean');
     expect(rateImage(nude)).toBe('explicit');
@@ -28,101 +31,169 @@ describe('NSFW verdicts', () => {
     expect(rateImage(meh)).toBe('unsure');
   });
 
-  it('removes the label when every picture is clean', () => {
-    expect(decideNsfwLevel({ ...base, images: [clean, clean, clean] }).level).toBe('sfw');
+  it('SFW only when every picture is clean and nothing else says NSFW', () => {
+    expect(decideNsfwLevel({ ...none, images: [clean, clean, clean] }).level).toBe('sfw');
+    expect(decideNsfwLevel({ ...none, images: [] }).level).toBe('sfw');
   });
 
-  it('calls it a toggle when only some screenshots are NSFW, or the page says so', () => {
-    expect(decideNsfwLevel({ ...base, images: [clean, clean, nude] }).level).toBe('toggle');
-    expect(decideNsfwLevel({ ...base, images: [clean, meh] }).level).toBe('toggle');
-    expect(decideNsfwLevel({ ...base, images: [clean], toggleHint: true }).level).toBe('toggle');
-    expect(decideNsfwLevel({ ...base, images: [clean], strongRating: true }).level).toBe('toggle');
+  it('catches unlabeled mods: a skimpy or unclear cover is never SFW', () => {
+    expect(decideNsfwLevel({ ...none, images: [skimpy, clean] }).level).toBe('nsfw');
+    expect(decideNsfwLevel({ ...none, images: [meh, clean] }).level).toBe('nsfw');
+    expect(decideNsfwLevel({ ...none, images: [nude] }).level).toBe('nsfw');
   });
 
-  it('keeps the label when the cover is NSFW or unclear', () => {
-    expect(decideNsfwLevel({ ...base, images: [nude, clean] }).level).toBe('nsfw');
-    expect(decideNsfwLevel({ ...base, images: [skimpy] }).level).toBe('nsfw');
-    expect(decideNsfwLevel({ ...base, images: [meh, clean] }).level).toBe('nsfw');
-    expect(decideNsfwLevel({ ...base, images: [] }).level).toBe('nsfw');
+  it('never trusts a GameBanana NSFW label just because the pictures look clean', () => {
+    expect(decideNsfwLevel({ ...none, flagged: true, images: [clean, clean] }).level).toBe('toggle');
+    expect(decideNsfwLevel({ ...none, flagged: true, images: [clean, clean], isSkin: false }).level).toBe('nsfw');
+    expect(decideNsfwLevel({ ...none, flagged: true, images: [] }).level).toBe('nsfw');
   });
 
-  it('puts real outfit mods that are a bit revealing under NSFW toggle', () => {
-    // Like a full new outfit with a revealing cover, many screenshots, at most one nude shot.
-    const outfit = [skimpy, skimpy, clean, skimpy, nude, clean, skimpy, clean];
-    expect(decideNsfwLevel({ ...base, images: outfit.slice(0, 6), pictureCount: 16 }).level).toBe('toggle');
-    // Same pictures, but the page reads like a nude edit.
-    expect(decideNsfwLevel({ ...base, images: outfit.slice(0, 6), pictureCount: 16, nudeEditText: true }).level).toBe('nsfw');
-    // A revealing cover with just one or two pictures: not enough to tell, stays 18+.
-    expect(decideNsfwLevel({ ...base, images: [skimpy, clean], pictureCount: 2 }).level).toBe('nsfw');
-    // Mostly nudity.
-    expect(decideNsfwLevel({ ...base, images: [clean, nude, nude, clean], pictureCount: 10 }).level).toBe('nsfw');
+  it('Experimental: clean SFW cover and mostly clean pictures, with NSFW options', () => {
+    expect(decideNsfwLevel({ ...none, images: [clean, clean, clean, nude] }).level).toBe('toggle');
+    expect(decideNsfwLevel({ ...none, images: [clean, clean], hotkeyNsfw: true }).level).toBe('toggle');
+    expect(decideNsfwLevel({ ...none, images: [clean, clean], fileTreeNsfw: true }).level).toBe('toggle');
+    expect(decideNsfwLevel({ ...none, images: [clean, clean], toggleHint: true }).level).toBe('toggle');
+    // Mostly NSFW pictures, a nude edit, or not a skin: NSFW.
+    expect(decideNsfwLevel({ ...none, images: [clean, nude, skimpy] }).level).toBe('nsfw');
+    expect(decideNsfwLevel({ ...none, images: [clean, clean], nudeEditText: true }).level).toBe('nsfw');
+    expect(decideNsfwLevel({ ...none, images: [clean, nude], isSkin: false }).level).toBe('nsfw');
   });
 
-  it('only lets skins be NSFW toggle', () => {
-    expect(decideNsfwLevel({ ...base, images: [clean, nude, clean], isSkin: false }).level).toBe('nsfw');
-    expect(decideNsfwLevel({ ...base, images: [clean, clean], isSkin: false }).level).toBe('sfw');
+  it('reports which pictures are clean, so NSFW screenshots can be removed', () => {
+    expect(decideNsfwLevel({ ...none, images: [clean, nude, clean, meh] }).cleanImages).toEqual([true, false, true, false]);
+    expect(imageKey('https://images.gamebanana.com/img/ss/mods/530-90_abc.jpg')).toBe(imageKey('https://images.gamebanana.com/img/ss/mods/abc.jpg'));
   });
 
-  it('never adds a label to a mod that had none', () => {
-    expect(decideNsfwLevel({ ...base, flagged: false, images: [nude] }).level).toBe('sfw');
-  });
-
-  it('spots toggle wording on mod pages and hotkeys', () => {
+  it('spots NSFW wording in pages, hotkeys and file names', () => {
     for (const t of ['Includes an NSFW toggle', 'SFW by default, press F5', 'nude toggle on 6', 'Toggleable NSFW', 'comes with SFW and NSFW versions', 'optional nudity']) {
       expect(TOGGLE_TEXT_RE.test(t)).toBe(true);
     }
-    for (const t of ['NSFW', 'A cute SFW outfit', 'Full nude mod']) expect(TOGGLE_TEXT_RE.test(t)).toBe(false);
     expect(TOGGLE_KEY_RE.test('KeyNude')).toBe(true);
     expect(TOGGLE_KEY_RE.test('KeySwapBangs')).toBe(false);
+    for (const f of ['Body_Nude.dds', 'NSFW/Body.ini', 'topless.buf', 'Textures/nipples.dds']) expect(NSFW_FILE_RE.test(f)).toBe(true);
+    for (const f of ['Body.ini', 'BodyADiffuse.dds', 'Toggle_Jacket.ini', 'Denuded.txt']) expect(NSFW_FILE_RE.test(f)).toBe(false);
   });
 
-  it('filters and blurs by level', () => {
-    const sfw = { nsfw_level: 'sfw' as const };
-    const toggle = { nsfw_level: 'toggle' as const, is_nsfw: true };
-    const nsfw = { is_nsfw: true };
-    expect([sfw, toggle, nsfw].map((m) => isHiddenByNsfwFilter(m, 'hide'))).toEqual([false, true, true]);
-    expect([sfw, toggle, nsfw].map((m) => isHiddenByNsfwFilter(m, 'toggle'))).toEqual([false, false, true]);
-    expect([sfw, toggle, nsfw].map((m) => isHiddenByNsfwFilter(m, 'blur'))).toEqual([false, false, false]);
-    expect([sfw, toggle, nsfw].map((m) => isBlurredByNsfwFilter(m, 'blur'))).toEqual([false, false, true]);
+  it('views: unscanned mods never show in the SFW views; Show all shows everything unblurred', () => {
+    const sfw = { nsfw_level: 'sfw' as const, nsfw_checked: true };
+    const pending = { nsfw_level: 'sfw' as const, nsfw_checked: false };
+    const exp = { nsfw_level: 'toggle' as const, is_nsfw: true, nsfw_checked: true };
+    const nsfw = { nsfw_level: 'nsfw' as const, is_nsfw: true, nsfw_checked: true };
+    const all = [sfw, pending, exp, nsfw];
+    expect(all.map((m) => isHiddenByNsfwFilter(m, 'hide'))).toEqual([false, true, true, true]);
+    expect(all.map((m) => isHiddenByNsfwFilter(m, 'toggle'))).toEqual([false, true, false, true]);
+    expect(all.map((m) => isHiddenByNsfwFilter(m, 'blur'))).toEqual([false, false, false, false]);
+    expect(all.map((m) => isBlurredByNsfwFilter(m, 'blur'))).toEqual([false, true, false, true]);
+    expect(all.map((m) => isHiddenByNsfwFilter(m, 'show'))).toEqual([false, false, false, false]);
+    expect(all.map((m) => isBlurredByNsfwFilter(m, 'show'))).toEqual([false, false, false, false]);
   });
 });
 
-describe('NSFW review store', () => {
+describe('Content scan store', () => {
   let tmp: string;
   beforeEach(() => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'nsfw-'));
     initNsfwReview(tmp);
-    resetNsfwAiResults();
   });
   afterEach(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
-  it('applies AI verdicts, keeps your own calls on top, and survives a restart', async () => {
-    const item = { id: 5, is_nsfw: true };
-    expect(applyNsfwReview(item, 'gb:5')).toMatchObject({ nsfw_level: 'nsfw', nsfw_checked: false, nsfw_source: 'gamebanana' });
-
-    const res = await submitNsfwReview({ key: 'gb:5', flagged: true, title: 'Cute outfit', scores: [clean, clean] });
+  it('applies verdicts, keeps clean picture lists, survives a restart and writes a developer log', async () => {
+    const item = { id: 5, is_nsfw: false };
+    expect(applyNsfwReview(item, 'gb:5')).toMatchObject({ nsfw_checked: false });
+    const res = await submitNsfwReview({
+      key: 'gb:5',
+      flagged: false,
+      title: 'Cute outfit',
+      imageUrls: ['https://x/a.jpg', 'https://x/b.jpg'],
+      scores: [clean, clean],
+    });
     expect(res.level).toBe('sfw');
-    const cleared = applyNsfwReview(item, 'gb:5');
-    expect(cleared).toMatchObject({ nsfw_level: 'sfw', is_nsfw: false, nsfw_checked: true, nsfw_source: 'ai', nsfw_flagged: true });
-    // Applying twice changes nothing.
-    expect(applyNsfwReview(cleared, 'gb:5')).toEqual(cleared);
-
-    setNsfwOverride('gb:5', 'toggle', true);
-    initNsfwReview(tmp); // reload from disk
-    expect(applyNsfwReview(item, 'gb:5')).toMatchObject({ nsfw_level: 'toggle', is_nsfw: true, nsfw_source: 'you' });
-    // The AI doesn't overrule you.
-    expect((await submitNsfwReview({ key: 'gb:5', flagged: true, title: 'x', scores: [clean] })).source).toBe('you');
+    initNsfwReview(tmp);
+    expect(applyNsfwReview(item, 'gb:5')).toMatchObject({ nsfw_level: 'sfw', nsfw_checked: true, nsfw_clean_images: ['a.jpg', 'b.jpg'] });
+    const log = fs.readFileSync(path.join(tmp, 'cache', 'nsfw_review_log.jsonl'), 'utf-8');
+    expect(log).toContain('"key":"gb:5"');
   });
 
-  it('looks again when a mod gets labeled after a clean check', async () => {
-    await submitNsfwReview({ key: 'gb:9', flagged: false, title: 'Outfit', scores: [clean] });
-    expect(applyNsfwReview({ id: 9, is_nsfw: false }, 'gb:9').nsfw_checked).toBe(true);
+  it('scans again when GameBanana labels a mod after a clean scan', async () => {
+    await submitNsfwReview({ key: 'gb:9', flagged: false, title: 'Outfit', imageUrls: ['u'], scores: [clean] });
     expect(applyNsfwReview({ id: 9, is_nsfw: true }, 'gb:9')).toMatchObject({ nsfw_checked: false, nsfw_level: 'nsfw' });
   });
 
-  it('uses hotkey names as toggle hints', async () => {
-    const res = await submitNsfwReview({ key: 'local:a', flagged: true, title: 'Outfit', hotkeyNames: ['KeyNude'], scores: [clean] });
-    expect(res.level).toBe('toggle');
+  it('NSFW words in the title keep a mod out of SFW, but "no NSFW" does not', async () => {
+    expect((await submitNsfwReview({ key: 'a', flagged: false, title: 'Sexy bunny suit', imageUrls: ['u'], scores: [clean] })).level).not.toBe('sfw');
+    expect((await submitNsfwReview({ key: 'b', flagged: false, title: 'Cute outfit (no NSFW)', imageUrls: ['u'], scores: [clean] })).level).toBe('sfw');
+  });
+});
+
+describe('Sanitizing NSFW toggles', () => {
+  let tmp: string;
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'san-'));
+  });
+  afterEach(() => fs.rmSync(tmp, { recursive: true, force: true }));
+
+  const ini = [
+    '[Constants]',
+    'global persist $nude = 0',
+    'global persist $jacket = 1',
+    '',
+    '[KeyNude]',
+    'key = 6',
+    'type = cycle',
+    '$nude = 0,1',
+    '',
+    '[KeyJacket]',
+    'key = 7',
+    '$jacket = 0,1',
+    '',
+    '[TextureOverrideBody]',
+    'hash = 1234abcd',
+    'if $nude == 1',
+    '  ps-t0 = ResourceBodyNude',
+    'else',
+    '  ps-t0 = ResourceBody',
+    'endif',
+    '',
+    '[ResourceBodyNude]',
+    'filename = Body_Nude.dds',
+    '[ResourceBody]',
+    'filename = Body.dds',
+    '',
+  ].join('\n');
+
+  it('disables NSFW hotkeys, pins the safe state, moves NSFW files out, and can restore', () => {
+    const mod = path.join(tmp, 'mod');
+    fs.mkdirSync(mod);
+    fs.writeFileSync(path.join(mod, 'mod.ini'), ini);
+    fs.writeFileSync(path.join(mod, 'Body_Nude.dds'), 'x');
+    fs.writeFileSync(path.join(mod, 'Body.dds'), 'y');
+
+    const found = findNsfwToggles(mod);
+    expect(found.map((t) => [t.keySection, t.variable, t.safeValue])).toEqual([['keynude', 'nude', 0]]);
+
+    const bak = path.join(tmp, 'bak');
+    const r = sanitizeMod(mod, bak);
+    expect(r.changed).toBe(true);
+    const out = fs.readFileSync(path.join(mod, 'mod.ini'), 'utf-8');
+    expect(out).toMatch(/^global \$nude = 0$/m); // no "persist": a saved NSFW state can't come back
+    expect(out).not.toMatch(/^\[KeyNude\]/m);
+    expect(out).toMatch(/^\[KeyJacket\]/m); // normal toggles stay
+    expect(out).not.toMatch(/^filename = Body_Nude\.dds/m);
+    expect(fs.existsSync(path.join(mod, 'Body_Nude.dds'))).toBe(false);
+    expect(fs.existsSync(path.join(mod, 'Body.dds'))).toBe(true);
+    // Running again does nothing.
+    expect(sanitizeMod(mod, bak).changed).toBe(false);
+
+    expect(restoreMod(mod, bak)).toBe(true);
+    expect(fs.readFileSync(path.join(mod, 'mod.ini'), 'utf-8')).toBe(ini);
+    expect(fs.existsSync(path.join(mod, 'Body_Nude.dds'))).toBe(true);
+  });
+
+  it('leaves mods without NSFW toggles alone', () => {
+    const mod = path.join(tmp, 'clean');
+    fs.mkdirSync(mod);
+    fs.writeFileSync(path.join(mod, 'mod.ini'), '[KeyJacket]\nkey = 7\n$jacket = 0,1\n');
+    expect(sanitizeMod(mod, path.join(tmp, 'bak2')).changed).toBe(false);
   });
 });
 

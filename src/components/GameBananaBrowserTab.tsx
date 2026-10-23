@@ -32,9 +32,9 @@ import {
   X,
 } from 'lucide-react';
 import { fairyClient, type FullAppState } from '../services/fairyClient';
-import { isBlurredByNsfwFilter, isHiddenByNsfwFilter, nsfwLevelOf } from '../shared/nsfw';
-import { onNsfwReviewed, queueNsfwReview, withNsfwOutcome } from '../services/nsfwAi';
-import { NsfwBadge, NsfwLabelControl } from './NsfwLabel';
+import { filterShowsAllPictures, imageKey, isBlurredByNsfwFilter, isHiddenByNsfwFilter, nsfwLevelOf } from '../shared/nsfw';
+import { onNsfwReviewed, onNsfwScanProgress, queueNsfwReview, withNsfwOutcome } from '../services/nsfwAi';
+import { NsfwBadge } from './NsfwLabel';
 import type { MotifKind } from '../themes/types';
 import { Motif } from '../themes/Motif';
 import { Avatar, CardSkeletonGrid, EmptyState, formatCount, Modal, SearchInput, Segmented, ThumbImage } from '../ui';
@@ -48,8 +48,6 @@ interface GameBananaBrowserTabProps {
   motif: MotifKind;
   onInstallWithFairy: (mod: GameBananaModItem) => void;
   onFetchLiveModId: (modIdOrUrl: string) => void;
-  /** Run the on-device AI check on what's shown. */
-  nsfwAiCheck?: boolean;
   /** After you change a mod's content label (it can also be installed). */
   onStateChange?: (s: FullAppState) => void;
 }
@@ -65,7 +63,6 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
   onInstallWithFairy,
   onFetchLiveModId,
   motif,
-  nsfwAiCheck = true,
   onStateChange,
 }) => {
   const allAgents = useMemo(() => {
@@ -102,15 +99,20 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
   const [modalDescription, setModalDescription] = useState<string>('');
   const [isLoadingDetails, setIsLoadingDetails] = useState<boolean>(false);
 
-  const galleryImageList = useMemo(
-    () =>
-      galleryMod && galleryMod.preview_images && galleryMod.preview_images.length > 0
-        ? galleryMod.preview_images
-        : galleryMod
-        ? [galleryMod.thumbnail_url]
-        : [],
-    [galleryMod?.preview_images, galleryMod?.thumbnail_url, galleryMod?.id]
-  );
+  const galleryImageList = useMemo(() => {
+    if (!galleryMod) return [];
+    const all = galleryMod.preview_images && galleryMod.preview_images.length > 0 ? galleryMod.preview_images : [galleryMod.thumbnail_url];
+    if (filterShowsAllPictures(nsfwFilterState)) return all;
+    // SFW views: only the pictures the scan rated clean (NSFW screenshots of Experimental mods are removed).
+    const clean = new Set(galleryMod.nsfw_clean_images ?? []);
+    return all.filter((u) => clean.has(imageKey(u)));
+  }, [galleryMod?.preview_images, galleryMod?.thumbnail_url, galleryMod?.id, galleryMod?.nsfw_clean_images, nsfwFilterState]);
+  /** NSFW view: pictures that didn't pass the scan stay blurred until clicked. */
+  const [revealedPics, setRevealedPics] = useState<Set<string>>(new Set());
+  const picBlurred = (url?: string) =>
+    nsfwFilterState === 'blur' && Boolean(url) && !(galleryMod?.nsfw_clean_images ?? []).includes(imageKey(url)) && !revealedPics.has(url!);
+  const [scanPending, setScanPending] = useState(0);
+  useEffect(() => onNsfwScanProgress(setScanPending), []);
   // The full mod page often arrives with a different picture list (bigger sizes, more shots).
   // Stay on the picture you were looking at instead of jumping to another one.
   const prevGalleryRef = React.useRef<{ id?: number; list: string[] }>({ list: [] });
@@ -457,12 +459,11 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
     }
   };
 
-  // On-device AI check of NSFW labels for what's loaded (only mods labeled NSFW).
+  // Content scan of everything loaded, labeled or not (pictures, page, archive file names).
   useEffect(() => {
-    if (!nsfwAiCheck) return;
     queueNsfwReview(
       modsList
-        .filter((m) => m.is_live_api !== false && !m.nsfw_checked && m.nsfw_source !== 'you')
+        .filter((m) => m.is_live_api !== false && !m.nsfw_checked)
         .map((m) => ({
           key: `gb:${m.id}`,
           gamebananaId: m.id,
@@ -470,12 +471,11 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
           description: m.description,
           contentRating: m.content_rating,
           category: m.category_tag || 'Skins',
-          pictureCount: m.preview_images?.length ?? 1,
           flagged: Boolean(m.nsfw_flagged ?? m.is_nsfw),
           images: [m.thumbnail_url, ...(m.preview_images || [])].filter((u, i, a) => Boolean(u) && a.indexOf(u) === i),
         }))
     );
-  }, [modsList, nsfwAiCheck]);
+  }, [modsList]);
   useEffect(
     () =>
       onNsfwReviewed((r) => {
@@ -503,7 +503,7 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
   }, [modsList, nsfwFilterState, categoryFilter]);
 
   const spotlightMods = useMemo(() => {
-    return displayedMods.filter((m) => nsfwLevelOf(m) === 'sfw').slice(0, 3);
+    return displayedMods.filter((m) => m.nsfw_checked && nsfwLevelOf(m) === 'sfw').slice(0, 3);
   }, [displayedMods]);
 
   const activeAgent = useMemo(() => {
@@ -848,8 +848,21 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
                 >
                   Check your internet connection. Your installed mods are not affected.
                 </EmptyState>
-              ) : (isLoading || loadingAgent) && displayedMods.length === 0 ? (
-                <CardSkeletonGrid className="gb-grid" count={12} />
+              ) : (isLoading || loadingAgent || (scanPending > 0 && !filterShowsAllPictures(nsfwFilterState))) && displayedMods.length === 0 ? (
+                <>
+                  {scanPending !== 0 && (
+                    <div className="scan-note small muted">
+                      {scanPending < 0 ? (
+                      <>The safety check couldn't start on this PC, so unchecked mods can't show in this view.</>
+                    ) : (
+                      <>
+                        <Loader2 className="spin" /> Checking {scanPending} mod{scanPending === 1 ? '' : 's'} for safety. They show up here once they pass.
+                      </>
+                    )}
+                    </div>
+                  )}
+                  <CardSkeletonGrid className="gb-grid" count={12} />
+                </>
               ) : displayedMods.length === 0 ? (
                 <EmptyState
                   icon={<SearchX />}
@@ -872,6 +885,18 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
                   Try a different search, category or character.
                 </EmptyState>
               ) : (
+                <>
+                {scanPending !== 0 && !filterShowsAllPictures(nsfwFilterState) && (
+                  <div className="scan-note small muted">
+                    {scanPending < 0 ? (
+                      <>The safety check couldn't start on this PC, so unchecked mods can't show in this view.</>
+                    ) : (
+                      <>
+                        <Loader2 className="spin" /> Checking {scanPending} mod{scanPending === 1 ? '' : 's'} for safety. They show up here once they pass.
+                      </>
+                    )}
+                  </div>
+                )}
                 <div className="gb-grid">
                   {gridMods.map((item, i) => {
                     const blurred = isBlurredByNsfwFilter(item, nsfwFilterState) && !revealedNsfwIds.has(item.id);
@@ -954,6 +979,7 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
                     );
                   })}
                 </div>
+                </>
               )}
 
               {displayedMods.length > 0 && (
@@ -1006,7 +1032,25 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
             <div className="gallery">
               <div className="gallery__stage">
                 <div className="gallery__img">
-                  <img key={galleryImages[galleryIdx]} src={galleryImages[galleryIdx] || galleryMod.thumbnail_url} alt={galleryMod.title} />
+                  {galleryImages.length === 0 ? (
+                    <div className="gallery__empty small muted">No pictures that passed the content check.</div>
+                  ) : (
+                    <img
+                      key={galleryImages[galleryIdx]}
+                      src={galleryImages[galleryIdx]}
+                      alt={galleryMod.title}
+                      className={picBlurred(galleryImages[galleryIdx]) ? 'is-blurred' : ''}
+                    />
+                  )}
+                  {picBlurred(galleryImages[galleryIdx]) && (
+                    <button className="nsfw-cover" onClick={() => setRevealedPics((p) => new Set(p).add(galleryImages[galleryIdx]))}>
+                      <EyeOff />
+                      Sensitive picture
+                      <span className="caption" style={{ color: 'rgba(255,255,255,.8)' }}>
+                        Click to show
+                      </span>
+                    </button>
+                  )}
                   {galleryImages.length > 1 && (
                     <>
                       <button className="gallery__nav" style={{ left: 8 }} aria-label="Previous image" onClick={() => stepGallery(-1)}>
@@ -1031,7 +1075,7 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
                         aria-label={`Image ${idx + 1}`}
                         ref={galleryIdx === idx ? (el) => el?.scrollIntoView({ block: 'nearest', inline: 'nearest' }) : undefined}
                       >
-                        <img src={img} alt="" loading="lazy" />
+                        <img src={img} alt="" loading="lazy" className={picBlurred(img) ? 'is-blurred' : ''} />
                       </button>
                     ))}
                   </div>
@@ -1054,23 +1098,6 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
                       <span className="caption">Views</span>
                     </div>
                   </div>
-                  {onStateChange && (
-                    <NsfwLabelControl
-                      item={galleryMod}
-                      onChanged={onStateChange}
-                      onLevel={(level) => {
-                        const patch = (m: GameBananaModItem): GameBananaModItem => {
-                          if (m.id !== galleryMod.id) return m;
-                          const flagged = Boolean(m.nsfw_flagged ?? m.is_nsfw);
-                          return level
-                            ? { ...m, nsfw_level: level, is_nsfw: level !== 'sfw', nsfw_source: 'you', nsfw_checked: true, nsfw_reason: undefined }
-                            : { ...m, nsfw_level: flagged ? 'nsfw' : 'sfw', is_nsfw: flagged, nsfw_source: flagged ? 'gamebanana' : undefined, nsfw_checked: false, nsfw_reason: undefined };
-                        };
-                        setGalleryMod((g) => (g ? patch(g) : g));
-                        setModsList((list) => list.map(patch));
-                      }}
-                    />
-                  )}
                   <div>
                     <div className="row" style={{ marginBottom: 8 }}>
                       <span className="eyebrow" style={{ flex: 1 }}>

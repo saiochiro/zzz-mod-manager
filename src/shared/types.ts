@@ -5,18 +5,22 @@ export type ModHealthStatus = 'working' | 'fixable' | 'broken';
 import type { NsfwFilter, NsfwLevel, NsfwSource } from './nsfw';
 export type { NsfwLevel, NsfwSource } from './nsfw';
 
-/** hide = SFW only, toggle = SFW + mods with NSFW toggles, blur = everything with NSFW blurred, show = everything. */
+/** hide = SFW only, toggle = SFW + Experimental, blur = everything with NSFW blurred, show = everything unfiltered. */
 export type NsfwFilterState = NsfwFilter;
 
-/** Added by the NSFW review: the label's level, why, and who decided it. */
+/** Added by the content scan (read-only for users). */
 export interface NsfwReviewInfo {
   nsfw_level?: NsfwLevel;
   nsfw_reason?: string;
   nsfw_source?: NsfwSource;
-  /** The AI check (or you) already looked at it. */
+  /** The scan has finished for this mod. */
   nsfw_checked?: boolean;
-  /** The label it had before the AI check. */
+  /** The label GameBanana gave it before the scan. */
   nsfw_flagged?: boolean;
+  /** imageKey()s of the pictures the scan rated clean; only these show in the SFW views. */
+  nsfw_clean_images?: string[];
+  /** Installed Experimental mods: NSFW options were disabled in the files. */
+  nsfw_sanitized?: boolean;
 }
 
 export interface FairyLogEntry {
@@ -153,8 +157,6 @@ export interface AppConfig {
   hideNsfw?: boolean;
   nsfwMode?: 'hide' | 'blur';
   nsfwFilterState?: NsfwFilterState; // 'hide' | 'toggle' | 'blur' | 'show'
-  /** Run the on-device AI check on mods labeled NSFW. Default on. */
-  nsfwAiCheck?: boolean;
   singleActivePerAgent?: boolean;
   activeProfile?: string;
   profiles?: Record<string, string[]>; // profileName -> list of enabled mod_uuids

@@ -167,6 +167,7 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
   const [loadingCatalog, setLoadingCatalog] = useState(false);
   const [picks, setPicks] = useState<Picks>({});
   const [name, setName] = useState('');
+  // Only carried over from a shared recipe's label; users can't set it (labels come from the scan).
   const [markNsfw, setMarkNsfw] = useState(false);
   const [activate, setActivate] = useState(true);
   const [building, setBuilding] = useState(false);
@@ -479,13 +480,6 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
                       <div className="setting__desc">Also turns off this agent’s other mods so they don’t overlap.</div>
                     </div>
                     <Switch checked={activate} onChange={() => setActivate(!activate)} label="Turn it on now" />
-                  </div>
-                  <div className="setting">
-                    <div className="setting__text">
-                      <div className="setting__title">Has nudity or skimpy clothing</div>
-                      <div className="setting__desc">Labels it 18+. Parts from 18+ mods are labeled automatically.</div>
-                    </div>
-                    <Switch checked={markNsfw || pickedNsfw} disabled={pickedNsfw} onChange={() => setMarkNsfw(!markNsfw)} label="Has nudity or skimpy clothing" />
                   </div>
                   {riskyPicks.length > 0 && (
                     <div className="ws-note ws-note--caution">

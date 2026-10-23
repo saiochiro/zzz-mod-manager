@@ -15,7 +15,6 @@ import {
   WorkshopRecipe,
   WorkshopPreview,
   WorkshopResolvedRecipe,
-  NsfwLevel,
 } from '../shared/types';
 import type { CommunityPage, CommunityPost, CommunityProfile, CommunityQuery } from '../shared/community';
 
@@ -221,11 +220,6 @@ export const fairyClient = {
     message: string;
     state: FullAppState;
   }> => invokeBackend('zzz:undoOrganizeFolders'),
-
-  // NSFW labels: your own call (null = automatic) and resetting the AI check's results
-  nsfwSetLevel: (key: string, level: NsfwLevel | null, flagged: boolean): Promise<{ state: FullAppState }> =>
-    invokeBackend('nsfw:setLevel', key, level, flagged),
-  nsfwReset: (): Promise<number> => invokeBackend('nsfw:reset'),
 
   // Mod Workshop (experimental)
   workshopCatalog: (agentId: string): Promise<WorkshopCatalogEntry[]> => invokeBackend('workshop:catalog', agentId),
