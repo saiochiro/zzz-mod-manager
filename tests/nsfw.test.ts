@@ -240,6 +240,6 @@ describe('NSFW image models', () => {
       out[name] = Object.fromEntries(NSFW_MODEL_CLASSES.map((c, i) => [c, probs[i]])) as unknown as NsfwScores;
     }
     console.log('scene scores', out);
-    expect(rateImage({ inc: out.inc, mob: out.mob })).toBe('clean');
+    expect(rateImage({ inc: out.inc, mob: out.mob }), JSON.stringify(out)).toBe('clean');
   }, 300_000);
 });
