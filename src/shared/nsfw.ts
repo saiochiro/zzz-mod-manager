@@ -92,18 +92,19 @@ export type ImageRating = 'clean' | 'unsure' | 'skimpy' | 'explicit';
  * the useful signal and stay low on safe mods. A picture is clean only if BOTH models say so.
  */
 export const NSFW_THRESHOLDS = {
-  /** InceptionV3 porn + hentai at or above this = explicit */
-  incExplicit: 0.5,
+  /** InceptionV3 porn + hentai at or above this = explicit (nudity-rated mods: median picture 0.44) */
+  incExplicit: 0.6,
   /** MobileNet porn + hentai at or above this = explicit */
   mobExplicit: 0.4,
-  /** either model's "sexy" at or above this = skimpy */
-  skimpy: 0.3,
-  /** clean only when InceptionV3 porn + hentai is below this ... */
-  incCleanMax: 0.12,
+  /** either model's "sexy" at or above this = skimpy (hot pants / swimsuit shots score 0.9+) */
+  skimpy: 0.5,
+  /** clean only when InceptionV3 porn + hentai is below this (plain outfits stay under ~0.12;
+   *  revealing ones like "high waisted" / "2B" / "thicc" score 0.5-0.9) ... */
+  incCleanMax: 0.2,
   /** ... and MobileNet porn + hentai is below this ... */
-  mobCleanMax: 0.06,
+  mobCleanMax: 0.1,
   /** ... and both models' "sexy" is below this */
-  sexyCleanMax: 0.05,
+  sexyCleanMax: 0.15,
 };
 
 export function rateImage(s: NsfwImageScores, t = NSFW_THRESHOLDS): ImageRating {
@@ -199,7 +200,7 @@ export const NUDE_EDIT_RE =
 
 /** NSFW words in a mod's title, tags or page (same list GameBanana items are labeled with). */
 export const NSFW_WORDS_RE =
-  /\b(nsfw|18\+|r18|r-18|nude|nudity|naked|topless|bottomless|uncensored|explicit|adult|skimpy|lewd|hentai|ecchi|erotic|sex|sexual|sexy|strip|lingerie|bikini|microbikini|thong|bondage|bdsm|fetish|latex|boob|boobs|breasts|ass|butt|nipple|pussy|penis|futa|ahegao|bunny\s*suit|slingshot|pasties|lewd)\b/i;
+  /\b(nsfw|18\+|r18|r-18|nude|nudity|naked|topless|bottomless|uncensored|explicit|adult|skimpy|lewd|hentai|ecchi|erotic|sex|sexual|sexy|strip|lingerie|bikini|microbikini|thong|bondage|bdsm|fetish|latex|boob|boobs|breasts|ass|butt|nipple|pussy|penis|futa|ahegao|bunny\s*suit|bunny\s*girl|slingshot|pasties|lewd|thicc|busty|oppai|swimsuit|swimwear|hot\s*pants|micro|sheer|see[\s-]*through|underboob|sideboob|cleavage|leotard|bodysuit|garter)\b/i;
 
 /** GameBanana content-rating labels that mean more than skimpy clothing. */
 export const STRONG_RATING_RE = /nud(e|ity)|sexual|explicit|porn|genital|intercourse/i;

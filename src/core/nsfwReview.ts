@@ -157,26 +157,6 @@ async function getJson(url: string, ms = 6000): Promise<any> {
   }
 }
 
-/** Every string (keys and values) in a JSON value: file trees come back as nested objects/arrays. */
-function allStrings(v: unknown, out: string[] = [], depth = 0): string[] {
-  if (depth > 12 || out.length > 5000) return out;
-  if (typeof v === 'string') out.push(v);
-  else if (Array.isArray(v)) v.forEach((x) => allStrings(x, out, depth + 1));
-  else if (v && typeof v === 'object')
-    for (const [k, x] of Object.entries(v)) {
-      out.push(k);
-      allStrings(x, out, depth + 1);
-    }
-  return out;
-}
-
-/** Names of the files inside a GameBanana file's archive (without downloading it). */
-export async function gameBananaArchiveFileNames(fileId: number): Promise<string[]> {
-  const j = await getJson(`https://api.gamebanana.com/Core/Item/Data?itemtype=File&itemid=${fileId}&fields=Metadata().aArchiveFileTree()`, 8000);
-  if (!j) return [];
-  return allStrings(j).filter((s) => s.length < 300);
-}
-
 async function gameBananaEvidence(id: number): Promise<GbEvidence | null> {
   if (!evidenceCache.has(id)) {
     evidenceCache.set(
@@ -186,7 +166,8 @@ async function gameBananaEvidence(id: number): Promise<GbEvidence | null> {
         if (!d) return null;
         const files: any[] = Array.isArray(d._aFiles) ? d._aFiles : [];
         const fileNames: string[] = files.flatMap((f) => [f._sFile, f._sDescription].filter(Boolean).map(String));
-        for (const f of files.slice(0, 3)) if (f?._idRow) fileNames.push(...(await gameBananaArchiveFileNames(Number(f._idRow))));
+        // GameBanana has no public API for the files inside an archive (checked: every route 404s or
+        // rejects the request), so archive contents are only checked once the mod is installed.
         const ratings = d._aContentRatings && typeof d._aContentRatings === 'object' ? Object.values(d._aContentRatings).map(String) : [];
         return {
           text: [d._sName, d._sDescription, String(d._sText || '').replace(/<[^>]+>/g, ' ')].filter(Boolean).join(' '),
