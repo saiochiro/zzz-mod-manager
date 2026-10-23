@@ -13,6 +13,7 @@ import {
   Info,
   Layers,
   Loader2,
+  RefreshCw,
   Share2,
   ShieldAlert,
   Shirt,
@@ -178,6 +179,7 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
   const [me, setMe] = useState<CommunityProfile | null>(null);
   const [posting, setPosting] = useState<WorkshopCatalogEntry | null>(null);
   const [communityRefresh, setCommunityRefresh] = useState(0);
+  const [rebuilding, setRebuilding] = useState<string | null>(null);
   /** The tile last clicked, shown in the 3D preview. */
   const [focus, setFocus] = useState<{ part: string; modUuid: string } | null>(null);
 
@@ -520,7 +522,33 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
                             {y.parts.map((p) => p.name).join(' · ')}
                             {y.is_nsfw ? ' · 18+' : ''}
                           </div>
+                          {(y.updated_parts?.length ?? 0) > 0 && (
+                            <div className="caption" style={{ color: 'var(--primary-text)' }}>
+                              Update available for {y.updated_parts!.join(', ')}
+                            </div>
+                          )}
                         </div>
+                        {(y.updated_parts?.length ?? 0) > 0 && (
+                          <button
+                            className="btn btn--secondary btn--sm"
+                            disabled={rebuilding === y.mod_uuid}
+                            onClick={async () => {
+                              setRebuilding(y.mod_uuid);
+                              try {
+                                const res = await fairyClient.workshopRebuild(y.mod_uuid);
+                                onState(res.state);
+                                notify({ tone: 'success', title: `Rebuilt “${y.title}” with the updated parts`, message: res.warnings.join(' ') || undefined });
+                                if (agentId) loadCatalog(agentId);
+                              } catch (e) {
+                                notify({ tone: 'error', title: 'Couldn’t rebuild', message: errMsg(e) });
+                              } finally {
+                                setRebuilding(null);
+                              }
+                            }}
+                          >
+                            {rebuilding === y.mod_uuid ? <Loader2 className="spin" /> : <RefreshCw />} Rebuild
+                          </button>
+                        )}
                         <button className="btn btn--primary btn--sm" onClick={() => setPosting(y)}>
                           <Users /> Post
                         </button>

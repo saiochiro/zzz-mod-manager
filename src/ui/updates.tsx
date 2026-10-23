@@ -142,7 +142,8 @@ export function useModUpdates(mods: ModManifest[] | null) {
   const runningRef = useRef(false);
 
   const check = useCallback(async () => {
-    const list = (modsRef.current ?? []).filter((m) => m.gamebanana_id);
+    // Workshop mixes aren't GameBanana mods; they get "rebuild" in the Workshop when a source updates.
+    const list = (modsRef.current ?? []).filter((m) => m.gamebanana_id && !(m.tags || []).includes('Workshop'));
     if (runningRef.current) return { found: 0, checked: 0 };
     runningRef.current = true;
     setChecking(true);

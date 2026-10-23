@@ -14,6 +14,7 @@ import {
   type NsfwScores,
   type NsfwSource,
 } from '../shared/nsfw';
+import { reportSharedVerdict, sharedLevel } from './sharedVerdicts';
 
 /**
  * The content scan's memory: what the scan decided about each mod, applied to GameBanana items
@@ -110,6 +111,17 @@ export function applyNsfwReview<T extends NsfwReviewFields>(item: T, key: string
     out.nsfw_source = flagged ? 'gamebanana' : undefined;
     out.nsfw_checked = false;
     out.nsfw_clean_images = [];
+  }
+  // Another ProxyLaunch user's scan found this mod NSFW / Experimental: at least that strict here too.
+  const gbId = key?.startsWith('gb:') ? Number(key.slice(3)) : null;
+  const sh = sharedLevel(gbId);
+  const rank = { sfw: 0, toggle: 1, nsfw: 2 } as const;
+  if (sh && rank[sh] > rank[out.nsfw_level ?? 'sfw']) {
+    out.nsfw_level = sh;
+    out.is_nsfw = true;
+    // A shared NSFW result is enough to hide or blur it; Experimental still needs this PC's own scan
+    // (it decides which pictures are clean).
+    if (sh === 'nsfw') out.nsfw_checked = true;
   }
   return out;
 }
@@ -243,6 +255,7 @@ export async function submitNsfwReview(req: NsfwReviewRequest): Promise<NsfwRevi
   const cleanImages = req.imageUrls.filter((_, i) => verdict.cleanImages[i]).map(imageKey);
 
   store.set(req.key, { level: verdict.level, flagged: req.flagged, cleanImages, checkedAt: new Date().toISOString() });
+  if (req.gamebananaId) reportSharedVerdict(req.gamebananaId, verdict.level);
   persist();
   devLog({
     key: req.key,

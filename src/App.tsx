@@ -726,7 +726,16 @@ const AppInner: React.FC = () => {
       modUpdates.clear(uuid);
       if (selectedModUuid === uuid) setInspectorOpen(false);
       if (!opts.quiet) {
-        notify({ tone: 'success', title: `Updated “${old.title}”`, message: 'The previous version is saved in backups.' });
+        // Workshop mixes keep their own copy of the parts, so they keep working; offer the rebuild.
+        const mixes = latest.mods.filter((m) => (m.tags || []).includes('Workshop') && m.agent_id === old.agent_id);
+        notify({
+          tone: 'success',
+          title: `Updated “${old.title}”`,
+          message: mixes.length
+            ? 'The previous version is saved in backups. Workshop mixes that use its parts still work, and you can rebuild them with the update in the Workshop.'
+            : 'The previous version is saved in backups.',
+          action: mixes.length && latest.config.workshopEnabled ? { label: 'Open Workshop', onClick: () => setScreen('workshop' as ScreenId) } : undefined,
+        });
       }
       return true;
     } catch (err) {

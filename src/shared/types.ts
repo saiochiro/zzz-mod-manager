@@ -315,6 +315,8 @@ export interface WorkshopCatalogEntry extends NsfwReviewInfo {
   thumbnail_url?: string;
   is_nsfw: boolean;
   is_workshop: boolean;
+  /** Workshop mods only: parts whose source mod was updated after the mix was built. */
+  updated_parts?: string[];
   /** Workshop mods only: every part comes from a GameBanana mod, so it can be posted. */
   shareable?: boolean;
   parts: Array<{ name: string; sectionCount: number; check?: WorkshopPartCheck }>;

@@ -1052,6 +1052,7 @@ endif
     }
 
     return results
+      .map((m) => this.asWorkshopIfMix(m))
       .map((m) => ({ ...applyNsfwReview(m, nsfwKey(m)), nsfw_sanitized: isSanitized(this.sanitizeBackupDir(m)) }))
       .sort((a, b) => a.title.localeCompare(b.title));
   }
@@ -1100,6 +1101,16 @@ endif
     const res = await submitNsfwReview({ ...req, hotkeyNames, hotkeyNsfw, localFileNames });
     if (installed.length) this.enforceContentTiers();
     return res;
+  }
+
+  /**
+   * Workshop mixes are never "a GameBanana mod", even if an older version linked one by name
+   * (auto preview lookup). Without this, the update checker could replace a mix with that mod.
+   */
+  private asWorkshopIfMix(m: ModManifest): ModManifest {
+    if (!fs.existsSync(path.join(this.zzmiRootPath, m.install_path, 'workshop_recipe.json'))) return m;
+    const tags = (m.tags || []).includes('Workshop') ? m.tags : ['Workshop', ...(m.tags || [])];
+    return { ...m, gamebanana_id: null, tags };
   }
 
   private sanitizeBackupDir(mod: ModManifest): string {
@@ -1426,6 +1437,8 @@ endif
     for (const mod of mods) {
       const absPath = path.join(this.zzmiRootPath, mod.install_path);
       if (!fs.existsSync(absPath)) continue;
+      // Workshop mixes are not on GameBanana: matching them by name would link a stranger's mod.
+      if ((mod.tags || []).includes('Workshop')) continue;
 
       const hasLocalImg = Boolean(resolveLocalModThumbnailDataUrl(absPath));
 
@@ -3751,6 +3764,7 @@ endif
         nsfw_level: m.nsfw_level,
         nsfw_checked: m.nsfw_checked,
         is_workshop: (m.tags || []).includes('Workshop'),
+        updated_parts: (m.tags || []).includes('Workshop') ? this.workshopUpdatedParts(m) : undefined,
         shareable: (() => {
           try {
             const r = JSON.parse(fs.readFileSync(path.join(this.modAbsDir(m), 'workshop_recipe.json'), 'utf-8')) as WorkshopRecipe;
@@ -3952,6 +3966,81 @@ endif
   }
 
   /** Same, for a recipe that came from the community page. */
+  /** Parts of a Workshop mix whose source mod was updated after the mix was built. */
+  private workshopUpdatedParts(mix: ModManifest): string[] {
+    try {
+      const recipe = JSON.parse(fs.readFileSync(path.join(this.modAbsDir(mix), 'workshop_recipe.json'), 'utf-8')) as WorkshopRecipe;
+      const built = Date.parse(recipe.created_at || '') || 0;
+      const resolved = this.resolveWorkshopRecipe(recipe);
+      const byUuid = new Map(this.scanInstalledMods().map((m) => [m.mod_uuid, m]));
+      return resolved.parts
+        .filter((p) => p.modUuid && p.hasPart && Date.parse(byUuid.get(p.modUuid)?.installed_at || '') > built)
+        .map((p) => p.part);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Rebuilds a Workshop mix from its recipe using the mods installed now, so parts from source
+   * mods that were updated pick up the new version. Keeps the mix's name, on/off state and id.
+   */
+  public async rebuildWorkshopMod(modUuid: string): Promise<{ mod: ModManifest | null; warnings: string[] }> {
+    const mix = this.scanInstalledMods().find((m) => m.mod_uuid === modUuid);
+    if (!mix) throw new Error('That mod is no longer installed.');
+    const recipe = this.getWorkshopRecipe(modUuid);
+    const resolved = this.resolveWorkshopRecipe(recipe);
+    const missing = resolved.parts.filter((p) => !p.modUuid || !p.hasPart);
+    if (missing.length) {
+      throw new Error(`Can't rebuild: ${missing.map((p) => `${p.part} from "${p.source.title}"`).join(', ')} isn't installed anymore.`);
+    }
+    const hashDb = this.getHashDb();
+    const agent = hashDb.agents[recipe.agent_id];
+    const byUuid = new Map(this.scanInstalledMods().map((m) => [m.mod_uuid, m]));
+    const picks: WorkshopPick[] = resolved.parts.map((p) => {
+      const src = byUuid.get(p.modUuid!)!;
+      return {
+        part: p.part,
+        modDir: this.modAbsDir(src),
+        source: { title: src.title, author: src.author, gamebanana_id: src.gamebanana_id, mod_uuid: src.mod_uuid },
+      };
+    });
+    const dir = this.modAbsDir(mix);
+    const tmp = `${dir}.rebuild`;
+    const old = `${dir}.old`;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(old, { recursive: true, force: true });
+    const built = buildWorkshopMod({
+      name: recipe.name,
+      agentName: agent?.display_name || recipe.agent_id,
+      picks,
+      partIndex: this.workshopPartIndex(recipe.agent_id),
+      outDir: tmp,
+      recipe: { ...recipe, created_at: new Date().toISOString() },
+    });
+    // Keep the mix's identity and cover.
+    for (const f of fs.readdirSync(dir)) {
+      if (/^(mod\.json|mod_manifest\.json|preview\.(webp|png|jpe?g))$/i.test(f)) fs.copyFileSync(path.join(dir, f), path.join(tmp, f));
+    }
+    fs.renameSync(dir, old);
+    try {
+      fs.renameSync(tmp, dir);
+    } catch (err) {
+      fs.renameSync(old, dir);
+      throw err;
+    }
+    fs.rmSync(old, { recursive: true, force: true });
+    fs.rmSync(this.sanitizeBackupDir(mix), { recursive: true, force: true }); // fresh files: sanitize again if needed
+    this.enforceContentTiers();
+    try {
+      this.syncModsToXxmiLauncher();
+    } catch {
+      // XXMI not set up yet
+    }
+    this.addLog('success', 'FAIRY_CORE', `Workshop: rebuilt [${mix.title}] with the latest versions of its parts.`, mix.mod_uuid);
+    return { mod: this.scanInstalledMods().find((m) => m.mod_uuid === modUuid) ?? null, warnings: [...built.warnings, ...built.missingFiles.map((f) => `Missing file: ${f}`)] };
+  }
+
   public resolveWorkshopRecipe(input: WorkshopRecipe): WorkshopResolvedRecipe {
     // Round-trip through the share-code decoder so it gets the same validation.
     const recipe = decodeRecipe(encodeRecipe(input));

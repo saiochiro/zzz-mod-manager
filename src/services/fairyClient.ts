@@ -232,6 +232,8 @@ export const fairyClient = {
     const u32 = (x: any) => (x instanceof Uint32Array ? x : Uint32Array.from(Array.isArray(x) ? x : Object.values(x ?? {})));
     return { ...raw, meshes: raw.meshes.map((m) => ({ ...m, positions: f32(m.positions), indices: u32(m.indices) })) };
   },
+  workshopRebuild: (modUuid: string): Promise<{ mod: ModManifest | null; warnings: string[]; state: FullAppState }> =>
+    invokeBackend('workshop:rebuild', modUuid),
   workshopShareCode: (modUuid: string): Promise<string> => invokeBackend('workshop:shareCode', modUuid),
   workshopResolveCode: (code: string): Promise<WorkshopResolvedRecipe> => invokeBackend('workshop:resolveCode', code),
   workshopResolveRecipe: (recipe: WorkshopRecipe): Promise<WorkshopResolvedRecipe> => invokeBackend('workshop:resolveRecipe', recipe),
