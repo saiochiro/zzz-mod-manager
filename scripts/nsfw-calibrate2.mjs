@@ -33,11 +33,22 @@ function load(dir, kind) {
   const art = { modelTopology: json.modelTopology, format: json.format, weightSpecs: json.weightsManifest.flatMap((g) => g.weights), weightData: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) };
   return kind === 'graph' ? tf.loadGraphModel(tf.io.fromMemory(art)) : tf.loadLayersModel(tf.io.fromMemory(art));
 }
-const models = {
-  v2: { m: await load('public/nsfw-model', 'layers'), size: 224 },
-  mid: { m: await load('calib-models/mobilenet_v2_mid', 'graph'), size: 224 },
-  inc: { m: await load('calib-models/inception_v3', 'layers'), size: 299 },
-};
+const diag = { backend: null, errors: [] };
+const models = {};
+for (const [name, dir, kind, size] of [
+  ['v2', 'public/nsfw-model', 'layers', 224],
+  ['mid', 'calib-models/mobilenet_v2_mid', 'graph', 224],
+  ['inc', 'calib-models/inception_v3', 'layers', 299],
+]) {
+  try {
+    models[name] = { m: await load(dir, kind), size };
+  } catch (e) {
+    diag.errors.push(`${name}: ${String(e && e.stack || e).slice(0, 600)}`);
+  }
+}
+diag.backend = tf.getBackend ? tf.getBackend() : null;
+fs.mkdirSync('calibration', { recursive: true });
+fs.writeFileSync('calibration/results2.json', JSON.stringify({ diag }, null, 1));
 const CLASSES = ['drawing', 'hentai', 'neutral', 'porn', 'sexy'];
 
 function skin(raw, w, h) {
@@ -107,6 +118,6 @@ for (const [id, { sort, rec }] of picked) {
   }
   results.push(entry);
   console.log(results.length, id, entry.images.length, entry.name);
+  if (results.length % 20 === 0) fs.writeFileSync('calibration/results2.json', JSON.stringify({ partial: true, diag, results }, null, 1));
 }
-fs.mkdirSync('calibration', { recursive: true });
-fs.writeFileSync('calibration/results2.json', JSON.stringify({ when: new Date().toISOString(), results }, null, 1));
+fs.writeFileSync('calibration/results2.json', JSON.stringify({ when: new Date().toISOString(), diag, results }, null, 1));
