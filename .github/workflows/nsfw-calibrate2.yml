@@ -16,8 +16,8 @@ jobs:
           node-version: 20
       - name: Tools
         run: |
-          npm i --no-save --no-package-lock @tensorflow/tfjs@4.22.0 sharp@0.33.5
-          npm i --no-save --no-package-lock @tensorflow/tfjs-node@4.22.0 || echo "tfjs-node unavailable, using plain tfjs"
+          # One install: a second "npm i --no-save" would remove the first one's packages.
+          npm i --no-save --no-package-lock @tensorflow/tfjs@4.22.0 @tensorflow/tfjs-node@4.22.0 sharp@0.33.5 || npm i --no-save --no-package-lock @tensorflow/tfjs@4.22.0 sharp@0.33.5
       - name: Score mods
         shell: bash
         run: |
