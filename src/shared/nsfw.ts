@@ -76,31 +76,43 @@ export interface NsfwScores {
 
 export const NSFW_MODEL_CLASSES: Array<keyof NsfwScores> = ['drawing', 'hentai', 'neutral', 'porn', 'sexy'];
 
+/** One picture, scored by both bundled models. */
+export interface NsfwImageScores {
+  /** InceptionV3 (299 px): the main model, clearly better on ZZZ's 3D renders. */
+  inc: NsfwScores;
+  /** MobileNetV2 (224 px): second opinion. */
+  mob: NsfwScores;
+}
+
 export type ImageRating = 'clean' | 'unsure' | 'skimpy' | 'explicit';
 
 /**
- * Thresholds, tuned on real ZZZ skin screenshots from GameBanana (scripts/nsfw-calibrate.mjs).
- * A picture only counts as clean when it is clearly clean; everything in between is "unsure",
- * which is treated as not safe.
+ * Thresholds tuned on real ZZZ skin mods from GameBanana (scripts/nsfw-calibrate*.mjs, run in CI).
+ * Both models mostly call these renders "drawing", so the nudity classes (porn + hentai) are
+ * the useful signal and stay low on safe mods. A picture is clean only if BOTH models say so.
  */
 export const NSFW_THRESHOLDS = {
-  /** porn + hentai at or above this = nudity / explicit */
-  explicit: 0.6,
-  /** porn alone at or above this = explicit */
-  porn: 0.35,
-  /** sexy at or above this = skimpy / suggestive */
-  skimpy: 0.5,
-  /** clean only when porn + hentai is below this ... */
-  cleanExplicitMax: 0.2,
-  /** ... and sexy is below this */
-  cleanSexyMax: 0.25,
+  /** InceptionV3 porn + hentai at or above this = explicit */
+  incExplicit: 0.5,
+  /** MobileNet porn + hentai at or above this = explicit */
+  mobExplicit: 0.4,
+  /** either model's "sexy" at or above this = skimpy */
+  skimpy: 0.3,
+  /** clean only when InceptionV3 porn + hentai is below this ... */
+  incCleanMax: 0.12,
+  /** ... and MobileNet porn + hentai is below this ... */
+  mobCleanMax: 0.06,
+  /** ... and both models' "sexy" is below this */
+  sexyCleanMax: 0.05,
 };
 
-export function rateImage(s: NsfwScores, t = NSFW_THRESHOLDS): ImageRating {
-  const explicit = s.porn + s.hentai;
-  if (explicit >= t.explicit || s.porn >= t.porn) return 'explicit';
-  if (s.sexy >= t.skimpy) return 'skimpy';
-  if (explicit < t.cleanExplicitMax && s.sexy < t.cleanSexyMax) return 'clean';
+export function rateImage(s: NsfwImageScores, t = NSFW_THRESHOLDS): ImageRating {
+  const inc = s.inc.porn + s.inc.hentai;
+  const mob = s.mob.porn + s.mob.hentai;
+  const sexy = Math.max(s.inc.sexy, s.mob.sexy);
+  if (inc >= t.incExplicit || mob >= t.mobExplicit) return 'explicit';
+  if (sexy >= t.skimpy) return 'skimpy';
+  if (inc < t.incCleanMax && mob < t.mobCleanMax && sexy < t.sexyCleanMax) return 'clean';
   return 'unsure';
 }
 
@@ -109,10 +121,10 @@ export function rateImage(s: NsfwScores, t = NSFW_THRESHOLDS): ImageRating {
 /* ------------------------------------------------------------------ */
 
 export interface NsfwEvidence {
-  /** GameBanana marks it NSFW (content ratings, visibility, NSFW keywords in title/tags/description). */
+  /** GameBanana gave it ANY content rating (skimpy attire, nudity, lewd poses...) or NSFW words. */
   flagged: boolean;
   /** Scores per picture, cover first. */
-  images: NsfwScores[];
+  images: NsfwImageScores[];
   /** The mod page says the NSFW part is optional (toggle, SFW version...). */
   toggleHint: boolean;
   /** The archive's file and folder names contain NSFW words (nude, topless, ...). */
@@ -134,39 +146,33 @@ export interface NsfwVerdict {
 }
 
 /**
- * Zero tolerance: SFW only when every signal is clean. Experimental only for a skin whose cover
- * and most pictures are clean SFW and whose NSFW part looks like an option. Everything else is NSFW.
+ * Zero tolerance.
+ *  SFW:          no GameBanana rating, no NSFW words or files, and every picture clean.
+ *  Experimental: a skin with real evidence of an NSFW toggle (page, hotkeys or file names), whose
+ *                cover and most pictures are clean. Its NSFW pictures and options get removed.
+ *  NSFW:         everything else.
  */
 export function decideNsfwLevel(e: NsfwEvidence): NsfwVerdict {
   const rated = e.images.map((s) => rateImage(s));
   const cleanImages = rated.map((r) => r === 'clean');
   const v = (level: NsfwLevel, reason: string): NsfwVerdict => ({ level, reason, cleanImages });
 
-  const signals: string[] = [];
-  if (e.flagged) signals.push('GameBanana marks it NSFW');
-  if (e.toggleHint) signals.push('page mentions NSFW toggle/version');
-  if (e.fileTreeNsfw) signals.push('NSFW file names in the archive');
-  if (e.hotkeyNsfw) signals.push('NSFW hotkeys in the .ini files');
+  const toggleEvidence = [e.toggleHint && 'page mentions NSFW toggle/version', e.fileTreeNsfw && 'NSFW file names', e.hotkeyNsfw && 'NSFW hotkeys']
+    .filter(Boolean)
+    .join(', ');
   const counts = (['clean', 'unsure', 'skimpy', 'explicit'] as ImageRating[]).map((r) => `${r}=${rated.filter((x) => x === r).length}`).join(' ');
+  const ctx = `${e.flagged ? 'rated/flagged' : 'unrated'}; pictures ${counts}${toggleEvidence ? `; ${toggleEvidence}` : ''}`;
 
-  if (e.nudeEditText) return v('nsfw', `nude-edit wording; pictures ${counts}`);
+  if (e.nudeEditText) return v('nsfw', `nude-edit wording; ${ctx}`);
+  if (rated.length === 0) return !e.flagged && !toggleEvidence ? v('sfw', `no pictures; ${ctx}`) : v('nsfw', `no pictures; ${ctx}`);
+  if (rated[0] !== 'clean') return v('nsfw', `cover is ${rated[0]}; ${ctx}`);
 
-  if (rated.length === 0) {
-    // Nothing to look at. Only SFW when there is also no other sign of NSFW content.
-    return signals.length ? v('nsfw', `no pictures; ${signals.join(', ')}`) : v('sfw', 'no pictures; no NSFW signals');
-  }
-
-  const [cover] = rated;
-  if (cover !== 'clean') return v('nsfw', `cover is ${cover}; pictures ${counts}`);
+  const allClean = cleanImages.every(Boolean);
+  if (allClean && !e.flagged && !toggleEvidence) return v('sfw', ctx);
 
   const cleanShare = cleanImages.filter(Boolean).length / rated.length;
-  const allClean = cleanShare === 1;
-  if (allClean && signals.length === 0) return v('sfw', `all ${rated.length} pictures clean; no NSFW signals`);
-
-  // A clean cover with NSFW somewhere: an SFW outfit with NSFW options, if it's a skin and mostly clean.
-  const why = [...signals, ...(allClean ? [] : [`pictures ${counts}`])].join(', ');
-  if (e.isSkin !== false && cleanShare >= 0.5) return v('toggle', `clean cover, ${why}`);
-  return v('nsfw', `${e.isSkin === false ? 'not a skin' : 'mostly NSFW pictures'}; ${why}`);
+  if (e.isSkin !== false && toggleEvidence && cleanShare >= 0.5) return v('toggle', `clean SFW base with NSFW toggle; ${ctx}`);
+  return v('nsfw', `${!toggleEvidence ? 'NSFW signals without a toggle' : e.isSkin === false ? 'not a skin' : 'mostly NSFW pictures'}; ${ctx}`);
 }
 
 /* ------------------------------------------------------------------ */

@@ -11,7 +11,7 @@ import {
   TOGGLE_KEY_RE,
   TOGGLE_TEXT_RE,
   type NsfwLevel,
-  type NsfwScores,
+  type NsfwImageScores,
   type NsfwSource,
 } from '../shared/nsfw';
 import { reportSharedVerdict, sharedLevel } from './sharedVerdicts';
@@ -221,7 +221,7 @@ export interface NsfwReviewRequest {
   localFileNames?: string[];
   /** Pictures that were scored, cover first, same order as scores. */
   imageUrls: string[];
-  scores: NsfwScores[];
+  scores: NsfwImageScores[];
 }
 
 export interface NsfwReviewResult {

@@ -12,15 +12,17 @@ import {
   rateImage,
   TOGGLE_KEY_RE,
   TOGGLE_TEXT_RE,
+  type NsfwImageScores,
   type NsfwScores,
 } from '../src/shared/nsfw';
 import { applyNsfwReview, initNsfwReview, submitNsfwReview } from '../src/core/nsfwReview';
 import { findNsfwToggles, restoreMod, sanitizeMod } from '../src/core/nsfwSanitizer';
 
-const clean: NsfwScores = { drawing: 0.7, hentai: 0.05, neutral: 0.2, porn: 0.02, sexy: 0.03 };
-const nude: NsfwScores = { drawing: 0.05, hentai: 0.7, neutral: 0.05, porn: 0.15, sexy: 0.05 };
-const skimpy: NsfwScores = { drawing: 0.1, hentai: 0.08, neutral: 0.05, porn: 0.02, sexy: 0.75 };
-const meh: NsfwScores = { drawing: 0.4, hentai: 0.3, neutral: 0.1, porn: 0.05, sexy: 0.15 };
+const both = (s: NsfwScores): NsfwImageScores => ({ inc: s, mob: s });
+const clean = both({ drawing: 0.96, hentai: 0.02, neutral: 0.01, porn: 0.005, sexy: 0.005 });
+const nude = both({ drawing: 0.05, hentai: 0.7, neutral: 0.05, porn: 0.15, sexy: 0.05 });
+const skimpy = both({ drawing: 0.1, hentai: 0.04, neutral: 0.05, porn: 0.01, sexy: 0.8 });
+const meh = both({ drawing: 0.7, hentai: 0.2, neutral: 0.05, porn: 0.03, sexy: 0.02 });
 const none = { flagged: false, toggleHint: false };
 
 describe('Content tiers', () => {
@@ -42,25 +44,35 @@ describe('Content tiers', () => {
     expect(decideNsfwLevel({ ...none, images: [nude] }).level).toBe('nsfw');
   });
 
-  it('never trusts a GameBanana NSFW label just because the pictures look clean', () => {
-    expect(decideNsfwLevel({ ...none, flagged: true, images: [clean, clean] }).level).toBe('toggle');
-    expect(decideNsfwLevel({ ...none, flagged: true, images: [clean, clean], isSkin: false }).level).toBe('nsfw');
+  it('any GameBanana rating keeps a mod out of SFW, even with clean pictures', () => {
+    // Rated (skimpy attire, nudity...) and no proof the NSFW part is an option: NSFW.
+    expect(decideNsfwLevel({ ...none, flagged: true, images: [clean, clean] }).level).toBe('nsfw');
     expect(decideNsfwLevel({ ...none, flagged: true, images: [] }).level).toBe('nsfw');
+    // Rated, but the page says it's a toggle and the pictures are clean: Experimental.
+    expect(decideNsfwLevel({ ...none, flagged: true, toggleHint: true, images: [clean, clean] }).level).toBe('toggle');
   });
 
-  it('Experimental: clean SFW cover and mostly clean pictures, with NSFW options', () => {
-    expect(decideNsfwLevel({ ...none, images: [clean, clean, clean, nude] }).level).toBe('toggle');
+  it('Experimental needs real toggle evidence plus a clean cover and mostly clean pictures', () => {
+    expect(decideNsfwLevel({ ...none, images: [clean, clean, clean, nude], toggleHint: true }).level).toBe('toggle');
     expect(decideNsfwLevel({ ...none, images: [clean, clean], hotkeyNsfw: true }).level).toBe('toggle');
     expect(decideNsfwLevel({ ...none, images: [clean, clean], fileTreeNsfw: true }).level).toBe('toggle');
-    expect(decideNsfwLevel({ ...none, images: [clean, clean], toggleHint: true }).level).toBe('toggle');
+    // NSFW screenshots without any toggle evidence: NSFW, not Experimental.
+    expect(decideNsfwLevel({ ...none, images: [clean, clean, clean, nude] }).level).toBe('nsfw');
     // Mostly NSFW pictures, a nude edit, or not a skin: NSFW.
-    expect(decideNsfwLevel({ ...none, images: [clean, nude, skimpy] }).level).toBe('nsfw');
-    expect(decideNsfwLevel({ ...none, images: [clean, clean], nudeEditText: true }).level).toBe('nsfw');
-    expect(decideNsfwLevel({ ...none, images: [clean, nude], isSkin: false }).level).toBe('nsfw');
+    expect(decideNsfwLevel({ ...none, images: [clean, nude, skimpy], toggleHint: true }).level).toBe('nsfw');
+    expect(decideNsfwLevel({ ...none, images: [clean, clean], toggleHint: true, nudeEditText: true }).level).toBe('nsfw');
+    expect(decideNsfwLevel({ ...none, images: [clean, clean], toggleHint: true, isSkin: false }).level).toBe('nsfw');
+  });
+
+  it('a picture is clean only if both models agree', () => {
+    const incSaysNude: NsfwImageScores = { inc: nude.inc, mob: clean.mob };
+    expect(rateImage(incSaysNude)).toBe('explicit');
+    const mobUnsure: NsfwImageScores = { inc: clean.inc, mob: meh.mob };
+    expect(rateImage(mobUnsure)).not.toBe('clean');
   });
 
   it('reports which pictures are clean, so NSFW screenshots can be removed', () => {
-    expect(decideNsfwLevel({ ...none, images: [clean, nude, clean, meh] }).cleanImages).toEqual([true, false, true, false]);
+    expect(decideNsfwLevel({ ...none, images: [clean, nude, clean, meh], toggleHint: true }).cleanImages).toEqual([true, false, true, false]);
     expect(imageKey('https://images.gamebanana.com/img/ss/mods/530-90_abc.jpg')).toBe(imageKey('https://images.gamebanana.com/img/ss/mods/abc.jpg'));
   });
 
@@ -197,28 +209,37 @@ describe('Sanitizing NSFW toggles', () => {
   });
 });
 
-describe('NSFW image model', () => {
-  it('loads the bundled model and scores a safe picture as safe', async () => {
-    const tf = await import('@tensorflow/tfjs');
-    await tf.setBackend('cpu');
-    const dir = path.resolve(__dirname, '../public/nsfw-model');
+describe('NSFW image models', () => {
+  async function load(tf: any, dir: string) {
     const json = JSON.parse(fs.readFileSync(path.join(dir, 'model.json'), 'utf-8'));
     const w = fs.readFileSync(path.join(dir, 'weights.bin'));
-    const model = await tf.loadLayersModel(
+    return tf.loadLayersModel(
       tf.io.fromMemory({
         modelTopology: json.modelTopology,
         weightSpecs: json.weightsManifest.flatMap((g: any) => g.weights),
         weightData: w.buffer.slice(w.byteOffset, w.byteOffset + w.byteLength) as ArrayBuffer,
       })
     );
+  }
+
+  it('both bundled models load and score a safe picture as safe', async () => {
+    const tf = await import('@tensorflow/tfjs');
+    await tf.setBackend('cpu');
     const pixels = new Uint8Array(fs.readFileSync(path.join(__dirname, 'fixtures/scene-224.rgb')));
-    const out = tf.tidy(() => model.predict(tf.tensor3d(pixels, [224, 224, 3], 'int32').toFloat().div(255).reshape([1, 224, 224, 3])) as any);
-    const probs = Array.from((await out.data()) as Float32Array);
-    expect(probs).toHaveLength(NSFW_MODEL_CLASSES.length);
-    expect(Math.abs(probs.reduce((a, b) => a + b, 0) - 1)).toBeLessThan(0.01);
-    const scores = Object.fromEntries(NSFW_MODEL_CLASSES.map((c, i) => [c, probs[i]])) as unknown as NsfwScores;
-    console.log('scene scores', scores);
-    expect(scores.porn + scores.hentai).toBeLessThan(0.3);
-    expect(scores.drawing + scores.neutral).toBeGreaterThan(0.6);
-  }, 120_000);
+    const img = tf.tensor3d(pixels, [224, 224, 3], 'int32').toFloat().div(255);
+    const out: Record<string, NsfwScores> = {};
+    for (const [name, dir, size] of [
+      ['mob', '../public/nsfw-model', 224],
+      ['inc', '../public/nsfw-model-inception', 299],
+    ] as const) {
+      const model = await load(tf, path.resolve(__dirname, dir));
+      const y = tf.tidy(() => model.predict(tf.image.resizeBilinear(img as any, [size, size], true).reshape([1, size, size, 3])) as any);
+      const probs = Array.from((await y.data()) as Float32Array);
+      expect(probs).toHaveLength(NSFW_MODEL_CLASSES.length);
+      expect(Math.abs(probs.reduce((a, b) => a + b, 0) - 1)).toBeLessThan(0.01);
+      out[name] = Object.fromEntries(NSFW_MODEL_CLASSES.map((c, i) => [c, probs[i]])) as unknown as NsfwScores;
+    }
+    console.log('scene scores', out);
+    expect(rateImage({ inc: out.inc, mob: out.mob })).toBe('clean');
+  }, 300_000);
 });

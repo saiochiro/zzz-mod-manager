@@ -1,7 +1,7 @@
-import { NSFW_MODEL_CLASSES, type NsfwLevel, type NsfwScores, type NsfwSource } from '../shared/nsfw';
+import { NSFW_MODEL_CLASSES, type NsfwImageScores, type NsfwLevel, type NsfwScores, type NsfwSource } from '../shared/nsfw';
 
 /**
- * On-device NSFW image check. Runs the open MobileNetV2 model from NSFWJS with TensorFlow.js
+ * On-device NSFW image check. Runs two open NSFWJS models (InceptionV3 and MobileNetV2) with TensorFlow.js
  * right on this PC (GPU when available). No pictures leave the computer and no API key is needed.
  *
  * The backend decides what the scores mean (src/shared/nsfw.ts) and remembers the result.
@@ -10,10 +10,10 @@ import { NSFW_MODEL_CLASSES, type NsfwLevel, type NsfwScores, type NsfwSource } 
 type TF = typeof import('@tensorflow/tfjs');
 type LayersModel = import('@tensorflow/tfjs').LayersModel;
 
-const SIZE = 224;
+const MOBILE_SIZE = 224;
+const INCEPTION_SIZE = 299;
 const MAX_IMAGES = 10;
 
-let modelPromise: Promise<{ tf: TF; model: LayersModel }> | null = null;
 
 const bridge = () => (window as any).fairyBridge as { isElectron?: boolean; invoke: (ch: string, ...a: any[]) => Promise<any> } | undefined;
 
@@ -21,28 +21,41 @@ export function nsfwAiAvailable(): boolean {
   return Boolean(bridge()?.isElectron) && typeof createImageBitmap === 'function';
 }
 
-async function loadModel() {
-  if (!modelPromise) {
-    modelPromise = (async () => {
+interface Loaded {
+  tf: TF;
+  mobile: LayersModel;
+  inception: LayersModel;
+}
+
+async function loadOne(tf: TF, which: 'mobile' | 'inception', size: number): Promise<LayersModel> {
+  const { modelJson, weights } = (await bridge()!.invoke('nsfw:model', which)) as { modelJson: any; weights: Uint8Array };
+  const bytes = weights instanceof Uint8Array ? weights : new Uint8Array(weights as ArrayBufferLike);
+  const model = await tf.loadLayersModel(
+    tf.io.fromMemory({
+      modelTopology: modelJson.modelTopology,
+      weightSpecs: modelJson.weightsManifest.flatMap((g: any) => g.weights),
+      weightData: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+    })
+  );
+  // Warm up once so the first real picture isn't slow.
+  tf.tidy(() => model.predict(tf.zeros([1, size, size, 3])));
+  return model;
+}
+
+let loadedPromise: Promise<Loaded> | null = null;
+async function loadModel(): Promise<Loaded> {
+  if (!loadedPromise) {
+    loadedPromise = (async () => {
       const tf = await import('@tensorflow/tfjs');
-      const { modelJson, weights } = (await bridge()!.invoke('nsfw:model')) as { modelJson: any; weights: Uint8Array };
-      const bytes = weights instanceof Uint8Array ? weights : new Uint8Array(weights as ArrayBufferLike);
-      const model = await tf.loadLayersModel(
-        tf.io.fromMemory({
-          modelTopology: modelJson.modelTopology,
-          weightSpecs: modelJson.weightsManifest.flatMap((g: any) => g.weights),
-          weightData: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
-        })
-      );
-      // Warm up once so the first real picture isn't slow.
-      tf.tidy(() => model.predict(tf.zeros([1, SIZE, SIZE, 3])));
-      return { tf, model };
+      const mobile = await loadOne(tf, 'mobile', MOBILE_SIZE);
+      const inception = await loadOne(tf, 'inception', INCEPTION_SIZE);
+      return { tf, mobile, inception };
     })();
-    modelPromise.catch(() => {
-      modelPromise = null;
+    loadedPromise.catch(() => {
+      loadedPromise = null;
     });
   }
-  return modelPromise;
+  return loadedPromise;
 }
 
 async function imageBlob(url: string): Promise<Blob> {
@@ -51,13 +64,11 @@ async function imageBlob(url: string): Promise<Blob> {
   return new Blob([bytes as BlobPart]);
 }
 
-/** Scores one picture. Throws if it can't be downloaded or decoded. */
-export async function classifyImage(url: string): Promise<NsfwScores> {
-  const { tf, model } = await loadModel();
-  const bitmap = await createImageBitmap(await imageBlob(url), { resizeWidth: SIZE, resizeHeight: SIZE, resizeQuality: 'high' });
+async function run(tf: TF, model: LayersModel, blob: Blob, size: number): Promise<NsfwScores> {
+  const bitmap = await createImageBitmap(blob, { resizeWidth: size, resizeHeight: size, resizeQuality: 'high' });
   try {
     const out = tf.tidy(() => {
-      const x = tf.browser.fromPixels(bitmap).toFloat().div(255).reshape([1, SIZE, SIZE, 3]);
+      const x = tf.browser.fromPixels(bitmap).toFloat().div(255).reshape([1, size, size, 3]);
       return model.predict(x) as import('@tensorflow/tfjs').Tensor;
     });
     const probs = await out.data();
@@ -68,6 +79,13 @@ export async function classifyImage(url: string): Promise<NsfwScores> {
   } finally {
     bitmap.close();
   }
+}
+
+/** Scores one picture with both models. Throws if it can't be downloaded or decoded. */
+export async function classifyImage(url: string): Promise<NsfwImageScores> {
+  const { tf, mobile, inception } = await loadModel();
+  const blob = await imageBlob(url);
+  return { inc: await run(tf, inception, blob, INCEPTION_SIZE), mob: await run(tf, mobile, blob, MOBILE_SIZE) };
 }
 
 /* ------------------------------------------------------------------ */
@@ -137,7 +155,7 @@ export function queueNsfwReview(items: NsfwReviewItem[]): void {
 
 async function scanOne(it: NsfwReviewItem) {
   const imageUrls: string[] = [];
-  const scores: NsfwScores[] = [];
+  const scores: NsfwImageScores[] = [];
   for (const url of it.images) {
     try {
       scores.push(await classifyImage(url));

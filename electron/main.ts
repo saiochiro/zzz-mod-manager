@@ -396,8 +396,9 @@ ipcMain.handle('zzz:fetchGameBananaMod', async (_e, modId: number) => {
 });
 
 // On-device AI NSFW check: the renderer runs the image model, the backend keeps the results.
-ipcMain.handle('nsfw:model', async () => {
-  const dirs = [path.resolve(__dirname, '../../dist/nsfw-model'), path.resolve(__dirname, '../../public/nsfw-model')];
+ipcMain.handle('nsfw:model', async (_e, which?: string) => {
+  const folder = which === 'inception' ? 'nsfw-model-inception' : 'nsfw-model';
+  const dirs = [path.resolve(__dirname, `../../dist/${folder}`), path.resolve(__dirname, `../../public/${folder}`)];
   const dir = dirs.find((d) => fs.existsSync(path.join(d, 'model.json')));
   if (!dir) throw new Error('The NSFW check model is missing from this install.');
   return {
