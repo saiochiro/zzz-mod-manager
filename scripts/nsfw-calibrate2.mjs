@@ -11,7 +11,7 @@ try {
 import sharp from 'sharp';
 
 const GAME = 19567, CAT = 30305, UA = { 'User-Agent': 'ProxyLaunch-calibration' };
-const MAX_IMAGES = 10;
+const MAX_IMAGES = 8;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function getJson(url) {
   for (let i = 0; i < 3; i++) {
@@ -24,7 +24,7 @@ async function getJson(url) {
   }
   return null;
 }
-const imgUrl = (img) => (img?._sBaseUrl && img?._sFile ? `${img._sBaseUrl}/530-90_${img._sFile}` : '');
+const imgUrl = (img) => (img?._sBaseUrl && img?._sFile ? `${img._sBaseUrl}/${img._sFile}` : '');
 
 function load(dir, kind) {
   const json = JSON.parse(fs.readFileSync(path.join(dir, 'model.json'), 'utf-8'));
@@ -37,7 +37,6 @@ const diag = { backend: null, errors: [] };
 const models = {};
 for (const [name, dir, kind, size] of [
   ['v2', 'public/nsfw-model', 'layers', 224],
-  ['mid', 'calib-models/mobilenet_v2_mid', 'graph', 224],
   ['inc', 'calib-models/inception_v3', 'layers', 299],
 ]) {
   try {
@@ -98,11 +97,34 @@ for (const sort of ['Generic_MostLiked', 'Generic_Newest', 'Generic_MostDownload
 }
 const all = [...ids.entries()];
 console.log('mods', all.length);
-const picked = all.slice(0, 260);
+const picked = all.slice(0, 220);
+async function probeUrl(u) {
+  try {
+    const r = await fetch(u, { headers: UA });
+    const t = await r.text();
+    return { status: r.status, body: t.slice(0, 1500) };
+  } catch (e) {
+    return { error: String(e) };
+  }
+}
+diag.probe = {};
 const results = [];
 for (const [id, { sort, rec }] of picked) {
   const p = await getJson(`https://gamebanana.com/apiv11/Mod/${id}/ProfilePage`);
   if (!p) continue;
+  const fid = (p._aFiles ?? []).find((f) => f._bHasContents)?._idRow;
+  if (fid && Object.keys(diag.probe).length < 12) {
+    for (const u of [
+      `https://gamebanana.com/apiv11/File/${fid}?_csvProperties=_aMetadata`,
+      `https://gamebanana.com/apiv11/File/${fid}?_csvProperties=@gbprofile`,
+      `https://gamebanana.com/apiv11/File/${fid}/RawFileTree`,
+      `https://gamebanana.com/apiv11/File/${fid}/FileTree`,
+      `https://gamebanana.com/apiv11/File/${fid}/Contents`,
+      `https://gamebanana.com/apiv11/File/${fid}`,
+      `https://api.gamebanana.com/Core/Item/Data?itemtype=File&itemid=${fid}&fields=Metadata().aArchiveFileTree`,
+      `https://api.gamebanana.com/Core/Item/Data?itemtype=File&itemid=${fid}&fields=metadata`,
+    ]) diag.probe[u] = await probeUrl(u);
+  }
   const imgs = (p._aPreviewMedia?._aImages ?? []).map(imgUrl).filter(Boolean).slice(0, MAX_IMAGES);
   const entry = {
     id, sort, name: p._sName, category: p._aCategory?._sName, hasRatings: p._bHasContentRatings ?? null, ratings: p._aContentRatings ?? null,
