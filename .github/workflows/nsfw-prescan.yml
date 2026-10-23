@@ -6,8 +6,6 @@ on:
   schedule:
     - cron: '23 * * * *'
   workflow_dispatch:
-  push:
-    branches: [nsfw-prescan-run]
 concurrency:
   group: nsfw-prescan
   cancel-in-progress: false
