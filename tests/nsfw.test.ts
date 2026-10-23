@@ -175,7 +175,7 @@ describe('Downloaded labels', () => {
   it('uses the saved list on the next start, before any download', () => {
     fs.writeFileSync(path.join(tmp, 'cache', 'nsfw_verdicts.json'), JSON.stringify(list({ 3: { l: 's', f: 0, c: [] } })));
     initNsfwReview(tmp, { fetch: false });
-    expect(applyNsfwReview({ id: 3 }, 'gb:3')).toMatchObject({ nsfw_checked: true, nsfw_level: 'sfw' });
+    expect(applyNsfwReview({ id: 3, is_nsfw: false }, 'gb:3')).toMatchObject({ nsfw_checked: true, nsfw_level: 'sfw' });
   });
 });
 
