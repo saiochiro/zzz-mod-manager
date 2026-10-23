@@ -1,0 +1,31 @@
+# Developer-only: multi-model NSFW calibration. Runs only on nsfw-calibrate2 and commits results back.
+name: NSFW calibration v2
+on:
+  push:
+    branches: [nsfw-calibrate2]
+permissions:
+  contents: write
+jobs:
+  calibrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Tools
+        run: |
+          npm i --no-save --no-package-lock @tensorflow/tfjs@4.22.0 sharp@0.33.5
+          npm i --no-save --no-package-lock @tensorflow/tfjs-node@4.22.0 || echo "tfjs-node unavailable, using plain tfjs"
+      - name: Score mods
+        run: node scripts/nsfw-calibrate2.mjs
+      - name: Save results
+        if: always()
+        run: |
+          git config user.name "calibration-bot"
+          git config user.email "calibration-bot@users.noreply.github.com"
+          git add -f calibration/results2.json || exit 0
+          git commit -m "Calibration v2 results [skip ci]" || exit 0
+          git pull --rebase -q || true
+          git push
