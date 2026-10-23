@@ -1,0 +1,28 @@
+# Developer-only: scores real GameBanana mods with the NSFW model to tune thresholds.
+# Runs only on the nsfw-calibrate branch and commits calibration/results.json back to it.
+name: NSFW calibration
+on:
+  push:
+    branches: [nsfw-calibrate]
+permissions:
+  contents: write
+jobs:
+  calibrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Tools
+        run: npm i --no-save --no-package-lock @tensorflow/tfjs@4.22.0 sharp@0.33.5
+      - name: Score mods
+        run: node scripts/nsfw-calibrate.mjs
+      - name: Save results
+        run: |
+          git config user.name "calibration-bot"
+          git config user.email "calibration-bot@users.noreply.github.com"
+          git add -f calibration/results.json
+          git commit -m "Calibration results [skip ci]" || exit 0
+          git push
