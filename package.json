@@ -1,6 +1,6 @@
 {
   "name": "zzz-mod-manager",
-  "version": "2.13.2",
+  "version": "2.14.0",
   "description": "ProxyLaunch: an all-in-one mod launcher for Zenless Zone Zero",
   "main": "dist-electron/electron/main.js",
   "scripts": {
