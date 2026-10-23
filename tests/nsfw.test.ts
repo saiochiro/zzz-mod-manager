@@ -3,8 +3,11 @@ import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  buildNsfwEvidence,
   decideNsfwLevel,
   imageKey,
+  isModRecordNsfw,
+  needsImageScan,
   isBlurredByNsfwFilter,
   isHiddenByNsfwFilter,
   NSFW_FILE_RE,
@@ -16,7 +19,7 @@ import {
   type NsfwImageScores,
   type NsfwScores,
 } from '../src/shared/nsfw';
-import { applyNsfwReview, initNsfwReview, submitNsfwReview } from '../src/core/nsfwReview';
+import { applyNsfwReview, initNsfwReview, setNsfwVerdictsForTest } from '../src/core/nsfwReview';
 import { findNsfwToggles, restoreMod, sanitizeMod } from '../src/core/nsfwSanitizer';
 
 const both = (s: NsfwScores): NsfwImageScores => ({ inc: s, mob: s });
@@ -112,39 +115,67 @@ describe('Content tiers', () => {
   });
 });
 
-describe('Content scan store', () => {
+describe('Pre-scan page rules', () => {
+  const page = (o: Partial<Parameters<typeof buildNsfwEvidence>[0]> = {}) =>
+    buildNsfwEvidence({ title: 'Cute outfit', pageText: '', fileNames: [], ratings: [], hasRatings: false, ...o });
+
+  it('any GameBanana rating or NSFW wording marks the page flagged', () => {
+    expect(page().flagged).toBe(false);
+    expect(page({ hasRatings: true }).flagged).toBe(true);
+    expect(page({ ratings: ['Skimpy Attire'] }).flagged).toBe(true);
+    expect(page({ pageText: 'very lewd' }).flagged).toBe(true);
+    expect(page({ title: 'Cute outfit (no NSFW)' }).flagged).toBe(false);
+    expect(page({ title: 'Sexy bunny suit' }).nsfwTitle).toBe(true);
+  });
+
+  it('skips scoring pictures only when the answer is NSFW anyway', () => {
+    expect(needsImageScan(page())).toBe(true); // could be SFW
+    expect(needsImageScan(page({ hasRatings: true }))).toBe(false); // rated, no toggle: NSFW
+    expect(needsImageScan(page({ hasRatings: true, pageText: 'Includes an NSFW toggle' }))).toBe(true); // maybe Experimental
+    expect(needsImageScan(page({ title: 'Nude edit' }))).toBe(false);
+    expect(needsImageScan(page({ hasRatings: true, pageText: 'nsfw toggle', category: 'UI' }))).toBe(false);
+  });
+
+  it('a pre-scan verdict matches what the old on-device check decided', () => {
+    const e = page({ hasRatings: true, pageText: 'SFW by default, NSFW toggle on 6' });
+    expect(decideNsfwLevel({ ...e, images: [clean, clean, nude] }).level).toBe('toggle');
+    expect(decideNsfwLevel({ ...page(), images: [clean, clean] }).level).toBe('sfw');
+  });
+
+  it('reads GameBanana feed records', () => {
+    expect(isModRecordNsfw({ _bHasContentRatings: true })).toBe(true);
+    expect(isModRecordNsfw({ _sName: 'Bikini skin' })).toBe(true);
+    expect(isModRecordNsfw({ _sName: 'Jacket recolor' })).toBe(false);
+  });
+});
+
+describe('Downloaded labels', () => {
   let tmp: string;
   beforeEach(() => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'nsfw-'));
-    initNsfwReview(tmp);
+    initNsfwReview(tmp, { fetch: false });
   });
   afterEach(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
-  it('applies verdicts, keeps clean picture lists, survives a restart and writes a developer log', async () => {
-    const item = { id: 5, is_nsfw: false };
-    expect(applyNsfwReview(item, 'gb:5')).toMatchObject({ nsfw_checked: false });
-    const res = await submitNsfwReview({
-      key: 'gb:5',
-      flagged: false,
-      title: 'Cute outfit',
-      imageUrls: ['https://x/a.jpg', 'https://x/b.jpg'],
-      scores: [clean, clean],
-    });
-    expect(res.level).toBe('sfw');
-    initNsfwReview(tmp);
-    expect(applyNsfwReview(item, 'gb:5')).toMatchObject({ nsfw_level: 'sfw', nsfw_checked: true, nsfw_clean_images: ['a.jpg', 'b.jpg'] });
-    const log = fs.readFileSync(path.join(tmp, 'cache', 'nsfw_review_log.jsonl'), 'utf-8');
-    expect(log).toContain('"key":"gb:5"');
+  const list = (mods: Record<string, any>) => ({ version: 1 as const, generatedAt: 'x', mods });
+
+  it('applies labels and clean picture lists; mods not in the list stay unchecked', () => {
+    setNsfwVerdictsForTest(list({ 5: { l: 's', f: 0, c: ['a.jpg'] }, 6: { l: 't', f: 1, c: ['b.jpg'] }, 7: { l: 'n', f: 1 } }));
+    expect(applyNsfwReview({ id: 5, is_nsfw: false }, 'gb:5')).toMatchObject({ nsfw_level: 'sfw', nsfw_checked: true, nsfw_clean_images: ['a.jpg'] });
+    expect(applyNsfwReview({ id: 6, is_nsfw: true }, 'gb:6')).toMatchObject({ nsfw_level: 'toggle', is_nsfw: true, nsfw_checked: true });
+    expect(applyNsfwReview({ id: 7, is_nsfw: false }, 'gb:7')).toMatchObject({ nsfw_level: 'nsfw', nsfw_checked: true });
+    expect(applyNsfwReview({ id: 8, is_nsfw: false }, 'gb:8')).toMatchObject({ nsfw_checked: false });
   });
 
-  it('scans again when GameBanana labels a mod after a clean scan', async () => {
-    await submitNsfwReview({ key: 'gb:9', flagged: false, title: 'Outfit', imageUrls: ['u'], scores: [clean] });
+  it('waits for a new scan when GameBanana flags a mod after a clean label', () => {
+    setNsfwVerdictsForTest(list({ 9: { l: 's', f: 0, c: [] } }));
     expect(applyNsfwReview({ id: 9, is_nsfw: true }, 'gb:9')).toMatchObject({ nsfw_checked: false, nsfw_level: 'nsfw' });
   });
 
-  it('NSFW words in the title keep a mod out of SFW, but "no NSFW" does not', async () => {
-    expect((await submitNsfwReview({ key: 'a', flagged: false, title: 'Sexy bunny suit', imageUrls: ['u'], scores: [clean] })).level).not.toBe('sfw');
-    expect((await submitNsfwReview({ key: 'b', flagged: false, title: 'Cute outfit (no NSFW)', imageUrls: ['u'], scores: [clean] })).level).toBe('sfw');
+  it('uses the saved list on the next start, before any download', () => {
+    fs.writeFileSync(path.join(tmp, 'cache', 'nsfw_verdicts.json'), JSON.stringify(list({ 3: { l: 's', f: 0, c: [] } })));
+    initNsfwReview(tmp, { fetch: false });
+    expect(applyNsfwReview({ id: 3 }, 'gb:3')).toMatchObject({ nsfw_checked: true, nsfw_level: 'sfw' });
   });
 });
 
@@ -240,8 +271,8 @@ describe('NSFW image models', () => {
     const img = tf.tensor3d(pixels, [224, 224, 3], 'int32').toFloat().div(255);
     const out: Record<string, NsfwScores> = {};
     for (const [name, dir, size] of [
-      ['mob', '../public/nsfw-model', 224],
-      ['inc', '../public/nsfw-model-inception', 299],
+      ['mob', '../prescan/models/mobilenet', 224],
+      ['inc', '../prescan/models/inception', 299],
     ] as const) {
       const model = await load(tf, path.resolve(__dirname, dir));
       const y = tf.tidy(() => model.predict(tf.image.resizeBilinear(img as any, [size, size], true).reshape([1, size, size, 3])) as any);

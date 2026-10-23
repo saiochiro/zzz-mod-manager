@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld('fairyBridge', {
     return () => ipcRenderer.removeListener('zzz:stateUpdated', listener);
   },
   on: (channel: string, callback: (payload: any) => void) => {
-    const allowed = ['app:update-status'];
+    const allowed = ['app:update-status', 'nsfw:verdicts-updated'];
     if (!allowed.includes(channel)) return () => {};
     const listener = (_e: any, payload: any) => callback(payload);
     ipcRenderer.on(channel, listener);

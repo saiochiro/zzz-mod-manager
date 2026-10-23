@@ -42,8 +42,6 @@ import { SetupWizard, isSetupDone, markSetupDone } from './components/SetupWizar
 import { ThemeScene } from './themes/Scene';
 import { RefreshCw as RestartIcon } from 'lucide-react';
 import { version as APP_VERSION } from '../package.json';
-import { isHiddenByNsfwFilter, nsfwKeyOf } from './shared/nsfw';
-import { onNsfwReviewed, queueNsfwReview, withNsfwOutcome } from './services/nsfwAi';
 
 const errMsg = (err: unknown) => (err as Error)?.message || String(err);
 
@@ -237,36 +235,6 @@ const AppInner: React.FC = () => {
       console.warn('Theme saved locally; backend config update failed:', err);
     }
   };
-
-  // Content scan of installed mods, in the background (always on; users can't skip it).
-  const libraryMods = appState?.mods;
-  useEffect(() => {
-    if (!libraryMods) return;
-    queueNsfwReview(
-      libraryMods
-        .filter((m) => !m.nsfw_checked)
-        .map((m) => ({
-          key: nsfwKeyOf(m)!,
-          gamebananaId: m.gamebanana_id,
-          modUuid: m.mod_uuid,
-          title: m.title,
-          description: m.description,
-          category: m.category_tag || 'Skins',
-          flagged: Boolean(m.nsfw_flagged ?? m.is_nsfw),
-          images: [m.thumbnail_url, ...(m.preview_images || [])].filter((u, i, a): u is string => Boolean(u) && a.indexOf(u) === i),
-        }))
-        .filter((it) => it.key)
-    );
-  }, [libraryMods]);
-  useEffect(
-    () =>
-      onNsfwReviewed((r) =>
-        setAppState((prev) =>
-          prev ? { ...prev, mods: prev.mods.map((m) => (nsfwKeyOf(m) === r.key ? withNsfwOutcome(m, r) : m)) } : prev
-        )
-      ),
-    []
-  );
 
   const handleChangeNsfwFilterState = (nextState: NsfwFilterState) => {
     setNsfwFilterState(nextState);
@@ -953,8 +921,8 @@ const AppInner: React.FC = () => {
   }
 
   const { config, hashDb, mods, logs } = appState;
-  const visible = mods.filter((m) => !isHiddenByNsfwFilter(m, nsfwFilterState));
-  const needsAttention = visible.filter((m) => getModHealth(m) !== 'working').length;
+  // The content filter only applies to Browse; the Library always shows everything.
+  const needsAttention = mods.filter((m) => getModHealth(m) !== 'working').length;
   const activeModsCount = mods.filter((m) => m.enabled).length;
   const canUndoOrganize = mods.some((m) => Boolean(m.previous_folder_name));
   const selectedMod = mods.find((m) => m.mod_uuid === selectedModUuid) || null;
@@ -1055,7 +1023,7 @@ const AppInner: React.FC = () => {
             setInspectorOpen(false);
           }}
           motif={theme.motif}
-          modsCount={visible.length}
+          modsCount={mods.length}
           needsAttention={needsAttention}
           downloadsCount={downloadQueue.filter((q) => q.status !== 'completed').length}
           activeProfile={config.activeProfile || 'Default'}

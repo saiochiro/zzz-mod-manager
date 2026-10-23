@@ -1,110 +1,147 @@
 import fs from 'fs';
 import path from 'path';
 import {
-  decideNsfwLevel,
-  imageKey,
-  NSFW_FILE_RE,
-  NSFW_WORDS_RE,
-  NUDE_EDIT_RE,
-  titleNamesNsfw,
-  nsfwKeyOf,
-  STRONG_RATING_RE,
-  TOGGLE_KEY_RE,
-  TOGGLE_TEXT_RE,
+  CODE_LEVEL,
+  NSFW_VERDICTS_URL,
+  parseVerdictFile,
   type NsfwLevel,
-  type NsfwImageScores,
   type NsfwSource,
+  type NsfwVerdictEntry,
+  type NsfwVerdictFile,
 } from '../shared/nsfw';
 
 /**
- * The content scan's memory: what the scan decided about each mod, applied to GameBanana items
- * and installed mods. Users can't change these. Every verdict is also written, with the evidence,
- * to a developer log (cache/nsfw_review_log.jsonl) that is never shown in the app.
+ * Pre-marked content labels. Mods are scanned ahead of time on GitHub (scripts/nsfw-prescan.mjs,
+ * run every hour) and the app only downloads the list (verdicts.json) and applies it. Nothing is
+ * scanned on the user's PC, and users can't change a label.
  *
- * Keys: "gb:<GameBanana id>" (shared by Browse and the Library) or "local:<mod uuid>".
+ * Keys: "gb:<GameBanana id>".
  */
 
-interface StoredVerdict {
-  level: NsfwLevel;
-  /** Was GameBanana marking it NSFW when it was scanned? A new label later means a new scan. */
-  flagged: boolean;
-  /** imageKey()s of the pictures the scan rated clean. Only these show in the SFW views. */
-  cleanImages: string[];
-  checkedAt: string;
-}
-
-/** Fields the scan adds to anything with an NSFW label. */
+/** Fields the labels add to anything with an NSFW label. */
 export interface NsfwReviewFields {
   is_nsfw?: boolean;
   nsfw_level?: NsfwLevel;
   nsfw_source?: NsfwSource;
-  /** The scan has finished for this mod. */
+  /** This mod has a pre-scanned label. */
   nsfw_checked?: boolean;
-  /** The label GameBanana gave it before the scan. */
+  /** The label GameBanana gave it in the feed. */
   nsfw_flagged?: boolean;
   /** imageKey()s of the pictures rated clean. */
   nsfw_clean_images?: string[];
 }
 
-// 3: zero-tolerance pipeline (every mod scanned, no user overrides). Older results are dropped.
-const VERSION = 3;
-let filePath: string | null = null;
-let logPath: string | null = null;
-const store = new Map<string, StoredVerdict>();
+const REFRESH_MS = 60 * 60 * 1000;
+let cachePath: string | null = null;
+let verdicts = new Map<string, NsfwVerdictEntry>();
+let lastFetch = 0;
+let lastEtag = '';
+let inflight: Promise<boolean> | null = null;
+let firstLoad: Promise<unknown> | null = null;
+const listeners = new Set<() => void>();
 
-export function initNsfwReview(appDataPath: string): void {
+function load(file: NsfwVerdictFile): void {
+  verdicts = new Map(Object.entries(file.mods));
+}
+
+export function initNsfwReview(appDataPath: string, opts: { fetch?: boolean } = {}): void {
+  verdicts = new Map();
+  lastFetch = 0;
+  lastEtag = '';
   try {
     const dir = path.join(appDataPath, 'cache');
     fs.mkdirSync(dir, { recursive: true });
-    filePath = path.join(dir, 'nsfw_review.json');
-    logPath = path.join(dir, 'nsfw_review_log.jsonl');
-    store.clear();
-    if (fs.existsSync(filePath)) {
-      const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-      if (raw?.version === VERSION && raw.items && typeof raw.items === 'object') {
-        for (const [k, v] of Object.entries(raw.items)) store.set(k, v as StoredVerdict);
-      }
+    cachePath = path.join(dir, 'nsfw_verdicts.json');
+    // Results of the old on-device scan aren't used any more.
+    for (const old of ['nsfw_review.json', 'nsfw_review_log.jsonl', 'nsfw_review_log.jsonl.1']) {
+      fs.rmSync(path.join(dir, old), { force: true });
+    }
+    if (fs.existsSync(cachePath)) {
+      const parsed = parseVerdictFile(JSON.parse(fs.readFileSync(cachePath, 'utf-8')));
+      if (parsed) load(parsed);
     }
   } catch (err) {
-    console.warn('[NSFW scan] Could not load saved results:', err);
+    console.warn('[Content labels] Could not load the saved list:', err);
   }
+  firstLoad = opts.fetch === false ? Promise.resolve() : refreshNsfwVerdicts(true);
 }
 
-function persist(): void {
-  if (!filePath) return;
-  try {
-    fs.writeFileSync(filePath, JSON.stringify({ version: VERSION, items: Object.fromEntries(store) }), 'utf-8');
-  } catch {
-    // ignore disk errors
-  }
+/** Downloads the latest list (at most once an hour unless forced). True when it changed. */
+export function refreshNsfwVerdicts(force = false): Promise<boolean> {
+  if (inflight) return inflight;
+  if (!force && Date.now() - lastFetch < REFRESH_MS) return Promise.resolve(false);
+  inflight = (async () => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 20000);
+    try {
+      const res = await fetch(NSFW_VERDICTS_URL, {
+        signal: ctrl.signal,
+        headers: { 'User-Agent': 'ProxyLaunch', ...(lastEtag ? { 'If-None-Match': lastEtag } : {}) },
+      });
+      lastFetch = Date.now();
+      if (res.status === 304 || !res.ok) return false;
+      const text = await res.text();
+      const parsed = parseVerdictFile(JSON.parse(text));
+      if (!parsed) return false;
+      lastEtag = res.headers.get('etag') || '';
+      load(parsed);
+      if (cachePath) {
+        try {
+          fs.writeFileSync(cachePath, text, 'utf-8');
+        } catch {
+          // ignore disk errors
+        }
+      }
+      for (const fn of listeners) fn();
+      return true;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+      inflight = null;
+    }
+  })();
+  return inflight;
 }
 
-/** Developer diagnostics: one JSON line per verdict. Rotates at 5 MB. */
-function devLog(entry: Record<string, unknown>): void {
-  if (!logPath) return;
-  try {
-    if (fs.existsSync(logPath) && fs.statSync(logPath).size > 5 * 1024 * 1024) fs.renameSync(logPath, `${logPath}.1`);
-    fs.appendFileSync(logPath, JSON.stringify({ at: new Date().toISOString(), ...entry }) + '\n', 'utf-8');
-  } catch {
-    // ignore
-  }
-  if (process.env.PROXYLAUNCH_DEV) console.log('[NSFW scan]', entry.key, entry.level, entry.reason);
+/** Waits (up to a few seconds) for the first download, so Browse opens already labeled. */
+export async function nsfwVerdictsReady(ms = 8000): Promise<void> {
+  if (!firstLoad) return;
+  await Promise.race([firstLoad, new Promise((r) => setTimeout(r, verdicts.size ? 0 : ms))]);
 }
 
-export const nsfwKey = nsfwKeyOf;
+export function onNsfwVerdictsUpdated(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
 
-/** Puts the stored verdict (if any) on an item. Safe to call more than once. */
+export function nsfwVerdictCount(): number {
+  return verdicts.size;
+}
+
+/** For tests: use this list instead of the downloaded one. */
+export function setNsfwVerdictsForTest(file: NsfwVerdictFile): void {
+  load(file);
+}
+
+export function nsfwKey(item: { gamebanana_id?: number | null; id?: number }): string | null {
+  const gb = item.gamebanana_id ?? item.id;
+  return gb ? `gb:${gb}` : null;
+}
+
+/** Puts the pre-scanned label (if any) on an item. Safe to call more than once. */
 export function applyNsfwReview<T extends NsfwReviewFields>(item: T, key: string | null): T & NsfwReviewFields {
   const flagged = item.nsfw_flagged ?? Boolean(item.is_nsfw);
-  const st = key ? store.get(key) : undefined;
+  const st = key?.startsWith('gb:') ? verdicts.get(key.slice(3)) : undefined;
   const out: T & NsfwReviewFields = { ...item, nsfw_flagged: flagged };
-  // A verdict made while unflagged doesn't count once GameBanana flags the mod: scan again.
-  if (st && !(flagged && !st.flagged)) {
-    out.nsfw_level = st.level;
-    out.is_nsfw = st.level !== 'sfw';
+  // A label made while GameBanana didn't flag the mod doesn't count once it does: wait for a new scan.
+  if (st && !(flagged && !st.f)) {
+    const level = CODE_LEVEL[st.l] ?? 'nsfw';
+    out.nsfw_level = level;
+    out.is_nsfw = level !== 'sfw';
     out.nsfw_source = 'ai';
     out.nsfw_checked = true;
-    out.nsfw_clean_images = st.cleanImages;
+    out.nsfw_clean_images = st.c ?? [];
   } else {
     out.nsfw_level = flagged ? 'nsfw' : 'sfw';
     out.is_nsfw = flagged;
@@ -113,128 +150,4 @@ export function applyNsfwReview<T extends NsfwReviewFields>(item: T, key: string
     out.nsfw_clean_images = [];
   }
   return out;
-}
-
-export function getStoredNsfwVerdict(key: string): StoredVerdict | undefined {
-  return store.get(key);
-}
-
-/* ------------------------------------------------------------------ */
-/* Evidence from GameBanana: page text, ratings, archive file names    */
-/* ------------------------------------------------------------------ */
-
-interface GbEvidence {
-  text: string;
-  ratings: string[];
-  hasRatings: boolean;
-  fileNames: string[];
-}
-
-const UA = { 'User-Agent': 'ProxyLaunch' };
-const evidenceCache = new Map<number, Promise<GbEvidence | null>>();
-
-async function getJson(url: string, ms = 6000): Promise<any> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), ms);
-  try {
-    const res = await fetch(url, { signal: ctrl.signal, headers: UA });
-    return res.ok ? await res.json() : null;
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function gameBananaEvidence(id: number): Promise<GbEvidence | null> {
-  if (!evidenceCache.has(id)) {
-    evidenceCache.set(
-      id,
-      (async () => {
-        const d = await getJson(`https://gamebanana.com/apiv11/Mod/${id}/ProfilePage`);
-        if (!d) return null;
-        const files: any[] = Array.isArray(d._aFiles) ? d._aFiles : [];
-        const fileNames: string[] = files.flatMap((f) => [f._sFile, f._sDescription].filter(Boolean).map(String));
-        // GameBanana has no public API for the files inside an archive (checked: every route 404s or
-        // rejects the request), so archive contents are only checked once the mod is installed.
-        const ratings = d._aContentRatings && typeof d._aContentRatings === 'object' ? Object.values(d._aContentRatings).map(String) : [];
-        return {
-          text: [d._sName, d._sDescription, String(d._sText || '').replace(/<[^>]+>/g, ' ')].filter(Boolean).join(' '),
-          ratings,
-          hasRatings: d._bHasContentRatings === true || ratings.length > 0,
-          fileNames,
-        };
-      })()
-    );
-  }
-  return evidenceCache.get(id)!;
-}
-
-/* ------------------------------------------------------------------ */
-/* Scan results                                                        */
-/* ------------------------------------------------------------------ */
-
-export interface NsfwReviewRequest {
-  key: string;
-  gamebananaId?: number | null;
-  /** GameBanana (or keywords) marked it NSFW before the scan. */
-  flagged: boolean;
-  title: string;
-  description?: string;
-  contentRating?: string;
-  /** Skins, UI, Audio, Weapons... */
-  category?: string;
-  /** Installed mods: hotkey section/variable names, and whether the .ini scan found NSFW toggles. */
-  hotkeyNames?: string[];
-  hotkeyNsfw?: boolean;
-  /** Installed mods: file names inside the mod folder. */
-  localFileNames?: string[];
-  /** Pictures that were scored, cover first, same order as scores. */
-  imageUrls: string[];
-  scores: NsfwImageScores[];
-}
-
-export interface NsfwReviewResult {
-  key: string;
-  level: NsfwLevel;
-  source: NsfwSource;
-  cleanImages: string[];
-}
-
-export async function submitNsfwReview(req: NsfwReviewRequest): Promise<NsfwReviewResult> {
-  const gb = req.gamebananaId ? await gameBananaEvidence(req.gamebananaId) : null;
-  // "No NSFW", "non-nsfw", "NSFW-free" are statements that it's safe, not NSFW words.
-  const denoise = (t: string) => t.replace(/\b(no|not|non|without|zero|free\s+of)[\s-]*(nsfw|nudity|nude|lewd)\b|\b(nsfw|nudity)[\s-]*free\b/gi, ' ');
-  const ownText = denoise(`${req.title} ${req.description ?? ''}`);
-  const pageText = `${ownText} ${denoise(gb?.text ?? '')}`;
-  const fileNames = [...(gb?.fileNames ?? []), ...(req.localFileNames ?? [])];
-  const ratings = [...(req.contentRating ? [req.contentRating] : []), ...(gb?.ratings ?? [])];
-
-  const flagged =
-    req.flagged || Boolean(gb?.hasRatings) || NSFW_WORDS_RE.test(pageText) || ratings.some((r) => STRONG_RATING_RE.test(r));
-  const evidence = {
-    flagged,
-    images: req.scores,
-    toggleHint: TOGGLE_TEXT_RE.test(pageText),
-    fileTreeNsfw: fileNames.some((f) => NSFW_FILE_RE.test(f)),
-    hotkeyNsfw: Boolean(req.hotkeyNsfw) || (req.hotkeyNames ?? []).some((h) => TOGGLE_KEY_RE.test(h)),
-    nudeEditText: NUDE_EDIT_RE.test(ownText) && !TOGGLE_TEXT_RE.test(ownText),
-    nsfwTitle: titleNamesNsfw(req.title),
-    isSkin: !req.category || /skin|character|outfit/i.test(req.category),
-  };
-  const verdict = decideNsfwLevel(evidence);
-  const cleanImages = req.imageUrls.filter((_, i) => verdict.cleanImages[i]).map(imageKey);
-
-  store.set(req.key, { level: verdict.level, flagged: req.flagged, cleanImages, checkedAt: new Date().toISOString() });
-  persist();
-  devLog({
-    key: req.key,
-    title: req.title,
-    level: verdict.level,
-    reason: verdict.reason,
-    evidence: { ...evidence, images: undefined },
-    nsfwFiles: fileNames.filter((f) => NSFW_FILE_RE.test(f)).slice(0, 10),
-    scores: req.scores.map((s, i) => ({ url: req.imageUrls[i], ...s })),
-  });
-  return { key: req.key, level: verdict.level, source: 'ai', cleanImages };
 }

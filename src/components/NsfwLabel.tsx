@@ -19,7 +19,7 @@ export const NsfwBadge: React.FC<{ item: Labeled; className?: string }> = ({ ite
     return (
       <span
         className={`badge badge--warning nsfw-badge ${className}`}
-        title="Experimental: an SFW mod whose NSFW options and pictures were removed by ProxyLaunch."
+        title="Experimental: a safe outfit with an optional NSFW toggle. Only its safe pictures are shown."
       >
         <FlaskConical />
         Experimental

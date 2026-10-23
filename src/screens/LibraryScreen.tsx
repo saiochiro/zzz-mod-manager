@@ -21,8 +21,6 @@ import {
   Wrench,
 } from 'lucide-react';
 import type { AgentHashEntry, GameBananaModItem, HashDatabase, ModManifest, NsfwFilterState } from '../shared/types';
-import { isHiddenByNsfwFilter } from '../shared/nsfw';
-import { onNsfwScanProgress } from '../services/nsfwAi';
 import type { ThemeDefinition } from '../themes/types';
 import { Motif } from '../themes/Motif';
 import { AgentRosterSidebar } from '../components/AgentRosterSidebar';
@@ -73,12 +71,8 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
   const [panelOpen, setPanelOpen] = useState(false);
   const more = usePopover();
 
-  const visibleMods = useMemo(
-    () => p.mods.filter((m) => !isHiddenByNsfwFilter(m, p.nsfwFilterState)),
-    [p.mods, p.nsfwFilterState]
-  );
-  const [scanPending, setScanPending] = useState(0);
-  React.useEffect(() => onNsfwScanProgress(setScanPending), []);
+  // The content filter is for Browse only: the Library always shows every installed mod.
+  const visibleMods = p.mods;
   const onCount = visibleMods.filter((m) => m.enabled).length;
   const attentionCount = visibleMods.filter((m) => getModHealth(m) !== 'working').length;
   const fixableCount = visibleMods.filter((m) => getModHealth(m) === 'fixable').length;
@@ -305,17 +299,6 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
               </div>
             )}
 
-            {scanPending !== 0 && (p.nsfwFilterState === 'hide' || p.nsfwFilterState === 'toggle') && (
-              <div className="scan-note small muted">
-                {scanPending < 0 ? (
-                      <>The safety check couldn't start on this PC, so unchecked mods can't show in this view.</>
-                    ) : (
-                      <>
-                        <Loader2 className="spin" /> Checking {scanPending} mod{scanPending === 1 ? '' : 's'} for safety. They show up here once they pass.
-                      </>
-                    )}
-              </div>
-            )}
             {libraryEmpty ? (
               <EmptyState
                 icon={<HardDriveDownload />}
@@ -371,7 +354,6 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
                     agent={p.resolveAgent(mod.agent_id, mod.title)}
                     isSelected={p.selectedModUuid === mod.mod_uuid}
                     isConflicting={p.conflictingAgentIds.has(mod.agent_id)}
-                    nsfwFilterState={p.nsfwFilterState}
                     onOpenInspector={() => p.onOpenMod(mod.mod_uuid)}
                     onToggleEnabled={() => p.onToggleEnabled(mod.mod_uuid)}
                     onRepair={() => p.onRepair(mod.mod_uuid)}

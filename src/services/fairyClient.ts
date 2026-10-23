@@ -374,6 +374,9 @@ export const fairyClient = {
     window.fairyBridge?.isElectron ? window.fairyBridge.invoke('app:installUpdate') : false,
   onUpdateStatus: (cb: (s: AppUpdateStatus) => void): (() => void) =>
     window.fairyBridge?.on ? window.fairyBridge.on('app:update-status', cb) : () => {},
+  /** A newer list of pre-scanned content labels was downloaded. */
+  onNsfwVerdictsUpdated: (cb: () => void): (() => void) =>
+    window.fairyBridge?.on ? window.fairyBridge.on('nsfw:verdicts-updated', cb) : () => {},
 
   openModFolder: async (relInstallPath: string): Promise<boolean> => {
     if (window.fairyBridge?.isElectron) {

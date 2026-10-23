@@ -194,88 +194,16 @@ export function getAllModPreviewUrls(mod: any): string[] {
   return images.map((img: any) => buildGbImageUrl(img)).filter(Boolean);
 }
 
-import { runLayer2VisionModerationBatch } from './nsfwVisionService';
-import { applyNsfwReview } from './nsfwReview';
+import { applyNsfwReview, nsfwVerdictsReady } from './nsfwReview';
 
-/** Applies the AI check / your own NSFW calls, then drops NSFW items if asked. */
+/** Applies the pre-scanned labels, then drops NSFW items if asked. */
 function finalizeNsfw(items: GameBananaModItem[], hideNsfw: boolean): GameBananaModItem[] {
   const out = items.map((m) => applyNsfwReview(m, `gb:${m.id}`));
   return hideNsfw ? out.filter((m) => !m.is_nsfw) : out;
 }
 
-export const NSFW_KEYWORD_REGEX =
-  /\b(nsfw|18\+|r18|r-18|nude|nudity|naked|topless|bottomless|uncensored|explicit|adult|skimpy|lewd|hentai|ecchi|erotic|sex|sexual|strip|lingerie|bikini|microbikini|thong|bondage|bdsm|fetish|boob|boobs|breasts|ass|butt|nipple|pussy|penis|futa|ahegao|bunny\s*suit|slingshot|pasties)\b/i;
-
-/**
- * Layer 1 (GameBanana API Metadata + Keyword/Tag Blacklist):
- * Checks all GameBanana content rating fields:
- * - _bHasContentRatings (boolean returned on Subfeed & Mod/Index)
- * - _bIsNsfw / is_nsfw
- * - _sInitialVisibility ('hide', 'warn', 'nsfw', 'mature', '18+')
- * - _aContentRatings (st, sc, sa, lp, pn, nu, etc.)
- * - _sContentRating
- * - Category, RootCategory, SubCategory, Tags, and Title regex
- */
-export function isModRecordNsfw(rec: any): boolean {
-  if (!rec) return false;
-  if (rec._bHasContentRatings === true) return true;
-  if (rec._bIsNsfw === true || rec.is_nsfw === true) return true;
-
-  const rating = String(rec._sContentRating || rec.content_rating || '').toLowerCase();
-  if (
-    rating.includes('mature') ||
-    rating.includes('adult') ||
-    rating.includes('nsfw') ||
-    rating.includes('18+') ||
-    rating.includes('explicit') ||
-    rating.includes('sexual') ||
-    rating.includes('nudity')
-  ) {
-    return true;
-  }
-
-  const vis = String(rec._sInitialVisibility || '').toLowerCase().trim();
-  if (
-    vis === 'hide' ||
-    vis === 'warn' ||
-    vis.includes('nsfw') ||
-    vis.includes('mature') ||
-    vis.includes('18+') ||
-    vis.includes('adult')
-  ) {
-    return true;
-  }
-
-  if (rec._aContentRatings && typeof rec._aContentRatings === 'object') {
-    for (const key of Object.keys(rec._aContentRatings)) {
-      const val = String(rec._aContentRatings[key] || '').toLowerCase().trim();
-      if (val && !['none', 'everyone', 'safe', 'false', '0'].includes(val)) {
-        return true;
-      }
-    }
-  }
-
-  const combinedText = [
-    rec._sName,
-    rec.title,
-    rec._aSubCategory?._sName,
-    rec._aRootCategory?._sName,
-    rec._aCategory?._sName,
-    rec.category,
-    Array.isArray(rec._aTags)
-      ? rec._aTags.map((t: any) => (typeof t === 'string' ? t : t?._sTitle || t?._sName || '')).join(' ')
-      : '',
-    Array.isArray(rec.tags) ? rec.tags.join(' ') : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
-
-  if (NSFW_KEYWORD_REGEX.test(combinedText)) {
-    return true;
-  }
-
-  return false;
-}
+export { isModRecordNsfw, NSFW_KEYWORD_REGEX } from '../shared/nsfw';
+import { isModRecordNsfw } from '../shared/nsfw';
 
 export function classifyModCategoryTag(rawCategory: string, title: string): 'Skins' | 'Weapons' | 'UI' | 'Audio' {
   const combined = `${rawCategory} ${title}`.toLowerCase();
@@ -566,21 +494,18 @@ export async function fetchLiveGameBananaFeed(
           );
         }
 
-        // Layer 2: deep metadata check on items not labeled yet, then the AI check / your own calls.
-        // NSFW items are only dropped after that, so ones the AI check cleared still show.
-        const layered = await runLayer2VisionModerationBatch(liveItems);
-        let combined = finalizeNsfw(layered, hideNsfw);
-
         if (sort === 'alphabetical') {
-          combined.sort((a, b) => a.title.localeCompare(b.title));
+          liveItems.sort((a, b) => a.title.localeCompare(b.title));
         } else if (sort === 'likes') {
-          combined.sort((a, b) => b.likes - a.likes);
+          liveItems.sort((a, b) => b.likes - a.likes);
         } else if (sort === 'downloads') {
-          combined.sort((a, b) => b.downloads - a.downloads);
+          liveItems.sort((a, b) => b.downloads - a.downloads);
         }
 
-        feedResponseCache.set(cacheKey, { timestamp: Date.now(), items: combined });
-        return combined;
+        // Labels come from the pre-scanned list (applied on every read, so a newer list counts at once).
+        await nsfwVerdictsReady();
+        feedResponseCache.set(cacheKey, { timestamp: Date.now(), items: liveItems });
+        return finalizeNsfw(liveItems, hideNsfw);
       }
       return [];
     } catch (err) {

@@ -23,7 +23,6 @@ import {
 import { HeroDecor } from '../ui/HeroDecor';
 import { PartViewer } from '../components/PartViewer';
 import { NsfwBadge } from '../components/NsfwLabel';
-import { isBlurredByNsfwFilter, isHiddenByNsfwFilter } from '../shared/nsfw';
 import { Avatar, EmptyState, Modal, Segmented, Switch, ThumbImage, useToast } from '../ui';
 import { CommunityPanel, PostDialog } from './CommunityPanel';
 import type { CommunityProfile } from '../shared/community';
@@ -223,7 +222,8 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
   }, [agentId]);
 
   const agent = agentId ? hashDb.agents[agentId] : null;
-  const donors = (catalog ?? []).filter((c) => !c.is_workshop && !isHiddenByNsfwFilter(c, nsfwFilterState));
+  // Your installed mods: never filtered (the content filter is for Browse only).
+  const donors = (catalog ?? []).filter((c) => !c.is_workshop);
   const yours = (catalog ?? []).filter((c) => c.is_workshop);
   const partNames = useMemo(() => {
     const order: string[] = [];
@@ -401,7 +401,7 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
                             .map((d) => {
                               const active = picks[part] === d.mod_uuid;
                               const check = partCheck(d, part);
-                              const blur = isBlurredByNsfwFilter(d, nsfwFilterState);
+                              const blur = false;
                               return (
                                 <button
                                   key={d.mod_uuid}
@@ -511,7 +511,7 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
                   <div className="ws-yours">
                     {yours.map((y) => (
                       <div key={y.mod_uuid} className="ws-yours__item">
-                        <span className={`ws-option__thumb ${isBlurredByNsfwFilter(y, nsfwFilterState) ? 'is-blurred' : ''}`}>
+                        <span className={`ws-option__thumb `}>
                           <ThumbImage src={y.thumbnail_url} alt={y.title} motif={theme.motif} />
                         </span>
                         <div className="min-w-0" style={{ flex: 1 }}>

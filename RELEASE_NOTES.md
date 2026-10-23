@@ -1,11 +1,8 @@
-What's new in 2.14.0
+What's new in 2.14.1
 
-- Much stricter content filter. Every mod is now checked before it can show in the SFW views, not only mods GameBanana labels NSFW. ProxyLaunch looks at all of a mod's pictures with two AI models on your PC, plus its title, description, GameBanana content ratings and file names. Mods still being checked stay hidden until they pass.
-- SFW only: just mods with no GameBanana content rating, nothing NSFW or skimpy in the title, and every picture clean. If there's any doubt, a mod is kept out.
-- SFW + toggles: adds Experimental mods. These are safe outfits that clearly come with an NSFW option. ProxyLaunch hides their NSFW pictures and turns off the NSFW options in the installed files, so they only work in their SFW state.
-- NSFW (blurred): every mod, with NSFW pictures blurred until you click them.
-- Show all: every mod, no filtering and no blur.
-- Content labels are now set by ProxyLaunch only. The label picker in mod details has been removed.
-- Mod Workshop: updating a mod no longer touches the Workshop mixes made from it. When one of a mix's source mods gets an update, the mix shows a Rebuild button that puts the new version of that part in.
+- Much faster. ProxyLaunch no longer checks mod pictures on your PC. Mods are checked ahead of time, and the app just downloads the results, so Browse opens already sorted and nothing gets scanned in front of you.
+- The content filter is for Browse only now. Your Library and the Workshop always show every mod you have installed, with no hiding and no blur.
+- Your installed mods are never changed by the filter anymore. Mods that 2.14.0 edited (Experimental mods with their NSFW options turned off) are put back exactly as they were.
+- Brand new uploads show up in the SFW views once they have been checked, usually within an hour.
 
 Requires XXMI Launcher with ZZMI set up. Questions or bugs? Reach out on Discord: ghxty

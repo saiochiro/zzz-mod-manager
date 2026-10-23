@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, nativeImage, safeStorage, session,
 import fs from 'fs';
 import path from 'path';
 import { fetchGameBananaModProfile } from '../src/core/gamebananaService';
-import { applyNsfwReview } from '../src/core/nsfwReview';
+import { applyNsfwReview, onNsfwVerdictsUpdated, refreshNsfwVerdicts } from '../src/core/nsfwReview';
 import { ModManagerService } from '../src/core/modManagerService';
 import { CommunityClient, type StoredSession } from '../src/core/communityClient';
 import { setupUpdater } from './updater';
@@ -395,51 +395,6 @@ ipcMain.handle('zzz:fetchGameBananaMod', async (_e, modId: number) => {
   return applyNsfwReview(await fetchGameBananaModProfile(modId), `gb:${modId}`);
 });
 
-// On-device AI NSFW check: the renderer runs the image model, the backend keeps the results.
-ipcMain.handle('nsfw:model', async (_e, which?: string) => {
-  const folder = which === 'inception' ? 'nsfw-model-inception' : 'nsfw-model';
-  const dirs = [path.resolve(__dirname, `../../dist/${folder}`), path.resolve(__dirname, `../../public/${folder}`)];
-  const dir = dirs.find((d) => fs.existsSync(path.join(d, 'model.json')));
-  if (!dir) throw new Error('The NSFW check model is missing from this install.');
-  return {
-    modelJson: JSON.parse(fs.readFileSync(path.join(dir, 'model.json'), 'utf-8')),
-    weights: new Uint8Array(fs.readFileSync(path.join(dir, 'weights.bin'))),
-  };
-});
-ipcMain.handle('nsfw:image', async (_e, url: string) => {
-  let u: URL;
-  try {
-    u = new URL(String(url));
-  } catch {
-    throw new Error('Bad image address.');
-  }
-  // Only mod pictures: GameBanana's image servers.
-  if (u.protocol !== 'https:' || !/(^|\.)gamebanana\.com$/i.test(u.hostname)) throw new Error('Only GameBanana images are checked.');
-  const get = async (target: string) => {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 10000);
-    try {
-      const res = await fetch(target, { signal: ctrl.signal, headers: { 'User-Agent': 'ProxyLaunch' } });
-      if (!res.ok) throw new Error(`Image download failed (${res.status}).`);
-      const buf = new Uint8Array(await res.arrayBuffer());
-      if (buf.byteLength > 12 * 1024 * 1024) throw new Error('Image too large.');
-      return buf;
-    } finally {
-      clearTimeout(timer);
-    }
-  };
-  // The scan only needs 224 px, so use GameBanana's 530 px version of the screenshot when there is one.
-  const small = u.href.replace(/(\/img\/ss\/mods\/)(?!\d+-\d+_)([^/]+)$/i, '$1530-90_$2');
-  if (small !== u.href) {
-    try {
-      return await get(small);
-    } catch {
-      // fall back to the full picture
-    }
-  }
-  return get(u.href);
-});
-ipcMain.handle('nsfw:submit', async (_e, req: any) => modService.submitNsfwReview(req));
 // XXMI Sync & Auto-Thumbnail Fetching
 ipcMain.handle('xxmi:sync', async () => {
   modService.scanInstalledMods();
@@ -568,6 +523,17 @@ app.whenReady().then(() => {
   }
 
   createWindow();
+  // Content labels are pre-scanned on GitHub; fetch the newest list every hour and tell Browse.
+  onNsfwVerdictsUpdated(() => mainWindow?.webContents.send('nsfw:verdicts-updated', null));
+  setInterval(() => void refreshNsfwVerdicts(), 60 * 60 * 1000);
+  // Undo the Library edits 2.14.0 made to "Experimental" mods.
+  setTimeout(() => {
+    try {
+      modService.restoreSanitizedMods();
+    } catch (err) {
+      writeBootLog(`restore sanitized mods: ${(err as Error).message}`);
+    }
+  }, 3000);
   setupUpdater(() => mainWindow, writeBootLog, () => {
     // Everything that could keep the process alive while the installer runs.
     modsWatcher?.close();

@@ -33,7 +33,6 @@ import {
 } from 'lucide-react';
 import { fairyClient, type FullAppState } from '../services/fairyClient';
 import { filterShowsAllPictures, imageKey, isBlurredByNsfwFilter, isHiddenByNsfwFilter, nsfwLevelOf } from '../shared/nsfw';
-import { onNsfwReviewed, onNsfwScanProgress, queueNsfwReview, withNsfwOutcome } from '../services/nsfwAi';
 import { NsfwBadge } from './NsfwLabel';
 import type { MotifKind } from '../themes/types';
 import { Motif } from '../themes/Motif';
@@ -111,8 +110,6 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
   const [revealedPics, setRevealedPics] = useState<Set<string>>(new Set());
   const picBlurred = (url?: string) =>
     nsfwFilterState === 'blur' && Boolean(url) && !(galleryMod?.nsfw_clean_images ?? []).includes(imageKey(url)) && !revealedPics.has(url!);
-  const [scanPending, setScanPending] = useState(0);
-  useEffect(() => onNsfwScanProgress(setScanPending), []);
   // The full mod page often arrives with a different picture list (bigger sizes, more shots).
   // Stay on the picture you were looking at instead of jumping to another one.
   const prevGalleryRef = React.useRef<{ id?: number; list: string[] }>({ list: [] });
@@ -459,29 +456,12 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
     }
   };
 
-  // Content scan of everything loaded, labeled or not (pictures, page, archive file names).
-  useEffect(() => {
-    queueNsfwReview(
-      modsList
-        .filter((m) => m.is_live_api !== false && !m.nsfw_checked)
-        .map((m) => ({
-          key: `gb:${m.id}`,
-          gamebananaId: m.id,
-          title: m.title,
-          description: m.description,
-          contentRating: m.content_rating,
-          category: m.category_tag || 'Skins',
-          flagged: Boolean(m.nsfw_flagged ?? m.is_nsfw),
-          images: [m.thumbnail_url, ...(m.preview_images || [])].filter((u, i, a) => Boolean(u) && a.indexOf(u) === i),
-        }))
-    );
-  }, [modsList]);
+  // Labels are pre-scanned on GitHub. When a newer list arrives, quietly reload what's on screen.
   useEffect(
     () =>
-      onNsfwReviewed((r) => {
-        const patch = (m: GameBananaModItem) => (`gb:${m.id}` === r.key ? withNsfwOutcome(m, r) : m);
-        setModsList((list) => (list.some((m) => `gb:${m.id}` === r.key) ? list.map(patch) : list));
-        setGalleryMod((g) => (g ? patch(g) : g));
+      fairyClient.onNsfwVerdictsUpdated(() => {
+        feedCacheRef.current.clear();
+        setReloadTick((t) => t + 1);
       }),
     []
   );
@@ -848,19 +828,8 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
                 >
                   Check your internet connection. Your installed mods are not affected.
                 </EmptyState>
-              ) : (isLoading || loadingAgent || (scanPending > 0 && !filterShowsAllPictures(nsfwFilterState))) && displayedMods.length === 0 ? (
+              ) : (isLoading || loadingAgent) && displayedMods.length === 0 ? (
                 <>
-                  {scanPending !== 0 && (
-                    <div className="scan-note small muted">
-                      {scanPending < 0 ? (
-                      <>The safety check couldn't start on this PC, so unchecked mods can't show in this view.</>
-                    ) : (
-                      <>
-                        <Loader2 className="spin" /> Checking {scanPending} mod{scanPending === 1 ? '' : 's'} for safety. They show up here once they pass.
-                      </>
-                    )}
-                    </div>
-                  )}
                   <CardSkeletonGrid className="gb-grid" count={12} />
                 </>
               ) : displayedMods.length === 0 ? (
@@ -886,17 +855,6 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
                 </EmptyState>
               ) : (
                 <>
-                {scanPending !== 0 && !filterShowsAllPictures(nsfwFilterState) && (
-                  <div className="scan-note small muted">
-                    {scanPending < 0 ? (
-                      <>The safety check couldn't start on this PC, so unchecked mods can't show in this view.</>
-                    ) : (
-                      <>
-                        <Loader2 className="spin" /> Checking {scanPending} mod{scanPending === 1 ? '' : 's'} for safety. They show up here once they pass.
-                      </>
-                    )}
-                  </div>
-                )}
                 <div className="gb-grid">
                   {gridMods.map((item, i) => {
                     const blurred = isBlurredByNsfwFilter(item, nsfwFilterState) && !revealedNsfwIds.has(item.id);

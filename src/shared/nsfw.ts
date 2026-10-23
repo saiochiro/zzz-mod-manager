@@ -1,10 +1,11 @@
 /**
- * Content tiers, view rules and the scan's verdict logic. Shared by the backend (scans, stores
- * verdicts, sanitizes files) and the UI (which only reads the result; users can't change labels).
+ * Content tiers, view rules and the scan's verdict logic. The scan runs ahead of time on GitHub
+ * (scripts/nsfw-prescan.mjs); the app only downloads the verdicts and applies them in Browse.
+ * Users can't change labels, and the Library is never filtered.
  *
  *  sfw    - checked and completely safe: no nudity, nothing skimpy or suggestive
- *  toggle - "Experimental": a clean SFW outfit that came with NSFW options; ProxyLaunch removes
- *           the NSFW pictures from view and disables the NSFW options in the installed files
+ *  toggle - "Experimental": a clean SFW outfit that came with NSFW options; only its clean
+ *           pictures are shown
  *  nsfw   - everything else that is NSFW, skimpy, lewd, or could not be verified safe
  */
 
@@ -152,7 +153,7 @@ export interface NsfwVerdict {
  * Zero tolerance.
  *  SFW:          no GameBanana rating, no NSFW words or files, and every picture clean.
  *  Experimental: a skin with real evidence of an NSFW toggle (page, hotkeys or file names), whose
- *                cover and most pictures are clean. Its NSFW pictures and options get removed.
+ *                cover and most pictures are clean. Only its clean pictures are shown.
  *  NSFW:         everything else.
  */
 export function decideNsfwLevel(e: NsfwEvidence): NsfwVerdict {
@@ -178,6 +179,84 @@ export function decideNsfwLevel(e: NsfwEvidence): NsfwVerdict {
   const cleanShare = cleanImages.filter(Boolean).length / rated.length;
   if (e.isSkin !== false && toggleEvidence && cleanShare >= 0.6) return v('toggle', `clean SFW base with NSFW toggle; ${ctx}`);
   return v('nsfw', `${!toggleEvidence ? 'NSFW signals without a toggle' : e.isSkin === false ? 'not a skin' : 'mostly NSFW pictures'}; ${ctx}`);
+}
+
+/** What the pre-scan knows about a mod page before looking at pictures. */
+export interface NsfwPageInput {
+  title: string;
+  /** The short description under the title. */
+  description?: string;
+  /** Full page text, and file names/descriptions. */
+  pageText: string;
+  fileNames: string[];
+  /** GameBanana content-rating labels. */
+  ratings: string[];
+  /** GameBanana says the mod has content ratings. */
+  hasRatings: boolean;
+  /** Something else (feed visibility, keywords) already marked it NSFW. */
+  flagged?: boolean;
+  category?: string;
+}
+
+/** "No NSFW", "non-nsfw", "NSFW-free" are statements that it's safe, not NSFW words. */
+export function denoiseNsfwText(t: string): string {
+  return t.replace(/\b(no|not|non|without|zero|free\s+of)[\s-]*(nsfw|nudity|nude|lewd)\b|\b(nsfw|nudity)[\s-]*free\b/gi, ' ');
+}
+
+/** Everything but the picture scores, from a GameBanana page. */
+export function buildNsfwEvidence(p: NsfwPageInput): Omit<NsfwEvidence, 'images'> {
+  const own = denoiseNsfwText(`${p.title} ${p.description ?? ''}`);
+  const text = `${own} ${denoiseNsfwText(p.pageText)}`;
+  return {
+    flagged:
+      Boolean(p.flagged) || p.hasRatings || p.ratings.length > 0 || NSFW_WORDS_RE.test(text) || p.ratings.some((r) => STRONG_RATING_RE.test(r)),
+    toggleHint: TOGGLE_TEXT_RE.test(text),
+    fileTreeNsfw: p.fileNames.some((f) => NSFW_FILE_RE.test(f)),
+    nudeEditText: NUDE_EDIT_RE.test(own) && !TOGGLE_TEXT_RE.test(own),
+    nsfwTitle: titleNamesNsfw(p.title),
+    isSkin: !p.category || /skin|character|outfit/i.test(p.category),
+  };
+}
+
+/** False when the verdict is NSFW whatever the pictures look like, so they needn't be scored. */
+export function needsImageScan(e: Omit<NsfwEvidence, 'images'>): boolean {
+  if (e.nudeEditText || e.nsfwTitle) return false;
+  const toggleEvidence = Boolean(e.toggleHint || e.fileTreeNsfw || e.hotkeyNsfw);
+  return toggleEvidence ? e.isSkin !== false : !e.flagged;
+}
+
+/* ------------------------------------------------------------------ */
+/* Pre-scanned verdicts (made on GitHub, downloaded by the app)        */
+/* ------------------------------------------------------------------ */
+
+export const NSFW_VERDICTS_URL = 'https://raw.githubusercontent.com/saiochiro/zzz-mod-manager/nsfw-verdicts/verdicts.json';
+
+export type NsfwLevelCode = 's' | 't' | 'n';
+export const LEVEL_CODE: Record<NsfwLevel, NsfwLevelCode> = { sfw: 's', toggle: 't', nsfw: 'n' };
+export const CODE_LEVEL: Record<NsfwLevelCode, NsfwLevel> = { s: 'sfw', t: 'toggle', n: 'nsfw' };
+
+/** One mod in verdicts.json. */
+export interface NsfwVerdictEntry {
+  /** level */
+  l: NsfwLevelCode;
+  /** 1 when GameBanana rated or keywords flagged it */
+  f: 0 | 1;
+  /** imageKey()s of clean pictures (SFW and Experimental only) */
+  c?: string[];
+  /** GameBanana's modified time when it was scanned */
+  m?: number;
+}
+
+export interface NsfwVerdictFile {
+  version: 1;
+  generatedAt: string;
+  mods: Record<string, NsfwVerdictEntry>;
+}
+
+export function parseVerdictFile(raw: unknown): NsfwVerdictFile | null {
+  const r = raw as NsfwVerdictFile;
+  if (!r || r.version !== 1 || !r.mods || typeof r.mods !== 'object') return null;
+  return r;
 }
 
 /* ------------------------------------------------------------------ */
@@ -233,3 +312,82 @@ export function nsfwKeyOf(item: { gamebanana_id?: number | null; id?: number; mo
 export function imageKey(url?: string): string {
   return (url || '').split('?')[0].split('/').pop()!.replace(/^\d+-\d+_/, '').toLowerCase();
 }
+
+/* ------------------------------------------------------------------ */
+/* GameBanana record labels (feed items and mod pages)                 */
+/* ------------------------------------------------------------------ */
+
+export const NSFW_KEYWORD_REGEX =
+  /\b(nsfw|18\+|r18|r-18|nude|nudity|naked|topless|bottomless|uncensored|explicit|adult|skimpy|lewd|hentai|ecchi|erotic|sex|sexual|strip|lingerie|bikini|microbikini|thong|bondage|bdsm|fetish|boob|boobs|breasts|ass|butt|nipple|pussy|penis|futa|ahegao|bunny\s*suit|slingshot|pasties)\b/i;
+
+/**
+ * Layer 1 (GameBanana API Metadata + Keyword/Tag Blacklist):
+ * Checks all GameBanana content rating fields:
+ * - _bHasContentRatings (boolean returned on Subfeed & Mod/Index)
+ * - _bIsNsfw / is_nsfw
+ * - _sInitialVisibility ('hide', 'warn', 'nsfw', 'mature', '18+')
+ * - _aContentRatings (st, sc, sa, lp, pn, nu, etc.)
+ * - _sContentRating
+ * - Category, RootCategory, SubCategory, Tags, and Title regex
+ */
+export function isModRecordNsfw(rec: any): boolean {
+  if (!rec) return false;
+  if (rec._bHasContentRatings === true) return true;
+  if (rec._bIsNsfw === true || rec.is_nsfw === true) return true;
+
+  const rating = String(rec._sContentRating || rec.content_rating || '').toLowerCase();
+  if (
+    rating.includes('mature') ||
+    rating.includes('adult') ||
+    rating.includes('nsfw') ||
+    rating.includes('18+') ||
+    rating.includes('explicit') ||
+    rating.includes('sexual') ||
+    rating.includes('nudity')
+  ) {
+    return true;
+  }
+
+  const vis = String(rec._sInitialVisibility || '').toLowerCase().trim();
+  if (
+    vis === 'hide' ||
+    vis === 'warn' ||
+    vis.includes('nsfw') ||
+    vis.includes('mature') ||
+    vis.includes('18+') ||
+    vis.includes('adult')
+  ) {
+    return true;
+  }
+
+  if (rec._aContentRatings && typeof rec._aContentRatings === 'object') {
+    for (const key of Object.keys(rec._aContentRatings)) {
+      const val = String(rec._aContentRatings[key] || '').toLowerCase().trim();
+      if (val && !['none', 'everyone', 'safe', 'false', '0'].includes(val)) {
+        return true;
+      }
+    }
+  }
+
+  const combinedText = [
+    rec._sName,
+    rec.title,
+    rec._aSubCategory?._sName,
+    rec._aRootCategory?._sName,
+    rec._aCategory?._sName,
+    rec.category,
+    Array.isArray(rec._aTags)
+      ? rec._aTags.map((t: any) => (typeof t === 'string' ? t : t?._sTitle || t?._sName || '')).join(' ')
+      : '',
+    Array.isArray(rec.tags) ? rec.tags.join(' ') : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  if (NSFW_KEYWORD_REGEX.test(combinedText)) {
+    return true;
+  }
+
+  return false;
+}
+

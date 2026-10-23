@@ -50,16 +50,8 @@ import {
   moderateModThumbnailVision,
   setCachedVisionResult,
 } from './nsfwVisionService';
-import {
-  applyNsfwReview,
-  initNsfwReview,
-  nsfwKey,
-  submitNsfwReview,
-  type NsfwReviewRequest,
-  type NsfwReviewResult,
-} from './nsfwReview';
-import { filterShowsAllPictures, type NsfwFilter } from '../shared/nsfw';
-import { findNsfwToggles, isSanitized, listFilesRecursive, restoreMod, sanitizeMod } from './nsfwSanitizer';
+import { applyNsfwReview, initNsfwReview, nsfwKey } from './nsfwReview';
+import { isSanitized, restoreMod } from './nsfwSanitizer';
 import { buildMasterSwapIniContent, syncAgentHSwapOnDisk } from './hSwapEngine';
 import { ZZMI_COMPONENTS } from '../shared/zzmiComponents';
 import {
@@ -916,7 +908,6 @@ endif
     const updated = { ...current, ...partial };
     fs.writeFileSync(this.configPath, JSON.stringify(updated, null, 2), 'utf-8');
     this.addLog('info', 'FAIRY_CORE', 'System configuration updated in config.json.');
-    if (partial.nsfwFilterState && partial.nsfwFilterState !== current.nsfwFilterState) this.enforceContentTiers();
     return updated;
   }
 
@@ -1053,7 +1044,7 @@ endif
 
     return results
       .map((m) => this.asWorkshopIfMix(m))
-      .map((m) => ({ ...applyNsfwReview(m, nsfwKey(m)), nsfw_sanitized: isSanitized(this.sanitizeBackupDir(m)) }))
+      .map((m) => applyNsfwReview(m, nsfwKey(m)))
       .sort((a, b) => a.title.localeCompare(b.title));
   }
 
@@ -1074,35 +1065,6 @@ endif
     }
   }
 
-  /* ---------------------------------------------------------------- */
-  /* NSFW review (on-device AI check + your own calls)                 */
-  /* ---------------------------------------------------------------- */
-
-  /** Stores the AI check's verdict for a mod. Installed mods also pass their hotkey names as hints. */
-  public async submitNsfwReview(req: NsfwReviewRequest & { modUuid?: string }): Promise<NsfwReviewResult> {
-    // Installed copies (by uuid, or the same GameBanana mod) add evidence from their own files:
-    // hotkey names, NSFW toggles found in the .ini files, and file names.
-    const installed = this.scanInstalledMods().filter(
-      (m) => m.mod_uuid === req.modUuid || (req.gamebananaId && m.gamebanana_id === req.gamebananaId)
-    );
-    const hotkeyNames = [...(req.hotkeyNames ?? [])];
-    const localFileNames: string[] = [];
-    let hotkeyNsfw = false;
-    for (const mod of installed) {
-      const dir = this.modAbsDir(mod);
-      hotkeyNames.push(...(mod.sub_toggles || []).flatMap((t) => [t.section_name, t.variable, t.label]));
-      try {
-        if (findNsfwToggles(dir).length) hotkeyNsfw = true;
-      } catch {
-        // unreadable ini: no evidence either way
-      }
-      localFileNames.push(...listFilesRecursive(dir, 4000).map((f) => path.relative(dir, f)));
-    }
-    const res = await submitNsfwReview({ ...req, hotkeyNames, hotkeyNsfw, localFileNames });
-    if (installed.length) this.enforceContentTiers();
-    return res;
-  }
-
   /**
    * Workshop mixes are never "a GameBanana mod", even if an older version linked one by name
    * (auto preview lookup). Without this, the update checker could replace a mix with that mod.
@@ -1118,40 +1080,38 @@ endif
   }
 
   /**
-   * Keeps installed Experimental mods' files in line with the view: NSFW options disabled in the
-   * SFW views, restored to the original in the NSFW / Show all views. Returns true if files changed.
+   * 2.14.0 edited "Experimental" mods in the Library (NSFW hotkeys disabled, files moved aside).
+   * The Library is never touched now, so this puts those mods back exactly as they were.
    */
-  public enforceContentTiers(): boolean {
-    const filter = (this.getConfig().nsfwFilterState || 'hide') as NsfwFilter;
-    const wantSanitized = !filterShowsAllPictures(filter);
-    let changed = false;
-    for (const mod of this.scanInstalledMods()) {
-      const dir = this.modAbsDir(mod);
+  public restoreSanitizedMods(): number {
+    const root = path.join(this.appDataPath, 'sanitized');
+    if (!fs.existsSync(root)) return 0;
+    let restored = 0;
+    const mods = this.scanInstalledMods();
+    for (const mod of mods) {
       const backupDir = this.sanitizeBackupDir(mod);
+      if (!isSanitized(backupDir)) continue;
       try {
-        if (mod.nsfw_level === 'toggle' && mod.nsfw_checked && wantSanitized && !isSanitized(backupDir)) {
-          const r = sanitizeMod(dir, backupDir);
-          if (r.changed) {
-            changed = true;
-            this.addLog('info', 'FAIRY_CORE', `Experimental: disabled NSFW options in [${mod.title}].`, mod.mod_uuid);
-          }
-        } else if (isSanitized(backupDir) && (!wantSanitized || mod.nsfw_level !== 'toggle')) {
-          if (restoreMod(dir, backupDir)) changed = true;
-        }
+        if (restoreMod(this.modAbsDir(mod), backupDir)) restored++;
       } catch (err) {
-        console.warn(`[NSFW scan] Couldn't update ${mod.title}:`, err);
+        console.warn(`[Content labels] Couldn't restore ${mod.title}:`, err);
       }
     }
-    if (changed) {
+    try {
+      if (fs.readdirSync(root).every((d) => !isSanitized(path.join(root, d)))) fs.rmSync(root, { recursive: true, force: true });
+    } catch {
+      // try again next start
+    }
+    if (restored) {
+      this.addLog('info', 'FAIRY_CORE', `Restored ${restored} mod${restored === 1 ? '' : 's'} to their original files.`);
       try {
         this.syncModsToXxmiLauncher();
       } catch {
         // XXMI not set up yet
       }
     }
-    return changed;
+    return restored;
   }
-
 
   private loadOrReconstructManifest(
     modAbsDir: string,
@@ -2120,7 +2080,6 @@ endif
           logs
         );
         fs.rmSync(stagingDir, { recursive: true, force: true });
-        this.enforceContentTiers();
         return { success: true, installedMods: installed, logs };
       }
 
@@ -2176,7 +2135,6 @@ endif
         logs
       );
       fs.rmSync(stagingDir, { recursive: true, force: true });
-      this.enforceContentTiers();
       return { success: true, installedMods: installed, logs };
     } catch (err) {
       const errMsg = (err as Error).message;
@@ -4030,8 +3988,7 @@ endif
       throw err;
     }
     fs.rmSync(old, { recursive: true, force: true });
-    fs.rmSync(this.sanitizeBackupDir(mix), { recursive: true, force: true }); // fresh files: sanitize again if needed
-    this.enforceContentTiers();
+    fs.rmSync(this.sanitizeBackupDir(mix), { recursive: true, force: true }); // old 2.14.0 backup of the replaced files
     try {
       this.syncModsToXxmiLauncher();
     } catch {

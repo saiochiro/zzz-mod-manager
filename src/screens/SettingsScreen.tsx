@@ -240,7 +240,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = (p) => {
               <section id="settings-content" className="card card--pad">
                 <h2 className="h3">Content filter</h2>
                 <p className="small muted" style={{ marginBottom: 16 }}>
-                  Choose which mods show up in your Library, Browse and the Workshop.
+                  Choose which mods show up in Browse. Your Library and the mods you install are never filtered or changed.
                 </p>
                 <Segmented<NsfwFilterState>
                   ariaLabel="Sensitive content"
@@ -255,9 +255,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = (p) => {
                 />
                 <p className="caption" style={{ marginTop: 10 }}>
                   {p.nsfwFilterState === 'hide'
-                    ? 'Only mods checked as completely safe: no nudity, nothing skimpy or suggestive. Mods still being checked stay hidden.'
+                    ? 'Only mods checked as completely safe: no nudity, nothing skimpy or suggestive. Brand new uploads show up once they are checked, usually within an hour.'
                     : p.nsfwFilterState === 'toggle'
-                    ? 'Safe mods, plus Experimental mods: safe outfits that came with NSFW options. ProxyLaunch removes those options and their NSFW pictures.'
+                    ? 'Safe mods, plus Experimental mods: safe outfits that come with an optional NSFW toggle. Only their safe pictures are shown.'
                     : p.nsfwFilterState === 'blur'
                     ? 'Every mod, including NSFW ones. NSFW pictures are blurred until you click them.'
                     : 'Every mod with no filtering and no blur.'}
