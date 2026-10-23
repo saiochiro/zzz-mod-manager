@@ -6,7 +6,6 @@ import {
   CircleAlert,
   Compass,
   Download,
-  FlaskConical,
   Hammer,
   Share2,
   Shirt,
@@ -53,7 +52,7 @@ interface Props {
   /** Persist path changes (also refreshes app state). */
   onSaveConfig: (partial: Partial<AppConfig>) => Promise<void>;
   onClose: () => void;
-  /** Experimental Mod Workshop is turned on. */
+  /** The Mod Workshop page is shown (on unless turned off). */
   workshopEnabled?: boolean;
 }
 
@@ -248,7 +247,7 @@ export const SetupWizard: React.FC<Props> = ({ open, activeTheme, onThemeChange,
         {step === 'workshop' && (
           <div className="setup__body">
             <div className="eyebrow">
-              <FlaskConical style={{ width: 14, height: 14, verticalAlign: '-2px' }} /> New · Experimental
+              <Hammer style={{ width: 14, height: 14, verticalAlign: '-2px' }} /> New
             </div>
             <h2 id="setup-title" className="setup__h2">
               Make your own mods
@@ -258,7 +257,7 @@ export const SetupWizard: React.FC<Props> = ({ open, activeTheme, onThemeChange,
               another, and save it as a new mod.
             </p>
             <div className="setup-tips">
-              <Tip icon={<FlaskConical />} title="1. Turn it on" text="Settings → Experimental → Mod Workshop. A Workshop page appears under Themes." />
+              <Tip icon={<Hammer />} title="1. Open it" text="The Workshop page is in the sidebar, under Themes. You can hide it in Settings → Features." />
               <Tip icon={<Shirt />} title="2. Pick parts" text="Choose an agent, then pick a mod for each part. Parts you skip stay as the original model." />
               <Tip icon={<Hammer />} title="3. Build it" text="Name it and build. It lands in your Library like any other mod, already labeled 18+ if any part is." />
               <Tip icon={<Share2 />} title="4. Share it" text="Post it on the Community tab (sign in with Discord) or copy its share code. ProxyLaunch grabs the mods it needs from GameBanana for whoever gets it." />
@@ -268,7 +267,7 @@ export const SetupWizard: React.FC<Props> = ({ open, activeTheme, onThemeChange,
                 className={`btn ${workshopEnabled ? 'btn--secondary' : 'btn--primary'} btn--sm`}
                 onClick={() => onSaveConfig({ workshopEnabled: !workshopEnabled })}
               >
-                {workshopEnabled ? <CheckCircle2 /> : <FlaskConical />}
+                {workshopEnabled ? <CheckCircle2 /> : <Hammer />}
                 {workshopEnabled ? 'Workshop is on' : 'Turn on the Workshop'}
               </button>
               <span className="small muted">You can change this anytime in Settings.</span>

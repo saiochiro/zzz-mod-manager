@@ -126,23 +126,67 @@ if (everything.complete && everything.recs.length > 100) {
   for (const id of Object.keys(mods)) if (!seen.has(Number(id))) delete mods[id];
 }
 
+// SFW mods carry a card (the fields Browse shows), so the app's SFW view is served straight from
+// this list instead of paging through GameBanana and hiding 90% of it.
+function cardOf(p, rec) {
+  const pick = (o, keys) => (o ? Object.fromEntries(keys.filter((k) => o[k] !== undefined).map((k) => [k, o[k]])) : undefined);
+  const images = (p._aPreviewMedia?._aImages ?? rec._aPreviewMedia?._aImages ?? [])
+    .slice(0, MAX_IMAGES)
+    .map((img) => pick(img, ['_sBaseUrl', '_sFile']))
+    .filter((img) => img?._sBaseUrl && img?._sFile);
+  return {
+    _idRow: p._idRow ?? rec._idRow,
+    _sName: p._sName ?? rec._sName,
+    _sDescription: String(p._sDescription || '').slice(0, 200) || undefined,
+    _sProfileUrl: p._sProfileUrl ?? rec._sProfileUrl,
+    _aSubmitter: pick(p._aSubmitter ?? rec._aSubmitter, ['_idRow', '_sName', '_sAvatarUrl', '_sHdAvatarUrl', '_sProfileUrl']),
+    _aCategory: pick(p._aCategory ?? rec._aCategory, ['_idRow', '_sName']),
+    _aSubCategory: pick(rec._aSubCategory, ['_idRow', '_sName']),
+    _aRootCategory: pick(p._aRootCategory ?? rec._aRootCategory, ['_idRow', '_sName']),
+    _nLikeCount: rec._nLikeCount ?? p._nLikeCount ?? 0,
+    _nDownloadCount: p._nDownloadCount ?? rec._nDownloadCount ?? 0,
+    _nViewCount: rec._nViewCount ?? p._nViewCount ?? 0,
+    _tsDateAdded: p._tsDateAdded ?? rec._tsDateAdded,
+    _tsDateModified: p._tsDateModified ?? rec._tsDateModified,
+    _aPreviewMedia: { _aImages: images },
+  };
+}
+
+// Keep the counts on SFW cards current (they come with the listing, no extra requests).
+for (const [id, e] of Object.entries(mods)) {
+  const r = seen.get(Number(id));
+  if (!r || !e.k) continue;
+  if (r._nLikeCount !== undefined) e.k._nLikeCount = r._nLikeCount;
+  if (r._nViewCount !== undefined) e.k._nViewCount = r._nViewCount;
+  if (r._nDownloadCount !== undefined) e.k._nDownloadCount = r._nDownloadCount;
+}
+// Not labeled as SFW any more (2.14.2 shows only SFW / NSFW): no card needed.
+for (const e of Object.values(mods)) if (e.l !== 's') delete e.k;
+
 const todo = [...seen.values()].filter((r) => {
   const old = mods[r._idRow];
   if (!old) return true;
   if (old.m !== modifiedOf(r)) return true;
+  if (old.l === 's' && !old.k) return true; // card missing: fetch the page only
   return N.isModRecordNsfw(r) && !old.f; // GameBanana flagged it after the scan
 });
 console.log(`to scan: ${todo.length}`);
 
 /* ------------------------------- scan ------------------------------- */
 
-const stats = { s: 0, t: 0, n: 0, imagesScored: 0, skipped: 0, failed: 0 };
+const stats = { s: 0, t: 0, n: 0, cards: 0, imagesScored: 0, skipped: 0, failed: 0 };
 
 async function scanMod(rec) {
   const id = rec._idRow;
   const p = await getJson(`https://gamebanana.com/apiv11/Mod/${id}/ProfilePage`);
   if (!p) {
     stats.failed++;
+    return;
+  }
+  const old = mods[id];
+  if (old && old.l === 's' && !old.k && old.m === modifiedOf(rec) && !(N.isModRecordNsfw(rec) && !old.f)) {
+    old.k = cardOf(p, rec);
+    stats.cards++;
     return;
   }
   const files = Array.isArray(p._aFiles) ? p._aFiles : [];
@@ -188,6 +232,7 @@ async function scanMod(rec) {
   const v = N.decideNsfwLevel({ ...evidence, images: scores });
   const entry = { l: N.LEVEL_CODE[v.level], f: evidence.flagged ? 1 : 0, m: modifiedOf(rec) };
   if (v.level !== 'nsfw') entry.c = scored.filter((_, i) => v.cleanImages[i]).map(N.imageKey);
+  if (v.level === 'sfw') entry.k = cardOf(p, rec);
   mods[id] = entry;
   stats[entry.l]++;
 }

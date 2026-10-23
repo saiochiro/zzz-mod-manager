@@ -33,32 +33,41 @@ export function nsfwLevelOf(item: NsfwLabeled): NsfwLevel {
   return item.nsfw_level ?? (item.is_nsfw ? 'nsfw' : 'sfw');
 }
 
-/** Hidden from lists in this view. Mods not scanned yet never show in the SFW views. */
+/**
+ * The views users can pick. "toggle" (SFW + Experimental) is on hold for now: saved settings
+ * that still say "toggle" act as SFW only, and Experimental mods count as NSFW everywhere.
+ */
+export const NSFW_FILTERS: NsfwFilter[] = ['hide', 'blur', 'show'];
+export function normalizeNsfwFilter(f: unknown): NsfwFilter {
+  return f === 'blur' || f === 'show' ? f : 'hide';
+}
+
+/** Hidden from lists in this view. Mods not scanned yet never show in the SFW view. */
 export function isHiddenByNsfwFilter(item: NsfwLabeled, filter: NsfwFilter): boolean {
-  const level = nsfwLevelOf(item);
-  if (filter === 'hide') return !item.nsfw_checked || level !== 'sfw';
-  if (filter === 'toggle') return !item.nsfw_checked || level === 'nsfw';
+  const f = normalizeNsfwFilter(filter);
+  if (f === 'hide') return !item.nsfw_checked || nsfwLevelOf(item) !== 'sfw';
   return false;
 }
 
 /** Shown blurred until clicked. Only the NSFW view blurs; "Show all" never does. */
 export function isBlurredByNsfwFilter(item: NsfwLabeled, filter: NsfwFilter): boolean {
-  return filter === 'blur' && (nsfwLevelOf(item) === 'nsfw' || !item.nsfw_checked);
+  return normalizeNsfwFilter(filter) === 'blur' && (nsfwLevelOf(item) !== 'sfw' || !item.nsfw_checked);
 }
 
 /** Only these views may show a mod's unverified or NSFW screenshots. */
 export function filterShowsAllPictures(filter: NsfwFilter): boolean {
-  return filter === 'blur' || filter === 'show';
+  const f = normalizeNsfwFilter(filter);
+  return f === 'blur' || f === 'show';
 }
 
 /** GameBanana API filter: only ask it to drop NSFW posts when the user wants SFW only. */
 export function filterHidesAllNsfw(filter: NsfwFilter): boolean {
-  return filter === 'hide';
+  return normalizeNsfwFilter(filter) === 'hide';
 }
 
 export const NSFW_LEVEL_LABEL: Record<NsfwLevel, string> = {
   sfw: 'SFW',
-  toggle: 'Experimental',
+  toggle: '18+', // Experimental is on hold: shown as NSFW
   nsfw: '18+',
 };
 
@@ -245,6 +254,9 @@ export interface NsfwVerdictEntry {
   c?: string[];
   /** GameBanana's modified time when it was scanned */
   m?: number;
+  /** SFW mods only: a GameBanana-style record with what Browse shows (title, author, pictures, counts) */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  k?: Record<string, any>;
 }
 
 export interface NsfwVerdictFile {

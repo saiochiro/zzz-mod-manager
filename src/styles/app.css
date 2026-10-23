@@ -1548,11 +1548,15 @@ pre,
   min-width: 220px;
   padding: 6px;
   border-radius: var(--r-lg);
-  background: var(--surface);
+  /* Solid even when a theme's surface color is see-through */
+  background: linear-gradient(var(--surface), var(--surface)), var(--bg);
   border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-lg);
   animation: pop-in 160ms var(--ease-out);
   transform-origin: top;
+}
+.popover--floating {
+  z-index: 1000;
 }
 @keyframes pop-in {
   from {
@@ -1704,7 +1708,7 @@ pre,
   position: fixed;
   right: var(--s-5);
   bottom: var(--s-5);
-  z-index: 90;
+  z-index: 1001; /* above drawers, modals, setup and theme effects */
   display: flex;
   flex-direction: column;
   gap: var(--s-2);
@@ -2683,10 +2687,11 @@ details.disclosure[open] > summary svg {
    ========================================================================== */
 .settings {
   display: grid;
-  grid-template-columns: 220px 1fr;
+  grid-template-columns: 220px minmax(0, 1fr);
   gap: var(--s-7);
   align-items: start;
-  max-width: 1080px;
+  max-width: 1180px;
+  margin-inline: auto; /* centered on wide windows instead of hugging the left edge */
 }
 .settings__nav {
   position: sticky;

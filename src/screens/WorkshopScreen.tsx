@@ -8,7 +8,6 @@ import {
   ClipboardPaste,
   Download,
   ExternalLink,
-  FlaskConical,
   Hammer,
   Info,
   Layers,
@@ -278,11 +277,13 @@ export const WorkshopScreen: React.FC<Props> = ({ theme, mods, hashDb, nsfwFilte
           <HeroDecor />
           <div className="page-hero__glow" />
           <div className="page-hero__content">
-            <div className="eyebrow">
-              <FlaskConical style={{ width: 14, height: 14, verticalAlign: '-2px' }} /> Experimental
+            <div className="min-w-0">
+              <div className="eyebrow">
+                <Hammer style={{ width: 14, height: 14, verticalAlign: '-2px' }} /> Make your own
+              </div>
+              <h1 className="display page-hero__title">Mod Workshop</h1>
+              <p className="page-hero__subtitle">Take parts from mods you already have and put them together into your own.</p>
             </div>
-            <h1 className="display page-hero__title">Mod Workshop</h1>
-            <p className="page-hero__subtitle">Take parts from mods you already have and put them together into your own.</p>
           </div>
         </section>
 

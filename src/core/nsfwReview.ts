@@ -115,6 +115,15 @@ export function onNsfwVerdictsUpdated(fn: () => void): () => void {
   return () => listeners.delete(fn);
 }
 
+/** GameBanana-style records of every SFW mod, for serving the SFW view of Browse locally. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getSfwCatalog(): any[] {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const out: any[] = [];
+  for (const v of verdicts.values()) if (v.l === 's' && v.k?._idRow) out.push(v.k);
+  return out;
+}
+
 export function nsfwVerdictCount(): number {
   return verdicts.size;
 }

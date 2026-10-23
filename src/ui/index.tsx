@@ -21,7 +21,10 @@ export function usePopover<T extends HTMLElement = HTMLDivElement>() {
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Element;
+      // Panels drawn on top of the app (portals) count as inside.
+      if (target?.closest?.('[data-popover-portal]')) return;
+      if (ref.current && !ref.current.contains(target)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false);

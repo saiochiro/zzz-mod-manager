@@ -6,7 +6,7 @@ import {
   Rocket,
   Eye,
   EyeOff,
-  FlaskConical,
+  Hammer,
   FolderCog,
   FolderOpen,
   FolderSearch,
@@ -56,7 +56,7 @@ const SECTIONS = [
   { id: 'mods', label: 'Mod behavior', icon: SlidersHorizontal },
   { id: 'library', label: 'Library tools', icon: Package },
   { id: 'appearance', label: 'Appearance', icon: Palette },
-  { id: 'experimental', label: 'Experimental', icon: FlaskConical },
+  { id: 'features', label: 'Features', icon: Hammer },
   { id: 'about', label: 'About', icon: Info },
 ] as const;
 
@@ -244,20 +244,17 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = (p) => {
                 </p>
                 <Segmented<NsfwFilterState>
                   ariaLabel="Sensitive content"
-                  value={p.nsfwFilterState}
+                  value={normalizeNsfwFilter(p.nsfwFilterState)}
                   onChange={p.onChangeNsfw}
                   options={[
                     { value: 'hide', label: 'SFW only', icon: <ShieldCheck /> },
-                    { value: 'toggle', label: 'SFW + toggles', icon: <FlaskConical /> },
                     { value: 'blur', label: 'NSFW (blurred)', icon: <EyeOff /> },
                     { value: 'show', label: 'Show all', icon: <Eye /> },
                   ]}
                 />
                 <p className="caption" style={{ marginTop: 10 }}>
-                  {p.nsfwFilterState === 'hide'
+                  {normalizeNsfwFilter(p.nsfwFilterState) === 'hide'
                     ? 'Only mods checked as completely safe: no nudity, nothing skimpy or suggestive. Brand new uploads show up once they are checked, usually within an hour.'
-                    : p.nsfwFilterState === 'toggle'
-                    ? 'Safe mods, plus Experimental mods: safe outfits that come with an optional NSFW toggle. Only their safe pictures are shown.'
                     : p.nsfwFilterState === 'blur'
                     ? 'Every mod, including NSFW ones. NSFW pictures are blurred until you click them.'
                     : 'Every mod with no filtering and no blur.'}
@@ -343,12 +340,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = (p) => {
                 </div>
               </section>
 
-              <section id="settings-experimental" className="card card--pad">
+              <section id="settings-features" className="card card--pad">
                 <h2 className="h3" style={{ marginBottom: 4 }}>
-                  Experimental
+                  Features
                 </h2>
                 <p className="small muted" style={{ marginBottom: 8 }}>
-                  New features that are still being worked on. They might not work with every mod.
+                  Pages you can show or hide in the sidebar.
                 </p>
                 <div className="setting">
                   <div className="setting__text">
@@ -358,8 +355,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = (p) => {
                     </div>
                   </div>
                   <Switch
-                    checked={Boolean(config.workshopEnabled)}
-                    onChange={() => p.onSaveConfig({ workshopEnabled: !config.workshopEnabled })}
+                    checked={config.workshopEnabled !== false}
+                    onChange={() => p.onSaveConfig({ workshopEnabled: config.workshopEnabled === false })}
                     label="Mod Workshop"
                   />
                 </div>

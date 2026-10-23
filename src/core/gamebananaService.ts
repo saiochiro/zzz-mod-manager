@@ -194,7 +194,7 @@ export function getAllModPreviewUrls(mod: any): string[] {
   return images.map((img: any) => buildGbImageUrl(img)).filter(Boolean);
 }
 
-import { applyNsfwReview, nsfwVerdictsReady } from './nsfwReview';
+import { applyNsfwReview, getSfwCatalog, nsfwVerdictsReady } from './nsfwReview';
 
 /** Applies the pre-scanned labels, then drops NSFW items if asked. */
 function finalizeNsfw(items: GameBananaModItem[], hideNsfw: boolean): GameBananaModItem[] {
@@ -223,6 +223,132 @@ export interface GameBananaFeedOptions {
   submitterId?: number;
   authorName?: string;
   hideNsfw?: boolean;
+}
+
+/** One GameBanana record (Index / Subfeed / pre-scanned card) as a Browse item. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function recordToFeedItem(rec: any, idx: number, options: GameBananaFeedOptions): GameBananaModItem {
+    const modId = Number(rec._idRow);
+    const title = rec._sName || `Mod #${modId}`;
+    const author = rec._aSubmitter?._sName || 'GameBanana Author';
+    const submitterId = rec._aSubmitter?._idRow ? Number(rec._aSubmitter._idRow) : undefined;
+    const authorAvatarUrl =
+      rec._aSubmitter?._sHdAvatarUrl || rec._aSubmitter?._sAvatarUrl || undefined;
+    const authorProfileUrl =
+      rec._aSubmitter?._sProfileUrl ||
+      (submitterId ? `https://gamebanana.com/members/${submitterId}` : undefined);
+    const catId =
+      rec._aSubCategory?._idRow ||
+      rec._aCategory?._idRow ||
+      (options.characterSubcatId ? options.characterSubcatId : undefined);
+    const subCat =
+      (rec._aSubCategory?._sName && !rec._aSubCategory._sName.includes('Character Skins')
+        ? rec._aSubCategory._sName
+        : null) ||
+      (rec._aCategory?._sName && !rec._aCategory._sName.includes('Character Skins')
+        ? rec._aCategory._sName
+        : null) ||
+      rec._aRootCategory?._sName ||
+      'Skins';
+    const primaryThumb = getModPreviewUrl(rec);
+    const allThumbnails = getAllModPreviewUrls(rec);
+    const nsfwFlag = isModRecordNsfw(rec);
+    const catTag = classifyModCategoryTag(subCat, title);
+
+    const thumbUrl =
+      primaryThumb ||
+      makeModCoverSvg(
+        title.slice(0, 24),
+        `BY ${author.toUpperCase()}`,
+        '#e6193c',
+        '#ff3355',
+        subCat.slice(0, 14),
+        'vampire'
+      );
+
+    return {
+      id: modId,
+      title,
+      author,
+      submitter_id: submitterId,
+      author_avatar_url: authorAvatarUrl,
+      author_profile_url: authorProfileUrl,
+      category: subCat,
+      category_id: catId,
+      category_tag: catTag,
+      agent_hint: subCat,
+      likes: rec._nLikeCount || 0,
+      downloads: rec._nDownloadCount || (rec._nViewCount ? Math.floor(rec._nViewCount * 0.4) : 180),
+      views: rec._nViewCount || 0,
+      updated_at: new Date(
+        (rec._tsDateModified || rec._tsDateAdded || Date.now() / 1000) * 1000
+      )
+        .toISOString()
+        .slice(0, 10),
+      thumbnail_url: thumbUrl,
+      preview_images: allThumbnails.length > 0 ? allThumbnails : [thumbUrl],
+      profile_url: rec._sProfileUrl || `https://gamebanana.com/mods/${modId}`,
+      download_url: `https://gamebanana.com/mods/${modId}`,
+      file_name: `${title.replace(/[^a-zA-Z0-9_-]/g, '_')}.zip`,
+      file_size: 24500000,
+      md5_checksum: crypto.randomBytes(16).toString('hex'),
+      description:
+        rec._sDescription ||
+        (rec._sInitialVisibility && rec._sInitialVisibility !== 'show'
+          ? `Content Visibility: ${rec._sInitialVisibility}`
+          : `Live Zenless Zone Zero ${catTag.toLowerCase()} mod from GameBanana by ${author}.`),
+      is_live_api: true,
+      is_nsfw: nsfwFlag,
+      nsfw_reason: nsfwFlag ? 'Flagged by Layer 1 (GameBanana API Content Rating)' : undefined,
+      is_featured: idx < 6 && !nsfwFlag,
+      content_rating: rec._sContentRating || (nsfwFlag ? 'NSFW' : 'Everyone'),
+    };
+}
+
+/** The SFW view of Browse from the pre-scanned catalog. Null when there's no catalog yet. */
+function sfwFeedFromCatalog(
+  options: GameBananaFeedOptions,
+  page: number,
+  perPage: number,
+  sort: string,
+  searchQuery: string,
+  catFilter: string
+): GameBananaModItem[] | null {
+  const catalog = getSfwCatalog();
+  if (catalog.length === 0) return null;
+  const q = searchQuery.toLowerCase();
+  const author = (options.authorName || '').toLowerCase();
+  const now = Date.now() / 1000;
+  const items = catalog
+    .filter((rec) => {
+      if (options.characterSubcatId) {
+        const ids = [rec._aCategory?._idRow, rec._aSubCategory?._idRow].map(Number);
+        if (!ids.includes(Number(options.characterSubcatId))) return false;
+      }
+      if (options.submitterId && Number(rec._aSubmitter?._idRow) !== Number(options.submitterId)) return false;
+      if (author && String(rec._aSubmitter?._sName || '').toLowerCase() !== author) return false;
+      return true;
+    })
+    .map((rec, i) => recordToFeedItem(rec, i, options))
+    .filter((m) => {
+      if (catFilter !== 'all' && (m.category_tag || 'Skins').toLowerCase() !== catFilter) return false;
+      if (q && !`${m.title} ${m.author} ${m.description}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  const added = new Map(catalog.map((r) => [Number(r._idRow), Number(r._tsDateAdded || 0)]));
+  const modified = new Map(catalog.map((r) => [Number(r._idRow), Number(r._tsDateModified || r._tsDateAdded || 0)]));
+  // "Featured": well-liked mods, favoring recent ones (likes per week of age, softened).
+  const trend = (m: GameBananaModItem) => (m.likes + 1) / Math.pow((now - (added.get(m.id) || now)) / 604800 + 2, 0.8);
+  const by: Record<string, (a: GameBananaModItem, b: GameBananaModItem) => number> = {
+    likes: (a, b) => b.likes - a.likes,
+    downloads: (a, b) => b.downloads - a.downloads,
+    updated: (a, b) => (modified.get(b.id) || 0) - (modified.get(a.id) || 0),
+    new: (a, b) => (added.get(b.id) || 0) - (added.get(a.id) || 0),
+    alphabetical: (a, b) => a.title.localeCompare(b.title),
+  };
+  items.sort(by[sort] || ((a, b) => trend(b) - trend(a)));
+  const start = (page - 1) * perPage;
+  return items.slice(start, start + perPage).map((m, i) => ({ ...m, is_featured: page === 1 && i < 6 }));
 }
 
 const feedResponseCache = new Map<string, { timestamp: number; items: GameBananaModItem[] }>();
@@ -264,6 +390,14 @@ export async function fetchLiveGameBananaFeed(
     authorName: (options.authorName || '').toLowerCase(),
     hideNsfw,
   });
+
+  // SFW only: served from the pre-scanned list of safe mods (complete and instant), instead of
+  // paging through GameBanana where ~90% of mods would be hidden.
+  if (hideNsfw) {
+    await nsfwVerdictsReady();
+    const local = sfwFeedFromCatalog(options, page, targetCount, sort, searchQuery, catFilter);
+    if (local) return finalizeNsfw(local, true);
+  }
 
   const cached = feedResponseCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < FEED_CACHE_TTL_MS) {
@@ -347,11 +481,13 @@ export async function fetchLiveGameBananaFeed(
       // On Most Popular (likes/downloads), ~90% of raw GameBanana entries have NSFW content ratings,
       // leaving only 3 SFW mods in a single page. Fetch 6 API pages in parallel via Promise.all
       // so the initial load yields 24+ safe mods immediately.
-      const parallelPagesCount = options.submitterId
+      // NSFW / Show all views show everything, so one page of 50 is plenty. Only the SFW view
+      // (when the pre-scanned catalog isn't downloaded yet) needs extra pages to fill a screen.
+      const parallelPagesCount = options.submitterId || !hideNsfw
         ? 1
         : sort === 'likes' || sort === 'downloads'
         ? 6
-        : hideNsfw && !searchQuery
+        : !searchQuery
         ? 2
         : 1;
 
@@ -401,83 +537,7 @@ export async function fetchLiveGameBananaFeed(
       }
 
       if (records.length > 0) {
-        let liveItems: GameBananaModItem[] = records.map((rec: any, idx: number) => {
-          const modId = Number(rec._idRow);
-          const title = rec._sName || `Mod #${modId}`;
-          const author = rec._aSubmitter?._sName || 'GameBanana Author';
-          const submitterId = rec._aSubmitter?._idRow ? Number(rec._aSubmitter._idRow) : undefined;
-          const authorAvatarUrl =
-            rec._aSubmitter?._sHdAvatarUrl || rec._aSubmitter?._sAvatarUrl || undefined;
-          const authorProfileUrl =
-            rec._aSubmitter?._sProfileUrl ||
-            (submitterId ? `https://gamebanana.com/members/${submitterId}` : undefined);
-          const catId =
-            rec._aSubCategory?._idRow ||
-            rec._aCategory?._idRow ||
-            (options.characterSubcatId ? options.characterSubcatId : undefined);
-          const subCat =
-            (rec._aSubCategory?._sName && !rec._aSubCategory._sName.includes('Character Skins')
-              ? rec._aSubCategory._sName
-              : null) ||
-            (rec._aCategory?._sName && !rec._aCategory._sName.includes('Character Skins')
-              ? rec._aCategory._sName
-              : null) ||
-            rec._aRootCategory?._sName ||
-            'Skins';
-          const primaryThumb = getModPreviewUrl(rec);
-          const allThumbnails = getAllModPreviewUrls(rec);
-          const nsfwFlag = isModRecordNsfw(rec);
-          const catTag = classifyModCategoryTag(subCat, title);
-
-          const thumbUrl =
-            primaryThumb ||
-            makeModCoverSvg(
-              title.slice(0, 24),
-              `BY ${author.toUpperCase()}`,
-              '#e6193c',
-              '#ff3355',
-              subCat.slice(0, 14),
-              'vampire'
-            );
-
-          return {
-            id: modId,
-            title,
-            author,
-            submitter_id: submitterId,
-            author_avatar_url: authorAvatarUrl,
-            author_profile_url: authorProfileUrl,
-            category: subCat,
-            category_id: catId,
-            category_tag: catTag,
-            agent_hint: subCat,
-            likes: rec._nLikeCount || 0,
-            downloads: rec._nDownloadCount || (rec._nViewCount ? Math.floor(rec._nViewCount * 0.4) : 180),
-            views: rec._nViewCount || 0,
-            updated_at: new Date(
-              (rec._tsDateModified || rec._tsDateAdded || Date.now() / 1000) * 1000
-            )
-              .toISOString()
-              .slice(0, 10),
-            thumbnail_url: thumbUrl,
-            preview_images: allThumbnails.length > 0 ? allThumbnails : [thumbUrl],
-            profile_url: rec._sProfileUrl || `https://gamebanana.com/mods/${modId}`,
-            download_url: `https://gamebanana.com/mods/${modId}`,
-            file_name: `${title.replace(/[^a-zA-Z0-9_-]/g, '_')}.zip`,
-            file_size: 24500000,
-            md5_checksum: crypto.randomBytes(16).toString('hex'),
-            description:
-              rec._sDescription ||
-              (rec._sInitialVisibility && rec._sInitialVisibility !== 'show'
-                ? `Content Visibility: ${rec._sInitialVisibility}`
-                : `Live Zenless Zone Zero ${catTag.toLowerCase()} mod from GameBanana by ${author}.`),
-            is_live_api: true,
-            is_nsfw: nsfwFlag,
-            nsfw_reason: nsfwFlag ? 'Flagged by Layer 1 (GameBanana API Content Rating)' : undefined,
-            is_featured: idx < 6 && !nsfwFlag,
-            content_rating: rec._sContentRating || (nsfwFlag ? 'NSFW' : 'Everyone'),
-          };
-        });
+        let liveItems: GameBananaModItem[] = records.map((rec: any, idx: number) => recordToFeedItem(rec, idx, options));
 
         if (options.authorName && !options.submitterId) {
           const targetAuthor = options.authorName.toLowerCase();

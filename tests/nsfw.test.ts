@@ -20,6 +20,7 @@ import {
   type NsfwScores,
 } from '../src/shared/nsfw';
 import { applyNsfwReview, initNsfwReview, setNsfwVerdictsForTest } from '../src/core/nsfwReview';
+import { fetchLiveGameBananaFeed } from '../src/core/gamebananaService';
 import { findNsfwToggles, restoreMod, sanitizeMod } from '../src/core/nsfwSanitizer';
 
 const both = (s: NsfwScores): NsfwImageScores => ({ inc: s, mob: s });
@@ -100,16 +101,17 @@ describe('Content tiers', () => {
     for (const f of ['Body.ini', 'BodyADiffuse.dds', 'Toggle_Jacket.ini', 'Denuded.txt']) expect(NSFW_FILE_RE.test(f)).toBe(false);
   });
 
-  it('views: unscanned mods never show in the SFW views; Show all shows everything unblurred', () => {
+  it('views: unscanned mods never show in SFW only; Show all shows everything unblurred', () => {
     const sfw = { nsfw_level: 'sfw' as const, nsfw_checked: true };
     const pending = { nsfw_level: 'sfw' as const, nsfw_checked: false };
     const exp = { nsfw_level: 'toggle' as const, is_nsfw: true, nsfw_checked: true };
     const nsfw = { nsfw_level: 'nsfw' as const, is_nsfw: true, nsfw_checked: true };
     const all = [sfw, pending, exp, nsfw];
     expect(all.map((m) => isHiddenByNsfwFilter(m, 'hide'))).toEqual([false, true, true, true]);
-    expect(all.map((m) => isHiddenByNsfwFilter(m, 'toggle'))).toEqual([false, true, false, true]);
+    // "SFW + toggles" is on hold: an old saved setting acts as SFW only, Experimental counts as NSFW.
+    expect(all.map((m) => isHiddenByNsfwFilter(m, 'toggle'))).toEqual([false, true, true, true]);
     expect(all.map((m) => isHiddenByNsfwFilter(m, 'blur'))).toEqual([false, false, false, false]);
-    expect(all.map((m) => isBlurredByNsfwFilter(m, 'blur'))).toEqual([false, true, false, true]);
+    expect(all.map((m) => isBlurredByNsfwFilter(m, 'blur'))).toEqual([false, true, true, true]);
     expect(all.map((m) => isHiddenByNsfwFilter(m, 'show'))).toEqual([false, false, false, false]);
     expect(all.map((m) => isBlurredByNsfwFilter(m, 'show'))).toEqual([false, false, false, false]);
   });
@@ -170,6 +172,27 @@ describe('Downloaded labels', () => {
   it('waits for a new scan when GameBanana flags a mod after a clean label', () => {
     setNsfwVerdictsForTest(list({ 9: { l: 's', f: 0, c: [] } }));
     expect(applyNsfwReview({ id: 9, is_nsfw: true }, 'gb:9')).toMatchObject({ nsfw_checked: false, nsfw_level: 'nsfw' });
+  });
+
+  it('serves SFW only Browse from the pre-scanned list: complete, sorted and filtered locally', async () => {
+    const card = (id: number, name: string, likes: number, cat: number) => ({
+      _idRow: id,
+      _sName: name,
+      _aSubmitter: { _idRow: 5, _sName: 'Ann' },
+      _aCategory: { _idRow: cat, _sName: 'Agent' },
+      _nLikeCount: likes,
+      _tsDateAdded: 1700000000 + id,
+      _aPreviewMedia: { _aImages: [{ _sBaseUrl: 'https://images.gamebanana.com/img/ss/mods', _sFile: `${id}.jpg` }] },
+    });
+    setNsfwVerdictsForTest(
+      list({ 11: { l: 's', f: 0, c: ['11.jpg'], k: card(11, 'Blue jacket', 5, 777) }, 12: { l: 's', f: 0, c: [], k: card(12, 'Red coat', 50, 778) }, 13: { l: 'n', f: 1 } })
+    );
+    const titles = async (o: object) => (await fetchLiveGameBananaFeed({ page: 1, perPage: 24, hideNsfw: true, ...o })).map((m) => m.title);
+    expect(await titles({ sort: 'likes' })).toEqual(['Red coat', 'Blue jacket']);
+    expect(await titles({ sort: 'likes', characterSubcatId: 777 })).toEqual(['Blue jacket']);
+    expect(await titles({ sort: 'likes', searchQuery: 'coat' })).toEqual(['Red coat']);
+    const [first] = await fetchLiveGameBananaFeed({ page: 1, perPage: 24, hideNsfw: true, sort: 'likes' });
+    expect(first).toMatchObject({ nsfw_checked: true, nsfw_level: 'sfw', is_nsfw: false });
   });
 
   it('uses the saved list on the next start, before any download', () => {

@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle, ArrowRight, Bell, CheckCircle2, Info, XCircle } from 'lucide-react';
 import type { FairyLogEntry } from '../shared/types';
 import { usePopover } from '../ui';
@@ -68,6 +69,19 @@ export const FairyAssistantHud: React.FC<ActivityCenterProps> = ({
 }) => {
   const { open, setOpen, ref } = usePopover();
   const recent = logs.slice(0, 8);
+  // The panel is drawn on top of the whole app (not inside the title bar), so page headers,
+  // drawers and theme effects can never cover it.
+  const [pos, setPos] = React.useState<{ top: number; right: number } | null>(null);
+  React.useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const r = ref.current?.getBoundingClientRect();
+      if (r) setPos({ top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right) });
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [open]);
 
   return (
     <div className="titlebar-no-drag" ref={ref} style={{ position: 'relative' }}>
@@ -83,8 +97,14 @@ export const FairyAssistantHud: React.FC<ActivityCenterProps> = ({
         <Bell />
         {unseenCount > 0 && <span className="icon-btn__badge">{unseenCount > 9 ? '9+' : unseenCount}</span>}
       </button>
-      {open && (
-        <div className="popover" style={{ right: 0, top: 42, width: 380 }} role="dialog" aria-label="Recent activity">
+      {open && pos && createPortal(
+        <div
+          className="popover popover--floating"
+          data-popover-portal
+          style={{ position: 'fixed', right: pos.right, top: pos.top, width: 380, maxWidth: 'calc(100vw - 16px)' }}
+          role="dialog"
+          aria-label="Recent activity"
+        >
           <div className="row" style={{ padding: '8px 10px 6px' }}>
             <span style={{ fontWeight: 650 }}>Recent activity</span>
             <span className="spacer" />
@@ -116,7 +136,8 @@ export const FairyAssistantHud: React.FC<ActivityCenterProps> = ({
               ))
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

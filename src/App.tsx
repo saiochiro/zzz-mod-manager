@@ -22,6 +22,7 @@ import {
   NsfwFilterState,
   ParsedIniDocument,
 } from './shared/types';
+import { normalizeNsfwFilter } from './shared/nsfw';
 import {
   applyTheme,
   getTheme,
@@ -96,7 +97,7 @@ const AppInner: React.FC = () => {
 
   const [nsfwFilterState, setNsfwFilterState] = useState<NsfwFilterState>(() => {
     try {
-      return (localStorage.getItem('zzz_nsfw_state') as NsfwFilterState) || 'hide';
+      return normalizeNsfwFilter(localStorage.getItem('zzz_nsfw_state'));
     } catch {
       return 'hide';
     }
@@ -167,7 +168,7 @@ const AppInner: React.FC = () => {
         }
         setActiveTheme(resolved.id);
       }
-      if (state.config.nsfwFilterState) setNsfwFilterState(state.config.nsfwFilterState);
+      if (state.config.nsfwFilterState) setNsfwFilterState(normalizeNsfwFilter(state.config.nsfwFilterState));
 
       refreshFolderStatus();
 
@@ -702,7 +703,7 @@ const AppInner: React.FC = () => {
           message: mixes.length
             ? 'The previous version is saved in backups. Workshop mixes that use its parts still work, and you can rebuild them with the update in the Workshop.'
             : 'The previous version is saved in backups.',
-          action: mixes.length && latest.config.workshopEnabled ? { label: 'Open Workshop', onClick: () => setScreen('workshop' as ScreenId) } : undefined,
+          action: mixes.length && latest.config.workshopEnabled !== false ? { label: 'Open Workshop', onClick: () => setScreen('workshop' as ScreenId) } : undefined,
         });
       }
       return true;
@@ -950,7 +951,7 @@ const AppInner: React.FC = () => {
     try {
       const res = await fairyClient.updateConfig(partial);
       setAppState(res.state);
-      if (partial.nsfwFilterState) setNsfwFilterState(partial.nsfwFilterState);
+      if (partial.nsfwFilterState) setNsfwFilterState(normalizeNsfwFilter(partial.nsfwFilterState));
       if ('xxmiModsPath' in partial || 'zzzExePath' in partial || 'zzmiLoaderPath' in partial) {
         notify({ tone: 'success', title: 'Settings saved' });
         refreshFolderStatus();
@@ -1038,7 +1039,7 @@ const AppInner: React.FC = () => {
           onLaunch={handleLaunchGame}
           onReloadInGame={handleSendF10}
           isLaunching={isLaunching}
-          showWorkshop={Boolean(config.workshopEnabled)}
+          showWorkshop={config.workshopEnabled !== false}
         />
 
         <main className="main" key={screen}>
@@ -1146,7 +1147,7 @@ const AppInner: React.FC = () => {
             />
           )}
 
-          {screen === 'workshop' && config.workshopEnabled && (
+          {screen === 'workshop' && config.workshopEnabled !== false && (
             <WorkshopScreen
               theme={theme}
               mods={mods}
@@ -1227,7 +1228,7 @@ const AppInner: React.FC = () => {
 
       <SetupWizard
         open={setupOpen}
-        workshopEnabled={Boolean(appState?.config.workshopEnabled)}
+        workshopEnabled={appState?.config.workshopEnabled !== false}
         activeTheme={activeTheme}
         onThemeChange={handleThemeChange}
         onSaveConfig={async (partial) => {
