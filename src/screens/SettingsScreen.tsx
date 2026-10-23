@@ -20,6 +20,7 @@ import {
   Wand2,
 } from 'lucide-react';
 import type { AppConfig, HashDatabase, NsfwFilterState } from '../shared/types';
+import { normalizeNsfwFilter } from '../shared/nsfw';
 import type { ThemeDefinition } from '../themes/types';
 import { Motif } from '../themes/Motif';
 import { ThemeIcon } from '../components/ThemeIcon';
