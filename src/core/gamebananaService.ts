@@ -196,7 +196,6 @@ export function getAllModPreviewUrls(mod: any): string[] {
 
 import { runLayer2VisionModerationBatch } from './nsfwVisionService';
 import { applyNsfwReview } from './nsfwReview';
-import { prefetchSharedVerdicts } from './sharedVerdicts';
 
 /** Applies the AI check / your own NSFW calls, then drops NSFW items if asked. */
 function finalizeNsfw(items: GameBananaModItem[], hideNsfw: boolean): GameBananaModItem[] {
@@ -570,7 +569,6 @@ export async function fetchLiveGameBananaFeed(
         // Layer 2: deep metadata check on items not labeled yet, then the AI check / your own calls.
         // NSFW items are only dropped after that, so ones the AI check cleared still show.
         const layered = await runLayer2VisionModerationBatch(liveItems);
-        await prefetchSharedVerdicts(layered.map((m) => m.id));
         let combined = finalizeNsfw(layered, hideNsfw);
 
         if (sort === 'alphabetical') {
