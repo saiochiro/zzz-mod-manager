@@ -485,11 +485,9 @@ export async function fetchLiveGameBananaFeed(
       // (when the pre-scanned catalog isn't downloaded yet) needs extra pages to fill a screen.
       const parallelPagesCount = options.submitterId || !hideNsfw
         ? 1
-        : sort === 'likes' || sort === 'downloads'
-        ? 6
         : !searchQuery
-        ? 2
-        : 1;
+        ? 6
+        : 2;
 
       const startApiPage = (page - 1) * parallelPagesCount + 1;
       const apiPagesToFetch = Array.from({ length: parallelPagesCount }, (_, i) => startApiPage + i);

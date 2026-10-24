@@ -1308,6 +1308,13 @@ pre,
   font-size: var(--fs-sm);
   font-weight: 600;
 }
+button.stat-pill:hover {
+  border-color: var(--border-strong);
+}
+.stat-pill.is-active {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+}
 .stat-pill strong {
   font-size: var(--fs-lead);
   font-weight: 750;
@@ -1722,7 +1729,8 @@ pre,
   gap: var(--s-3);
   padding: var(--s-3) var(--s-3) var(--s-3) var(--s-4);
   border-radius: var(--r-lg);
-  background: var(--surface);
+  /* Solid even when a theme's surface color is see-through */
+  background: linear-gradient(var(--surface), var(--surface)), var(--bg);
   border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-lg);
   animation: toast-in var(--t-slow) var(--ease-spring);

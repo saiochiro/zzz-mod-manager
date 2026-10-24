@@ -135,7 +135,9 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
             mods={visibleMods}
             selectedAgentId={agentId}
             onSelectAgent={(id) => {
+              // Picking a character (or "All mods") shows all of its mods, not just the filtered ones.
               setAgentId(id);
+              setStatus('ALL');
               setPanelOpen(false);
             }}
           />
@@ -152,16 +154,26 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
                 <div className="eyebrow">{selectedAgent ? 'Character' : 'Your mods'}</div>
                 <h1 className="display page-hero__title">{heroTitle}</h1>
                 <div className="page-hero__stats">
-                  <span className="stat-pill">
+                  <button
+                    className={`stat-pill ${status === 'ALL' ? '' : 'is-clickable'}`}
+                    onClick={() => setStatus('ALL')}
+                    style={{ cursor: 'pointer' }}
+                    title="Show all mods"
+                  >
                     <LayoutGrid style={{ color: 'var(--primary-text)' }} />
                     <strong>{visibleMods.length}</strong> installed
-                  </span>
+                  </button>
                   <span className="stat-pill">
                     <Power style={{ color: 'var(--success)' }} />
                     <strong>{onCount}</strong> on
                   </span>
                   {attentionCount > 0 && (
-                    <button className="stat-pill" onClick={() => setStatus('ATTENTION')} style={{ cursor: 'pointer' }}>
+                    <button
+                      className={`stat-pill ${status === 'ATTENTION' ? 'is-active' : ''}`}
+                      onClick={() => setStatus(status === 'ATTENTION' ? 'ALL' : 'ATTENTION')}
+                      style={{ cursor: 'pointer' }}
+                      title={status === 'ATTENTION' ? 'Show all mods' : 'Show only mods that need attention'}
+                    >
                       <AlertTriangle style={{ color: 'var(--warning)' }} />
                       <strong>{attentionCount}</strong> need attention
                     </button>
@@ -299,6 +311,15 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
               </div>
             )}
 
+            {!libraryEmpty && status === 'ATTENTION' && (
+              <div className="banner" style={{ marginBottom: 12 }}>
+                <AlertTriangle style={{ color: 'var(--warning)' }} />
+                <span style={{ flex: 1 }}>Showing only mods that need attention.</span>
+                <button className="btn btn--sm btn--secondary" onClick={() => setStatus('ALL')}>
+                  Show all mods
+                </button>
+              </div>
+            )}
             {libraryEmpty ? (
               <EmptyState
                 icon={<HardDriveDownload />}

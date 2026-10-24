@@ -107,7 +107,9 @@ export function refreshNsfwVerdicts(force = false): Promise<boolean> {
 /** Waits (up to a few seconds) for the first download, so Browse opens already labeled. */
 export async function nsfwVerdictsReady(ms = 8000): Promise<void> {
   if (!firstLoad) return;
-  await Promise.race([firstLoad, new Promise((r) => setTimeout(r, verdicts.size ? 0 : ms))]);
+  // An older saved list (no safe-mod cards yet) isn't enough for the SFW view: wait for the new one.
+  const ready = verdicts.size > 0 && [...verdicts.values()].some((v) => v.k);
+  await Promise.race([firstLoad, new Promise((r) => setTimeout(r, ready ? 0 : ms))]);
 }
 
 export function onNsfwVerdictsUpdated(fn: () => void): () => void {
