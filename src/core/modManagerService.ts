@@ -2111,7 +2111,7 @@ endif
         if (gbMeta.is_placeholder && !this.getConfig().sandboxMode) {
           // GameBanana didn't answer: never install under made-up details.
           if (!options?.metadataOverride) throw new Error(`Couldn't reach GameBanana for mod ${modId}. Check your connection and try again.`);
-          gbMeta = { ...options.metadataOverride, is_placeholder: false };
+          gbMeta = { ...gbMeta, ...options.metadataOverride, is_placeholder: false } as GameBananaModItem;
         }
         if (options?.metadataOverride) {
           const overrideDl = options.metadataOverride.download_url;
