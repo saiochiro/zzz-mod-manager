@@ -32,7 +32,7 @@ import {
   X,
 } from 'lucide-react';
 import { fairyClient, type FullAppState } from '../services/fairyClient';
-import { filterShowsAllPictures, imageKey, isBlurredByNsfwFilter, isHiddenByNsfwFilter, nsfwLevelOf } from '../shared/nsfw';
+import { isBlurredByNsfwFilter, isHiddenByNsfwFilter, nsfwLevelOf } from '../shared/nsfw';
 import { NsfwBadge } from './NsfwLabel';
 import type { MotifKind } from '../themes/types';
 import { Motif } from '../themes/Motif';
@@ -101,15 +101,12 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
   const galleryImageList = useMemo(() => {
     if (!galleryMod) return [];
     const all = galleryMod.preview_images && galleryMod.preview_images.length > 0 ? galleryMod.preview_images : [galleryMod.thumbnail_url];
-    if (filterShowsAllPictures(nsfwFilterState)) return all;
-    // SFW views: only the pictures the scan rated clean (NSFW screenshots of Experimental mods are removed).
-    const clean = new Set(galleryMod.nsfw_clean_images ?? []);
-    return all.filter((u) => clean.has(imageKey(u)));
-  }, [galleryMod?.preview_images, galleryMod?.thumbnail_url, galleryMod?.id, galleryMod?.nsfw_clean_images, nsfwFilterState]);
-  /** NSFW view: pictures that didn't pass the scan stay blurred until clicked. */
+    return all;
+  }, [galleryMod?.preview_images, galleryMod?.thumbnail_url, galleryMod?.id]);
+  /** NSFW view: an NSFW mod's pictures stay blurred until clicked. */
   const [revealedPics, setRevealedPics] = useState<Set<string>>(new Set());
   const picBlurred = (url?: string) =>
-    nsfwFilterState === 'blur' && Boolean(url) && !(galleryMod?.nsfw_clean_images ?? []).includes(imageKey(url)) && !revealedPics.has(url!);
+    Boolean(url) && Boolean(galleryMod) && isBlurredByNsfwFilter(galleryMod!, nsfwFilterState) && !revealedPics.has(url!);
   // The full mod page often arrives with a different picture list (bigger sizes, more shots).
   // Stay on the picture you were looking at instead of jumping to another one.
   const prevGalleryRef = React.useRef<{ id?: number; list: string[] }>({ list: [] });

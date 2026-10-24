@@ -11,7 +11,6 @@ import {
   isBlurredByNsfwFilter,
   isHiddenByNsfwFilter,
   NSFW_FILE_RE,
-  NSFW_MODEL_CLASSES,
   rateImage,
   titleNamesNsfw,
   TOGGLE_KEY_RE,
@@ -19,7 +18,7 @@ import {
   type NsfwImageScores,
   type NsfwScores,
 } from '../src/shared/nsfw';
-import { applyNsfwReview, initNsfwReview, setNsfwVerdictsForTest } from '../src/core/nsfwReview';
+import { applyNsfwReview, getSfwCatalog, initNsfwReview, setNsfwVerdictsForTest } from '../src/core/nsfwReview';
 import { fetchLiveGameBananaFeed } from '../src/core/gamebananaService';
 import { findNsfwToggles, restoreMod, sanitizeMod } from '../src/core/nsfwSanitizer';
 
@@ -161,17 +160,11 @@ describe('Downloaded labels', () => {
 
   const list = (mods: Record<string, any>) => ({ version: 1 as const, generatedAt: 'x', mods });
 
-  it('applies labels and clean picture lists; mods not in the list stay unchecked', () => {
-    setNsfwVerdictsForTest(list({ 5: { l: 's', f: 0, c: ['a.jpg'] }, 6: { l: 't', f: 1, c: ['b.jpg'] }, 7: { l: 'n', f: 1 } }));
-    expect(applyNsfwReview({ id: 5, is_nsfw: false }, 'gb:5')).toMatchObject({ nsfw_level: 'sfw', nsfw_checked: true, nsfw_clean_images: ['a.jpg'] });
-    expect(applyNsfwReview({ id: 6, is_nsfw: true }, 'gb:6')).toMatchObject({ nsfw_level: 'toggle', is_nsfw: true, nsfw_checked: true });
-    expect(applyNsfwReview({ id: 7, is_nsfw: false }, 'gb:7')).toMatchObject({ nsfw_level: 'nsfw', nsfw_checked: true });
-    expect(applyNsfwReview({ id: 8, is_nsfw: false }, 'gb:8')).toMatchObject({ nsfw_checked: false });
-  });
-
-  it('waits for a new scan when GameBanana flags a mod after a clean label', () => {
-    setNsfwVerdictsForTest(list({ 9: { l: 's', f: 0, c: [] } }));
-    expect(applyNsfwReview({ id: 9, is_nsfw: true }, 'gb:9')).toMatchObject({ nsfw_checked: false, nsfw_level: 'nsfw' });
+  it("labels come from GameBanana only: flagged there = NSFW, otherwise SFW", () => {
+    setNsfwVerdictsForTest(list({ 5: { l: 'n', f: 1 } })); // the list never overrides GameBanana
+    expect(applyNsfwReview({ id: 5, is_nsfw: false }, 'gb:5')).toMatchObject({ nsfw_level: 'sfw', is_nsfw: false, nsfw_checked: true });
+    expect(applyNsfwReview({ id: 6, is_nsfw: true }, 'gb:6')).toMatchObject({ nsfw_level: 'nsfw', is_nsfw: true, nsfw_checked: true });
+    expect(applyNsfwReview(applyNsfwReview({ id: 7, is_nsfw: true }, 'gb:7'), 'gb:7')).toMatchObject({ nsfw_level: 'nsfw' });
   });
 
   it('serves SFW only Browse from the pre-scanned list: complete, sorted and filtered locally', async () => {
@@ -196,9 +189,10 @@ describe('Downloaded labels', () => {
   });
 
   it('uses the saved list on the next start, before any download', () => {
-    fs.writeFileSync(path.join(tmp, 'cache', 'nsfw_verdicts.json'), JSON.stringify(list({ 3: { l: 's', f: 0, c: [] } })));
+    const k = { _idRow: 3, _sName: 'Saved', _aSubmitter: { _idRow: 1, _sName: 'A' } };
+    fs.writeFileSync(path.join(tmp, 'cache', 'nsfw_verdicts.json'), JSON.stringify(list({ 3: { l: 's', f: 0, k } })));
     initNsfwReview(tmp, { fetch: false });
-    expect(applyNsfwReview({ id: 3, is_nsfw: false }, 'gb:3')).toMatchObject({ nsfw_checked: true, nsfw_level: 'sfw' });
+    expect(getSfwCatalog().map((r) => r._sName)).toEqual(['Saved']);
   });
 });
 
@@ -272,42 +266,4 @@ describe('Sanitizing NSFW toggles', () => {
     fs.writeFileSync(path.join(mod, 'mod.ini'), '[KeyJacket]\nkey = 7\n$jacket = 0,1\n');
     expect(sanitizeMod(mod, path.join(tmp, 'bak2')).changed).toBe(false);
   });
-});
-
-describe('NSFW image models', () => {
-  async function load(tf: any, dir: string) {
-    const json = JSON.parse(fs.readFileSync(path.join(dir, 'model.json'), 'utf-8'));
-    const w = fs.readFileSync(path.join(dir, 'weights.bin'));
-    return tf.loadLayersModel(
-      tf.io.fromMemory({
-        modelTopology: json.modelTopology,
-        weightSpecs: json.weightsManifest.flatMap((g: any) => g.weights),
-        weightData: w.buffer.slice(w.byteOffset, w.byteOffset + w.byteLength) as ArrayBuffer,
-      })
-    );
-  }
-
-  it('both bundled models load and score a safe picture as safe', async () => {
-    const tf = await import('@tensorflow/tfjs');
-    await tf.setBackend('cpu');
-    const pixels = new Uint8Array(fs.readFileSync(path.join(__dirname, 'fixtures/scene-224.rgb')));
-    const img = tf.tensor3d(pixels, [224, 224, 3], 'int32').toFloat().div(255);
-    const out: Record<string, NsfwScores> = {};
-    for (const [name, dir, size] of [
-      ['mob', '../prescan/models/mobilenet', 224],
-      ['inc', '../prescan/models/inception', 299],
-    ] as const) {
-      const model = await load(tf, path.resolve(__dirname, dir));
-      const y = tf.tidy(() => model.predict(tf.image.resizeBilinear(img as any, [size, size], true).reshape([1, size, size, 3])) as any);
-      const probs = Array.from((await y.data()) as Float32Array);
-      expect(probs).toHaveLength(NSFW_MODEL_CLASSES.length);
-      expect(Math.abs(probs.reduce((a, b) => a + b, 0) - 1)).toBeLessThan(0.01);
-      out[name] = Object.fromEntries(NSFW_MODEL_CLASSES.map((c, i) => [c, probs[i]])) as unknown as NsfwScores;
-    }
-    console.log('scene scores', out);
-    // The main model must see this safe picture as safe. (The small one alone flags this dark
-    // scene a bit, which is why a picture only counts as clean when both agree.)
-    expect(out.inc.porn + out.inc.hentai, JSON.stringify(out)).toBeLessThan(0.1);
-    expect(rateImage({ inc: out.inc, mob: out.mob }), JSON.stringify(out)).not.toBe('explicit');
-  }, 300_000);
 });

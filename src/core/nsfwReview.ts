@@ -1,7 +1,6 @@
 import fs from 'fs';
 import path from 'path';
 import {
-  CODE_LEVEL,
   NSFW_VERDICTS_URL,
   parseVerdictFile,
   type NsfwLevel,
@@ -11,11 +10,10 @@ import {
 } from '../shared/nsfw';
 
 /**
- * Pre-marked content labels. Mods are scanned ahead of time on GitHub (scripts/nsfw-prescan.mjs,
- * run every hour) and the app only downloads the list (verdicts.json) and applies it. Nothing is
- * scanned on the user's PC, and users can't change a label.
- *
- * Keys: "gb:<GameBanana id>".
+ * Content labels come straight from GameBanana. A GitHub job (scripts/nsfw-prescan.mjs, hourly)
+ * lists every ZZZ mod with GameBanana's label and keeps the cards of the SFW ones, so the
+ * "SFW only" view of Browse can show all of them at once. The app downloads that list
+ * (verdicts.json); nothing is scanned on users' PCs and users can't change a label.
  */
 
 /** Fields the labels add to anything with an NSFW label. */
@@ -140,25 +138,20 @@ export function nsfwKey(item: { gamebanana_id?: number | null; id?: number }): s
   return gb ? `gb:${gb}` : null;
 }
 
-/** Puts the pre-scanned label (if any) on an item. Safe to call more than once. */
-export function applyNsfwReview<T extends NsfwReviewFields>(item: T, key: string | null): T & NsfwReviewFields {
+/**
+ * Puts the label on an item. The label is GameBanana's own: content ratings, NSFW visibility,
+ * or NSFW words in the title or tags (gamebananaService isModRecordNsfw). No AI is involved.
+ * Safe to call more than once. `key` is kept for callers; labels don't depend on it any more.
+ */
+export function applyNsfwReview<T extends NsfwReviewFields>(item: T, _key?: string | null): T & NsfwReviewFields {
   const flagged = item.nsfw_flagged ?? Boolean(item.is_nsfw);
-  const st = key?.startsWith('gb:') ? verdicts.get(key.slice(3)) : undefined;
-  const out: T & NsfwReviewFields = { ...item, nsfw_flagged: flagged };
-  // A label made while GameBanana didn't flag the mod doesn't count once it does: wait for a new scan.
-  if (st && !(flagged && !st.f)) {
-    const level = CODE_LEVEL[st.l] ?? 'nsfw';
-    out.nsfw_level = level;
-    out.is_nsfw = level !== 'sfw';
-    out.nsfw_source = 'ai';
-    out.nsfw_checked = true;
-    out.nsfw_clean_images = st.c ?? [];
-  } else {
-    out.nsfw_level = flagged ? 'nsfw' : 'sfw';
-    out.is_nsfw = flagged;
-    out.nsfw_source = flagged ? 'gamebanana' : undefined;
-    out.nsfw_checked = false;
-    out.nsfw_clean_images = [];
-  }
-  return out;
+  return {
+    ...item,
+    nsfw_flagged: flagged,
+    nsfw_level: flagged ? 'nsfw' : 'sfw',
+    is_nsfw: flagged,
+    nsfw_source: 'gamebanana',
+    nsfw_checked: true,
+    nsfw_clean_images: [],
+  };
 }

@@ -1,4 +1,5 @@
-# Content pre-scan: labels GameBanana mods ahead of time so the app never scans on users' PCs.
+# GameBanana labels: lists every ZZZ mod with GameBanana's own SFW/NSFW label (no AI) plus the
+# cards of SFW mods, so the app's "SFW only" Browse view can show them all at once.
 # Publishes verdicts.json on the nsfw-verdicts branch (one commit, replaced each run so history
 # doesn't grow). The app downloads it from raw.githubusercontent.com.
 name: Content pre-scan
@@ -25,7 +26,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/pre" && cd "$RUNNER_TEMP/pre"
           npm init -y >/dev/null
-          npm i --no-audit --no-fund @tensorflow/tfjs-node@4.22.0 sharp@0.33.5 esbuild@0.21.5
+          npm i --no-audit --no-fund esbuild@0.21.5
           cp "$GITHUB_WORKSPACE/scripts/nsfw-prescan.mjs" .
           npx esbuild "$GITHUB_WORKSPACE/src/shared/nsfw.ts" --format=esm --platform=node --outfile=nsfw.mjs
       - name: Current list
@@ -40,9 +41,9 @@ jobs:
           BUDGET_MIN: '45'
         run: |
           set -o pipefail
-          node "$RUNNER_TEMP/pre/nsfw-prescan.mjs" "$RUNNER_TEMP/pre/nsfw.mjs" prescan/models "$RUNNER_TEMP/out/verdicts.json" 2>&1 | tee run.log \
+          node "$RUNNER_TEMP/pre/nsfw-prescan.mjs" "$RUNNER_TEMP/pre/nsfw.mjs" "$RUNNER_TEMP/out/verdicts.json" 2>&1 | tee run.log \
             || { tail -12 run.log | while IFS= read -r l; do echo "::error::${l:0:800}"; done; exit 1; }
-          grep -E "^(mods on|to scan|done|labels in)" run.log | while IFS= read -r l; do echo "::notice::$l"; done
+          grep -E "^(mods on|pages to read|done|labels in)" run.log | while IFS= read -r l; do echo "::notice::$l"; done
       - name: Publish
         if: always()
         shell: bash
