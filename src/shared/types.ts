@@ -217,6 +217,8 @@ export interface GameBananaModItem extends NsfwReviewInfo {
   md5_checksum: string;
   description: string;
   is_live_api?: boolean;
+  /** Made up because GameBanana couldn't be reached (offline demo data); never install with it. */
+  is_placeholder?: boolean;
   is_nsfw?: boolean;
   nsfw_reason?: string;
   is_featured?: boolean;

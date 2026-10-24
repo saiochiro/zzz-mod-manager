@@ -73,18 +73,20 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
 
   // The content filter is for Browse only: the Library always shows every installed mod.
   const visibleMods = p.mods;
-  const onCount = visibleMods.filter((m) => m.enabled).length;
-  const attentionCount = visibleMods.filter((m) => getModHealth(m) !== 'working').length;
-  const fixableCount = visibleMods.filter((m) => getModHealth(m) === 'fixable').length;
+  // The pills count what you're looking at: the picked character, or everything.
+  const scopedMods = agentId === 'ALL' ? visibleMods : visibleMods.filter((m) => m.agent_id === agentId);
+  const onCount = scopedMods.filter((m) => m.enabled).length;
+  const attentionCount = scopedMods.filter((m) => getModHealth(m) !== 'working').length;
+  const fixableCount = scopedMods.filter((m) => getModHealth(m) === 'fixable').length;
 
   const categoryCounts = useMemo(() => {
     const c: Record<string, number> = {};
-    for (const m of visibleMods) {
+    for (const m of scopedMods) {
       const k = m.category_tag || 'Skins';
       c[k] = (c[k] || 0) + 1;
     }
     return c;
-  }, [visibleMods]);
+  }, [scopedMods]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -161,12 +163,17 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
                     title="Show all mods"
                   >
                     <LayoutGrid style={{ color: 'var(--primary-text)' }} />
-                    <strong>{visibleMods.length}</strong> installed
+                    <strong>{scopedMods.length}</strong> installed
                   </button>
-                  <span className="stat-pill">
+                  <button
+                    className={`stat-pill ${status === 'ON' ? 'is-active is-active--on' : ''}`}
+                    onClick={() => setStatus(status === 'ON' ? 'ALL' : 'ON')}
+                    style={{ cursor: 'pointer' }}
+                    title={status === 'ON' ? 'Show all mods' : 'Show only mods that are on'}
+                  >
                     <Power style={{ color: 'var(--success)' }} />
                     <strong>{onCount}</strong> on
-                  </span>
+                  </button>
                   {attentionCount > 0 && (
                     <button
                       className={`stat-pill ${status === 'ATTENTION' ? 'is-active' : ''}`}
@@ -268,7 +275,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
             <div className="page-toolbar" style={{ position: 'static', paddingTop: 0, borderBottom: 0, background: 'transparent', backdropFilter: 'none' }}>
               <div className="chip-row" style={{ paddingTop: 12 }}>
                 {(['ALL', 'Skins', 'Weapons', 'UI', 'Audio'] as CategoryFilter[]).map((c) => {
-                  const count = c === 'ALL' ? visibleMods.length : categoryCounts[c] || 0;
+                  const count = c === 'ALL' ? scopedMods.length : categoryCounts[c] || 0;
                   if (c !== 'ALL' && count === 0) return null;
                   return (
                     <button key={c} className={`chip ${category === c ? 'is-active' : ''}`} onClick={() => setCategory(c)} aria-pressed={category === c}>

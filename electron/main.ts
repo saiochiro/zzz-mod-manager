@@ -533,6 +533,11 @@ app.whenReady().then(() => {
     } catch (err) {
       writeBootLog(`restore sanitized mods: ${(err as Error).message}`);
     }
+    try {
+      if (modService.repairMislabeledUpdates()) mainWindow?.webContents.send('zzz:stateUpdated', modService.getFullState());
+    } catch (err) {
+      writeBootLog(`repair mislabeled updates: ${(err as Error).message}`);
+    }
   }, 3000);
   setupUpdater(() => mainWindow, writeBootLog, () => {
     // Everything that could keep the process alive while the installer runs.

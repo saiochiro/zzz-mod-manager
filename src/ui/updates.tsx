@@ -157,6 +157,7 @@ export function useModUpdates(mods: ModManifest[] | null) {
     for (const [id, group] of byId) {
       try {
         const profile = await fairyClient.fetchGameBananaMod(id);
+        if (profile.is_placeholder) continue; // GameBanana didn't answer: no update info
         checked++;
         for (const m of group) {
           if (isNewer(profile, m)) found[m.mod_uuid] = profile;

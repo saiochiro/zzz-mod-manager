@@ -151,3 +151,37 @@ drawindexed = auto
     expect(undoRes.manifest.broken_hashes).toContain('deadbeef');
   });
 });
+
+describe('Repairing updates installed under a made-up name (2.14.0-2.14.2 bug)', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'repair-'));
+  });
+  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  it('takes the real name and GameBanana link back from the previous version in backups', () => {
+    const service = new ModManagerService(dir);
+    service.seedInitialSandboxMods();
+    service.updateConfig({ sandboxMode: false });
+    const ellen = service.getFullState().mods.filter((m) => m.agent_id === 'ellen_joe');
+    expect(ellen.length).toBeGreaterThanOrEqual(2);
+    const [oldVer, newVer] = ellen;
+    const root = path.join(dir, 'ZZMI_Root');
+    const write = (p: string, patch: object) => {
+      const f = path.join(p, 'mod_manifest.json');
+      fs.writeFileSync(f, JSON.stringify({ ...JSON.parse(fs.readFileSync(f, 'utf-8')), ...patch }, null, 2));
+    };
+    // The previous version, moved to backups by the update.
+    write(path.join(root, oldVer.install_path), { title: 'Real Mod Name', author: 'RealAuthor', gamebanana_id: 555111, thumbnail_url: 'https://images.gamebanana.com/img/ss/mods/x.jpg' });
+    const backup = path.join(dir, 'ZZZ_Mod_Manager_AppData', 'backups', 'mod-updates', 'Old__2026');
+    fs.mkdirSync(path.dirname(backup), { recursive: true });
+    fs.renameSync(path.join(root, oldVer.install_path), backup);
+    // The new version, installed with made-up details.
+    write(path.join(root, newVer.install_path), { title: 'GameBanana ZZZ Mod #1823399', author: 'ProxyModder', gamebanana_id: 1823399, installed_at: new Date().toISOString() });
+
+    expect(service.repairMislabeledUpdates()).toBe(1);
+    const fixed = service.getFullState().mods.find((m) => m.mod_uuid === newVer.mod_uuid)!;
+    expect(fixed).toMatchObject({ title: 'Real Mod Name', author: 'RealAuthor', gamebanana_id: 555111 });
+    expect(service.repairMislabeledUpdates()).toBe(0);
+  });
+});

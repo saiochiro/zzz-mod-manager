@@ -773,6 +773,7 @@ export async function fetchGameBananaModProfile(modId: number): Promise<GameBana
 
   if (curated) return curated;
   return {
+    is_placeholder: true,
     id: modId,
     title: `GameBanana ZZZ Mod #${modId}`,
     author: 'ProxyModder',

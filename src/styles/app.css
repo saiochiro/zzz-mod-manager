@@ -1315,6 +1315,10 @@ button.stat-pill:hover {
   border-color: var(--warning);
   background: var(--warning-soft);
 }
+.stat-pill.is-active--on {
+  border-color: var(--success);
+  background: var(--success-soft);
+}
 .stat-pill strong {
   font-size: var(--fs-lead);
   font-weight: 750;

@@ -52,6 +52,29 @@ import {
 } from './nsfwVisionService';
 import { applyNsfwReview, initNsfwReview, nsfwKey } from './nsfwReview';
 import { isSanitized, restoreMod } from './nsfwSanitizer';
+/**
+ * Renames a mod folder, retrying for a few seconds when Windows briefly locks it (antivirus,
+ * search indexing, Explorer previews, the game reading files). Throws a clear message if it stays locked.
+ */
+function renameWithRetry(from: string, to: string): void {
+  const busy = new Set(['EPERM', 'EBUSY', 'EACCES']);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      fs.renameSync(from, to);
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code || '';
+      if (!busy.has(code)) throw err;
+      if (attempt >= 11) {
+        throw new Error(
+          `Windows is keeping "${path.basename(from)}" locked, so it can't be renamed right now. Close the game and any window showing that folder, then try again.`
+        );
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
+    }
+  }
+}
+
 import { buildMasterSwapIniContent, syncAgentHSwapOnDisk } from './hSwapEngine';
 import { ZZMI_COMPONENTS } from '../shared/zzmiComponents';
 import {
@@ -957,7 +980,7 @@ endif
                 if (fs.existsSync(targetDir)) {
                   fs.rmSync(targetDir, { recursive: true, force: true });
                 }
-                fs.renameSync(modAbsDir, targetDir);
+                renameWithRetry(modAbsDir, targetDir);
                 manifest.install_path = path.posix.join(
                   'Mods',
                   '_ZZZMM_Managed',
@@ -1073,6 +1096,112 @@ endif
     if (!fs.existsSync(path.join(this.zzmiRootPath, m.install_path, 'workshop_recipe.json'))) return m;
     const tags = (m.tags || []).includes('Workshop') ? m.tags : ['Workshop', ...(m.tags || [])];
     return { ...m, gamebanana_id: null, tags };
+  }
+
+  /**
+   * 2.14.0-2.14.2 bug: updating a mod read the download link's file number as the mod number, so
+   * the new version was installed as "GameBanana ZZZ Mod #<n>" by "ProxyModder" with a made-up
+   * cover. This gives those mods back their real name, author, pictures and GameBanana link, taken
+   * from the previous version (in backups, or still installed). Returns how many were fixed.
+   */
+  public repairMislabeledUpdates(): number {
+    if (this.getConfig().sandboxMode) return 0;
+    const isFake = (m: Partial<ModManifest>) => m.author === 'ProxyModder' && /^GameBanana ZZZ Mod #\d+$/.test(m.title || '');
+    const mods = this.scanInstalledMods();
+    const fakes = mods.filter(isFake);
+    if (!fakes.length) return 0;
+
+    // Previous versions moved aside by updates.
+    const backupRoot = path.join(this.appDataPath, 'backups', 'mod-updates');
+    const backups: Array<{ dir: string; at: number; m: ModManifest }> = [];
+    try {
+      for (const name of fs.readdirSync(backupRoot)) {
+        const dir = path.join(backupRoot, name);
+        try {
+          const m = JSON.parse(fs.readFileSync(path.join(dir, 'mod_manifest.json'), 'utf-8')) as ModManifest;
+          if (m?.gamebanana_id && !isFake(m)) backups.push({ dir, at: fs.statSync(dir).mtimeMs, m });
+        } catch {
+          // not a mod backup
+        }
+      }
+    } catch {
+      // no backups yet
+    }
+
+    let fixed = 0;
+    const used = new Set<string>();
+    for (const fake of fakes) {
+      const installedAt = Date.parse(fake.installed_at || '') || 0;
+      const sameAgent = (m: ModManifest) => m.agent_id === fake.agent_id;
+      // 1. The version that update moved to backups (same character, moved right after the install).
+      const fromBackup = backups
+        .filter((b) => sameAgent(b.m) && !used.has(b.dir) && Math.abs(b.at - installedAt) < 60 * 60 * 1000)
+        .sort((a, b) => Math.abs(a.at - installedAt) - Math.abs(b.at - installedAt))[0];
+      // 2. The update stopped before moving it: the only other GameBanana mod of that character.
+      const stillInstalled = fromBackup
+        ? null
+        : (() => {
+            const c = mods.filter((m) => sameAgent(m) && !isFake(m) && m.gamebanana_id && !(m.tags || []).includes('Workshop'));
+            return c.length === 1 ? c[0] : null;
+          })();
+      const prev = fromBackup?.m ?? stillInstalled;
+      if (!prev) continue;
+      if (fromBackup) used.add(fromBackup.dir);
+
+      const dir = this.modAbsDir(fake);
+      const manifestPath = path.join(dir, 'mod_manifest.json');
+      try {
+        const cur = JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as ModManifest;
+        const next: ModManifest = {
+          ...cur,
+          title: prev.title,
+          author: prev.author,
+          gamebanana_id: prev.gamebanana_id,
+          thumbnail_url: prev.thumbnail_url?.startsWith('http') ? prev.thumbnail_url : cur.thumbnail_url,
+          preview_images: prev.preview_images?.length ? prev.preview_images : cur.preview_images,
+          description: prev.description || cur.description,
+          category_tag: prev.category_tag || cur.category_tag,
+          is_nsfw: Boolean(prev.is_nsfw || cur.is_nsfw),
+        };
+        fs.writeFileSync(manifestPath, JSON.stringify(next, null, 2), 'utf-8');
+        // A mod.json with the made-up title would bring the wrong name back on a rebuild.
+        const metaPath = path.join(dir, 'mod.json');
+        if (fs.existsSync(metaPath)) {
+          try {
+            const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+            if (/^GameBanana ZZZ Mod #/.test(meta?.title || '')) {
+              fs.writeFileSync(metaPath, JSON.stringify({ ...meta, title: prev.title, author: prev.author, gamebanana_id: prev.gamebanana_id }, null, 2), 'utf-8');
+            }
+          } catch {
+            // leave it
+          }
+        }
+        // Finish the interrupted update: the new version replaces the old one (kept in backups).
+        if (stillInstalled) {
+          const src = this.modAbsDir(stillInstalled);
+          const destRoot = path.join(this.appDataPath, 'backups', 'mod-updates');
+          fs.mkdirSync(destRoot, { recursive: true });
+          const dest = path.join(destRoot, `${path.basename(src)}__${new Date().toISOString().replace(/[:.]/g, '-')}`);
+          try {
+            renameWithRetry(src, dest);
+          } catch {
+            // locked: both versions stay installed; the old one still shows its update
+          }
+        }
+        fixed++;
+        this.addLog('success', 'ROUTER', `Restored the name and details of [${prev.title}] after its update.`, fake.mod_uuid);
+      } catch (err) {
+        console.warn('[Update repair]', err);
+      }
+    }
+    if (fixed) {
+      try {
+        this.syncModsToXxmiLauncher();
+      } catch {
+        // XXMI not set up yet
+      }
+    }
+    return fixed;
   }
 
   private sanitizeBackupDir(mod: ModManifest): string {
@@ -1587,7 +1716,7 @@ endif
         const otherDisabledFolder = formatDisabledFolderName(other.folder_name);
         const otherNewAbs = path.join(otherParent, otherDisabledFolder);
         if (otherOldAbs !== otherNewAbs && fs.existsSync(otherOldAbs)) {
-          fs.renameSync(otherOldAbs, otherNewAbs);
+          renameWithRetry(otherOldAbs, otherNewAbs);
         }
         other.enabled = false;
         other.install_path = path.posix.join(
@@ -1612,7 +1741,7 @@ endif
 
     const newAbsPath = path.join(parentDir, newDiskFolderName);
     if (oldAbsPath !== newAbsPath && fs.existsSync(oldAbsPath)) {
-      fs.renameSync(oldAbsPath, newAbsPath);
+      renameWithRetry(oldAbsPath, newAbsPath);
     }
 
     const relParent = path.posix.dirname(target.install_path);
@@ -1966,8 +2095,12 @@ endif
 
     try {
       // Check if sourceInput is a GameBanana URL, zzzmgr:// URI, or numeric Mod ID
+      // A gamebanana.com/dl/<n> link holds a FILE number, not the mod's: use the mod id we were given.
+      const dlLink = /gamebanana\.com\/dl\/\d+/i.test(sourceInput);
+      const overrideId = options?.metadataOverride?.id;
       const modIdMatch =
-        sourceInput.match(/(?:gamebanana\.com\/(?:mods|dl)\/|mods\/)(\d+)/i) ||
+        (dlLink && overrideId ? [sourceInput, String(overrideId)] : null) ||
+        sourceInput.match(/(?:gamebanana\.com\/mods\/|mods\/)(\d+)/i) ||
         sourceInput.match(/zzzmgr:\/\/install\/(\d+)/i) ||
         sourceInput.match(/^gb:(\d+)$/i) ||
         (/^\d{5,8}$/.test(sourceInput.trim()) ? [sourceInput, sourceInput.trim()] : null);
@@ -1975,6 +2108,11 @@ endif
       if (modIdMatch) {
         const modId = Number(modIdMatch[1]);
         gbMeta = await fetchGameBananaModProfile(modId);
+        if (gbMeta.is_placeholder && !this.getConfig().sandboxMode) {
+          // GameBanana didn't answer: never install under made-up details.
+          if (!options?.metadataOverride) throw new Error(`Couldn't reach GameBanana for mod ${modId}. Check your connection and try again.`);
+          gbMeta = { ...options.metadataOverride, is_placeholder: false };
+        }
         if (options?.metadataOverride) {
           const overrideDl = options.metadataOverride.download_url;
           const validHttpDl =
@@ -2571,7 +2709,7 @@ endif
               );
               if (existingOpposite && !fs.existsSync(dstChildPath)) {
                 try {
-                  fs.renameSync(path.join(dstAgentDir, existingOpposite), dstChildPath);
+                  renameWithRetry(path.join(dstAgentDir, existingOpposite), dstChildPath);
                 } catch {
                   // Fallback to copy below
                 }
@@ -3155,7 +3293,7 @@ endif
           : formatDisabledFolderName(mod.folder_name);
         const newAbs = path.join(parentDir, newDiskName);
         if (oldAbs !== newAbs && fs.existsSync(oldAbs)) {
-          fs.renameSync(oldAbs, newAbs);
+          renameWithRetry(oldAbs, newAbs);
         }
         mod.enabled = shouldEnable;
         mod.install_path = path.posix.join(path.posix.dirname(mod.install_path), newDiskName);
@@ -3291,7 +3429,7 @@ endif
       const newAbsDir = path.join(parentDir, targetDiskFolder);
       if (fs.existsSync(newAbsDir)) continue;
 
-      fs.renameSync(oldAbsDir, newAbsDir);
+      renameWithRetry(oldAbsDir, newAbsDir);
 
       const previousFolderName = mod.previous_folder_name || mod.folder_name;
       const previousInstallPath = mod.previous_install_path || mod.install_path;
@@ -3354,7 +3492,7 @@ endif
       const restoredAbsDir = path.join(parentDir, targetDiskFolder);
 
       if (curAbsDir !== restoredAbsDir && !fs.existsSync(restoredAbsDir)) {
-        fs.renameSync(curAbsDir, restoredAbsDir);
+        renameWithRetry(curAbsDir, restoredAbsDir);
         mod.folder_name = sanitizeModFolderName(mod.previous_folder_name);
         mod.install_path = path.posix.join(
           path.posix.dirname(mod.install_path),
@@ -3980,11 +4118,11 @@ endif
     for (const f of fs.readdirSync(dir)) {
       if (/^(mod\.json|mod_manifest\.json|preview\.(webp|png|jpe?g))$/i.test(f)) fs.copyFileSync(path.join(dir, f), path.join(tmp, f));
     }
-    fs.renameSync(dir, old);
+    renameWithRetry(dir, old);
     try {
-      fs.renameSync(tmp, dir);
+      renameWithRetry(tmp, dir);
     } catch (err) {
-      fs.renameSync(old, dir);
+      renameWithRetry(old, dir);
       throw err;
     }
     fs.rmSync(old, { recursive: true, force: true });

@@ -664,7 +664,8 @@ const AppInner: React.FC = () => {
     if (!profile || !old) return false;
     setUpdatingIds((prev) => new Set(prev).add(uuid));
     try {
-      const res = await fairyClient.ingestPackage(profile.download_url, { metadataOverride: profile });
+      // Install by mod id: the download link holds a file number, not the mod's.
+      const res = await fairyClient.ingestPackage(profile.id ? `gb:${profile.id}` : profile.download_url, { metadataOverride: profile });
       let latest = res.state;
       setAppState(latest);
       if (res.multiAgentPrompt) {
@@ -680,7 +681,14 @@ const AppInner: React.FC = () => {
       // Keep the same on/off state as before
       for (const nm of res.installedMods) {
         const cur = latest.mods.find((m) => m.mod_uuid === nm.mod_uuid);
-        if (cur && cur.enabled !== old.enabled) latest = (await fairyClient.toggleEnabled(nm.mod_uuid)).state;
+        if (cur && cur.enabled !== old.enabled) {
+          try {
+            latest = (await fairyClient.toggleEnabled(nm.mod_uuid)).state;
+          } catch (toggleErr) {
+            // The update itself worked; only switching it on/off failed (folder locked).
+            notify({ tone: 'warning', title: `Updated “${old.title}”, but couldn't switch it ${old.enabled ? 'on' : 'off'}`, message: errMsg(toggleErr) });
+          }
+        }
       }
       // Move the old version to backups (unless the new one replaced it in place)
       const replacedInPlace = res.installedMods.some((nm) => nm.install_path === old.install_path);
