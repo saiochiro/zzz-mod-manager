@@ -198,7 +198,7 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
               </button>
               <button className="menu-item" role="menuitem" onClick={() => (menu.setOpen(false), onOpenFolder())}>
                 <FolderOpen />
-                Show in folder
+                Find in File Explorer
               </button>
               <div className="menu-sep" />
               {confirmDelete ? (

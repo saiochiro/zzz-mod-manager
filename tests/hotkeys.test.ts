@@ -39,9 +39,12 @@ describe('Tidy hotkeys', () => {
     const plan = planModKeys(toggles);
     const keys = [...plan.values()];
     expect(new Set(keys).size).toBe(keys.length); // no two toggles on one key
-    expect(plan.get('keyjacket')).toBe('J');
-    expect(plan.get('keyhair')).toBe('K');
-    expect(plan.get('keybangs')).not.toBe('K');
+    // Top to bottom: J, K, L...
+    expect([...plan.entries()]).toEqual([
+      ['keyjacket', 'J'],
+      ['keyhair', 'K'],
+      ['keybangs', 'L'],
+    ]);
     for (const k of keys) expect(RESERVED_KEYS.has(k)).toBe(false);
   });
 

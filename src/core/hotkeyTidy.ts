@@ -1,8 +1,8 @@
 /**
  * "Tidy hotkeys": gives mods a simple, clash-free key layout.
  *
- *  1. Inside one mod, every toggle gets its own key (J/K/L by kind of part first, then a fixed
- *     list of spare keys), so two toggles of the same mod never share a key.
+ *  1. Inside one mod, every toggle gets its own key, top to bottom: J, K, L, then a fixed list of
+ *     spare keys, so two toggles of the same mod never share a key.
  *  2. Keys the game itself uses (WASD, Q, E, R, F, Shift, Space, Tab, M, number keys...) and the
  *     H key (outfit rotation) are never handed out.
  *  3. Every key only works while that mod's character is on screen: pressing J for Ellen's jacket
@@ -21,29 +21,20 @@ export const RESERVED_KEYS = new Set(
     .concat(Array.from({ length: 12 }, (_, i) => `F${i + 1}`))
 );
 
-export function preferredSlot(label: string, variable: string): 'J' | 'K' | 'L' {
-  const t = `${label} ${variable}`.toLowerCase();
-  if (/glass|mask|hat|hair|visor|horn|monocle|ear|headphone|ribbon|tail|bang|face/.test(t)) return 'K';
-  if (/weapon|blade|sword|katana|glow|fx|shield|scissor|gun|stinger|flame/.test(t)) return 'L';
-  return 'J';
-}
+/** The keys handed out, in order: J, K, L first, then the spare keys. */
+export const KEY_ORDER = ['J', 'K', 'L', ...SPARE_KEYS].filter((k) => !RESERVED_KEYS.has(k));
 
 /**
- * Picks a key for each toggle of one mod: its preferred J/K/L slot if still free, otherwise the
- * next free spare key. Returns section name -> key.
+ * Picks a key for each toggle of one mod, top to bottom in the order the mod lists them (the same
+ * order the Hotkeys tab shows): the first toggle gets J, then K, L, U, I, O, P, Y, N, numpad 1-9.
+ * Predictable, and no two toggles of a mod share a key. Returns section name (lowercase) -> key.
  */
-export function planModKeys(toggles: Array<{ section_name: string; label: string; variable: string }>): Map<string, string> {
-  const used = new Set<string>();
+export function planModKeys(toggles: Array<{ section_name: string; label?: string; variable?: string }>): Map<string, string> {
   const plan = new Map<string, string>();
-  const take = (k: string) => {
-    used.add(k);
-    return k;
-  };
   for (const t of toggles) {
-    if (plan.has(t.section_name.toLowerCase())) continue;
-    const pref = preferredSlot(t.label, t.variable);
-    const key = !used.has(pref) ? take(pref) : take(['J', 'K', 'L', ...SPARE_KEYS].find((k) => !used.has(k) && !RESERVED_KEYS.has(k)) ?? pref);
-    plan.set(t.section_name.toLowerCase(), key);
+    const id = t.section_name.toLowerCase();
+    if (plan.has(id)) continue;
+    plan.set(id, KEY_ORDER[plan.size] ?? KEY_ORDER[KEY_ORDER.length - 1]);
   }
   return plan;
 }

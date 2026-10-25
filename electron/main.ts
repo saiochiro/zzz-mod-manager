@@ -525,6 +525,17 @@ handleIpc('mods:archive', async (_e, modUuid: string) => {
   return { state: modService.getFullState(), archivedTo };
 });
 
+// Opens File Explorer with the mod's folder selected. Looks the mod up by id, so it still works
+// after the folder was renamed (switched on/off, updated, tidied).
+handleIpc('zzz:revealMod', async (_e, modUuid: string) => {
+  const mod = modService.scanInstalledMods().find((m) => m.mod_uuid === modUuid);
+  if (!mod) throw new Error('That mod is no longer installed.');
+  const absPath = path.join(modService.getConfig().zzmiRootPath, mod.install_path);
+  if (!fs.existsSync(absPath)) throw new Error("The mod's folder couldn't be found.");
+  shell.showItemInFolder(absPath);
+  return true;
+});
+
 handleIpc('zzz:openModFolder', async (_e, relInstallPath: string) => {
   const cfg = modService.getConfig();
   const absPath = path.join(cfg.zzmiRootPath, relInstallPath);

@@ -1,7 +1,6 @@
-What's new in 2.14.8
+What's new in 2.14.9
 
-- Tidy hotkeys is much smarter. Each mod's keys now only work while that mod's character is on screen, so pressing a key for one character's outfit no longer opens another character's menu. No two toggles in the same mod share a key, and keys the game uses (WASD, Q, E, R, F, numbers and more) and H (outfit rotation) are never used. Your original files are kept in backups.
-- New Tidy keys button in the Library. With a character picked it tidies just that character's mods, otherwise all of them. If you tidied before, press it once more to get the new behavior.
-- Fixed Update all turning mods on. Updated mods now stay on or off exactly like before the update, and the previous version is kept in backups.
+- Tidy keys now hands out keys in a simple order, top to bottom as each mod lists its options: the first gets J, then K, L, U, I, O, P, Y, N, then numpad 1 to 9. No more keys that look random. Press Tidy keys again to re-sort mods you already tidied.
+- New Find in File Explorer button for every mod (in its details and in the card's menu). It opens File Explorer with the mod's folder selected, and it works even after the mod was turned on or off, updated or renamed.
 
 Requires XXMI Launcher with ZZMI set up. Questions or bugs? Reach out on Discord: ghxty

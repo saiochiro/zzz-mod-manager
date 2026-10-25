@@ -384,6 +384,9 @@ export const fairyClient = {
   onNsfwVerdictsUpdated: (cb: () => void): (() => void) =>
     window.fairyBridge?.on ? window.fairyBridge.on('nsfw:verdicts-updated', cb) : () => {},
 
+  /** File Explorer opens with the mod's folder selected. */
+  revealMod: (modUuid: string): Promise<boolean> => invokeBackend('zzz:revealMod', modUuid),
+
   openModFolder: async (relInstallPath: string): Promise<boolean> => {
     if (window.fairyBridge?.isElectron) {
       return window.fairyBridge.invoke('zzz:openModFolder', relInstallPath);

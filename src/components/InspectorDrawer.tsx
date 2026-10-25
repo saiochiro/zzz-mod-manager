@@ -38,7 +38,8 @@ interface InspectorDrawerProps {
   onRepairMod: (modUuid: string) => void;
   onUndoRepair: (modUuid: string) => void;
   onToggleHCycle: (modUuid: string) => void;
-  onOpenFolder?: (relInstallPath: string) => void;
+  /** File Explorer opens with this mod's folder selected. */
+  onOpenFolder?: (modUuid: string) => void;
   onSetCustomImageFile?: (modUuid: string) => void;
   onPasteThumbnailFromClipboard?: (modUuid: string) => void;
   /** After you change the mod's content label. */
@@ -258,9 +259,9 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
 
               <div className="row wrap">
                 {onOpenFolder && (
-                  <button className="btn btn--secondary btn--sm" onClick={() => onOpenFolder(mod.install_path)}>
+                  <button className="btn btn--secondary btn--sm" onClick={() => onOpenFolder(mod.mod_uuid)}>
                     <FolderOpen />
-                    Show in folder
+                    Find in File Explorer
                   </button>
                 )}
                 {onSetCustomImageFile && (

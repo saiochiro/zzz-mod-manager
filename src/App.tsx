@@ -447,6 +447,15 @@ const AppInner: React.FC = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  const handleRevealMod = (modUuid: string) =>
+    fairyClient.revealMod(modUuid).catch((err) => notify({ tone: 'error', title: 'Couldn’t open File Explorer', message: errMsg(err) }));
+  /** Library cards pass the folder path; find the mod it belongs to and reveal it by id. */
+  const handleRevealModByPath = (installPath: string) => {
+    const mod = appState?.mods.find((m) => m.install_path === installPath);
+    if (mod) handleRevealMod(mod.mod_uuid);
+    else fairyClient.openModFolder(installPath);
+  };
+
   /** Several mods on/off at once ("All off", "Surprise me"): instant on screen, one sync behind it. */
   const handleSetModsEnabled = async (changes: Array<{ modUuid: string; enabled: boolean }>, message: string) => {
     if (!changes.length) return;
@@ -1112,7 +1121,7 @@ const AppInner: React.FC = () => {
               onSetCustomImage={handleSetCustomImageFile}
               onPasteThumbnail={handlePasteThumbnailFromClipboard}
               onDelete={handleDeleteMod}
-              onOpenFolder={(p) => fairyClient.openModFolder(p)}
+              onOpenFolder={handleRevealModByPath}
               onInstallArchive={handleImportArchiveDialog}
               onOpenImport={() => setImportOpen(true)}
               onBrowse={() => setScreen('browse')}
@@ -1263,7 +1272,7 @@ const AppInner: React.FC = () => {
           onRepairMod={handleRepairMod}
           onUndoRepair={handleUndoRepair}
           onToggleHCycle={handleToggleHCycle}
-          onOpenFolder={(relPath) => fairyClient.openModFolder(relPath)}
+          onOpenFolder={handleRevealMod}
           onSetCustomImageFile={handleSetCustomImageFile}
           onPasteThumbnailFromClipboard={handlePasteThumbnailFromClipboard}
           onStateChange={setAppState}
