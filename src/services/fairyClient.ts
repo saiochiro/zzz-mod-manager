@@ -111,11 +111,13 @@ export const fairyClient = {
     state: FullAppState;
   }> => invokeBackend('zzz:remapSubToggle', modUuid, sectionName, newKey),
 
-  standardizeHotkeys: (): Promise<{
+  /** Tidy hotkeys for every mod, or only one character's mods. */
+  standardizeHotkeys: (agentId?: string): Promise<{
     updatedModsCount: number;
     totalKeysRemapped: number;
+    scopedKeys: number;
     state: FullAppState;
-  }> => invokeBackend('zzz:standardizeHotkeys'),
+  }> => invokeBackend('zzz:standardizeHotkeys', agentId),
 
   repairMod: (
     modUuid: string

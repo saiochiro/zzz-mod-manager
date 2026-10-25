@@ -491,16 +491,18 @@ const AppInner: React.FC = () => {
     }
   };
 
-  const handleStandardizeAll = async () => {
+  const handleStandardizeAll = async (agentId?: string) => {
     setIsBusy(true);
     try {
-      const res = await fairyClient.standardizeHotkeys();
+      const res = await fairyClient.standardizeHotkeys(agentId);
       setAppState(res.state);
       if (selectedModUuid && inspectorOpen) await handleOpenInspector(selectedModUuid);
       notify({
         tone: 'success',
-        title: 'Hotkeys tidied',
-        message: `${res.totalKeysRemapped} keys updated across ${res.updatedModsCount} mods.`,
+        title: res.updatedModsCount ? 'Hotkeys tidied' : 'Hotkeys were already tidy',
+        message: res.updatedModsCount
+          ? `${res.totalKeysRemapped} key${res.totalKeysRemapped === 1 ? '' : 's'} moved in ${res.updatedModsCount} mod${res.updatedModsCount === 1 ? '' : 's'}. Each mod's keys now only work while its character is on screen. The old files are kept in backups.`
+          : undefined,
       });
     } catch (err) {
       notify({ tone: 'error', title: 'Couldn’t tidy hotkeys', message: errMsg(err) });
@@ -717,9 +719,13 @@ const AppInner: React.FC = () => {
     if (!profile || !old) return false;
     setUpdatingIds((prev) => new Set(prev).add(uuid));
     try {
-      // Install by mod id: the download link holds a file number, not the mod's.
-      const res = await fairyClient.ingestPackage(profile.id ? `gb:${profile.id}` : profile.download_url, { metadataOverride: profile });
-      let latest = res.state;
+      // Install by mod id (the download link holds a file number, not the mod's). The backend moves
+      // the old version to backups and installs the new one already on or off, like the old one was.
+      const res = await fairyClient.ingestPackage(profile.id ? `gb:${profile.id}` : profile.download_url, {
+        metadataOverride: profile,
+        replaceModUuid: uuid,
+      });
+      const latest = res.state;
       setAppState(latest);
       if (res.multiAgentPrompt) {
         setMultiAgentPrompt(res.multiAgentPrompt);
@@ -730,29 +736,8 @@ const AppInner: React.FC = () => {
         });
         return false;
       }
+      if (!res.success) throw new Error(res.error || 'The update failed.');
       if (!res.installedMods.length) throw new Error(res.error || 'The download had no installable files.');
-      // Keep the same on/off state as before
-      for (const nm of res.installedMods) {
-        const cur = latest.mods.find((m) => m.mod_uuid === nm.mod_uuid);
-        if (cur && cur.enabled !== old.enabled) {
-          try {
-            latest = (await fairyClient.toggleEnabled(nm.mod_uuid)).state;
-          } catch (toggleErr) {
-            // The update itself worked; only switching it on/off failed (folder locked).
-            notify({ tone: 'warning', title: `Updated “${old.title}”, but couldn't switch it ${old.enabled ? 'on' : 'off'}`, message: errMsg(toggleErr) });
-          }
-        }
-      }
-      // Move the old version to backups (unless the new one replaced it in place)
-      const replacedInPlace = res.installedMods.some((nm) => nm.install_path === old.install_path);
-      if (!replacedInPlace && latest.mods.some((m) => m.mod_uuid === uuid)) {
-        try {
-          latest = (await fairyClient.archiveMod(uuid)).state;
-        } catch {
-          // Browser preview has no archive step; both versions stay installed.
-        }
-      }
-      setAppState(latest);
       modUpdates.clear(uuid);
       if (selectedModUuid === uuid) setInspectorOpen(false);
       if (!opts.quiet) {
@@ -1136,6 +1121,7 @@ const AppInner: React.FC = () => {
               onUndoOrganize={handleUndoOrganizeFolders}
               canUndoOrganize={canUndoOrganize}
               onSetModsEnabled={handleSetModsEnabled}
+              onTidyHotkeys={handleStandardizeAll}
             />
           )}
 

@@ -7,6 +7,7 @@ import {
   Compass,
   Dices,
   FolderInput,
+  Keyboard,
   FolderPlus,
   HardDriveDownload,
   LayoutGrid,
@@ -64,6 +65,8 @@ interface LibraryScreenProps {
   canUndoOrganize: boolean;
   /** Turns several mods on/off at once; `message` is shown when it's done. */
   onSetModsEnabled: (changes: Array<{ modUuid: string; enabled: boolean }>, message: string) => void;
+  /** Tidy hotkeys for one character (or every mod when no character is picked). */
+  onTidyHotkeys: (agentId?: string) => void;
 }
 
 export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
@@ -244,6 +247,20 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
                   >
                     <PowerOff />
                     All off
+                  </button>
+                )}
+                {scopedMods.some((m) => m.sub_toggles.length > 0) && (
+                  <button
+                    className="btn btn--secondary"
+                    onClick={() => p.onTidyHotkeys(selectedAgent ? selectedAgent.agent_id : undefined)}
+                    title={
+                      selectedAgent
+                        ? `Give ${selectedAgent.display_name}'s mods clash-free keys that only work while ${selectedAgent.display_name} is on screen`
+                        : 'Give every mod clash-free keys that only work while its character is on screen'
+                    }
+                  >
+                    <Keyboard />
+                    Tidy keys
                   </button>
                 )}
                 <button className="btn btn--primary" onClick={p.onInstallArchive}>

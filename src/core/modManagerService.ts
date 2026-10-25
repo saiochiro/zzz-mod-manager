@@ -55,6 +55,7 @@ import {
 } from './nsfwVisionService';
 import { applyNsfwReview, initNsfwReview, nsfwKey } from './nsfwReview';
 import { isSanitized, restoreMod } from './nsfwSanitizer';
+import { planModKeys, scopeKeysToCharacter } from './hotkeyTidy';
 /**
  * Renames a mod folder, retrying for a few seconds when Windows briefly locks it (antivirus,
  * search indexing, Explorer previews, the game reading files). Throws a clear message if it stays locked.
@@ -93,7 +94,6 @@ import {
 } from './workshopEngine';
 import {
   classifyMeshPartsFromTokens,
-  classifyStandardKeySlot,
   parseIniContent,
   rewriteIniKeybind,
 } from './iniParser';
@@ -2159,51 +2159,59 @@ endif
   }
 
   /**
-   * "Standardize All Mods" Preset:
-   * Maps primary accessory toggles (Jacket/Coat) across all installed mods to `J`,
-   * secondary toggles (Glasses/Mask/Hat/Hair) to `K`, and weapon toggles to `L`.
+   * "Tidy hotkeys": every toggle in a mod gets its own key (J/K/L by kind of part, then spare keys,
+   * never game controls or H), and every key only works while that mod's character is on screen,
+   * so keys of different characters' mods can't set each other off. The original files are copied
+   * to backups/hotkeys first. `agentId` limits it to one character's mods.
    */
-  public standardizeAllModHotkeys(): { updatedModsCount: number; totalKeysRemapped: number } {
-    const mods = this.scanInstalledMods();
+  public standardizeAllModHotkeys(agentId?: string): { updatedModsCount: number; totalKeysRemapped: number; scopedKeys: number } {
+    const mods = this.scanInstalledMods().filter((m) => !agentId || m.agent_id === agentId);
     let updatedModsCount = 0;
     let totalKeysRemapped = 0;
+    let scopedKeys = 0;
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 
     for (const mod of mods) {
       if (mod.sub_toggles.length === 0) continue;
       const modAbsDir = path.join(this.zzmiRootPath, mod.install_path);
       const iniFiles = listModInis(modAbsDir);
+      const texts = new Map(iniFiles.map((f) => [f, fs.readFileSync(f, 'utf-8')]));
+      // One plan for the whole mod, so toggles in different .ini files still get different keys.
+      const toggles = iniFiles.flatMap((f) => parseIniContent(texts.get(f)!, f).subToggles);
+      const plan = planModKeys(toggles);
 
       let modChanged = false;
       for (const iniPath of iniFiles) {
-        let content = fs.readFileSync(iniPath, 'utf-8');
-        const parsed = parseIniContent(content, iniPath);
-
-        for (const toggle of parsed.subToggles) {
-          const targetSlot = classifyStandardKeySlot(toggle.label, toggle.variable);
-          if (toggle.current_key !== targetSlot) {
-            content = rewriteIniKeybind(content, toggle.section_name, targetSlot);
+        const original = texts.get(iniPath)!;
+        let content = original;
+        for (const toggle of parseIniContent(content, iniPath).subToggles) {
+          const key = plan.get(toggle.section_name.toLowerCase());
+          if (key && toggle.current_key.toUpperCase() !== key.toUpperCase()) {
+            content = rewriteIniKeybind(content, toggle.section_name, key);
             totalKeysRemapped++;
-            modChanged = true;
           }
         }
-
-        if (modChanged) {
+        const scoped = scopeKeysToCharacter(content);
+        content = scoped.text;
+        scopedKeys += scoped.scoped;
+        if (content !== original) {
+          const backup = path.join(this.appDataPath, 'backups', 'hotkeys', `${mod.folder_name}__${stamp}`, path.relative(modAbsDir, iniPath));
+          fs.mkdirSync(path.dirname(backup), { recursive: true });
+          fs.copyFileSync(iniPath, backup);
           fs.writeFileSync(iniPath, content, 'utf-8');
+          modChanged = true;
         }
       }
-
-      if (modChanged) {
-        updatedModsCount++;
-      }
+      if (modChanged) updatedModsCount++;
     }
 
+    if (updatedModsCount) this.scheduleXxmiSync(mods, Boolean(this.getConfig().autoSendF10OnToggle));
     this.addLog(
       'success',
       'FAIRY_CORE',
-      `Standardized ${totalKeysRemapped} sub-toggles across ${updatedModsCount} mods to [J: Jacket/Coat] [K: Glasses/Hair] [L: Weapon/FX].`
+      `Tidied hotkeys in ${updatedModsCount} mod${updatedModsCount === 1 ? '' : 's'}: ${totalKeysRemapped} key${totalKeysRemapped === 1 ? '' : 's'} moved, ${scopedKeys} now only work while their character is on screen.`
     );
-
-    return { updatedModsCount, totalKeysRemapped };
+    return { updatedModsCount, totalKeysRemapped, scopedKeys };
   }
 
   /**
@@ -2296,6 +2304,37 @@ endif
    * Ingests a GameBanana mod (by ID or `zzzmgr://` URL or `https://gamebanana.com/mods/...` URL)
    * or a local `.zip`/`.7z`/`.rar`/directory path.
    */
+  /**
+   * Moves an installed mod's folder into backups/mod-updates (used when a newer version replaces
+   * it). Returns where it went, or null if the folder was already gone.
+   */
+  public archiveModToBackups(mod: ModManifest): string | null {
+    const src = path.join(this.zzmiRootPath, mod.install_path);
+    if (!fs.existsSync(src)) return null;
+    const destRoot = path.join(this.appDataPath, 'backups', 'mod-updates');
+    fs.mkdirSync(destRoot, { recursive: true });
+    const dest = path.join(destRoot, `${path.basename(src)}__${new Date().toISOString().replace(/[:.]/g, '-')}`);
+    try {
+      renameWithRetry(src, dest);
+    } catch {
+      fs.cpSync(src, dest, { recursive: true });
+      fs.rmSync(src, { recursive: true, force: true });
+    }
+    if (mod.agent_id !== 'uncategorized') this.syncAgentHSwap(mod.agent_id);
+    this.scheduleXxmiSync([mod]);
+    this.addLog('info', 'ROUTER', `Kept a backup of the previous version of [${mod.title}].`, mod.mod_uuid);
+    return dest;
+  }
+
+  /** Update: puts the old version in backups right before the new one is filed. Returns the old mod. */
+  private prepareReplace(modUuid?: string): ModManifest | null {
+    if (!modUuid) return null;
+    const old = this.scanInstalledMods().find((m) => m.mod_uuid === modUuid);
+    if (!old) return null;
+    this.archiveModToBackups(old);
+    return old;
+  }
+
   /* One install at a time: unpacking and filing mods never overlap. */
   private installChain: Promise<void> = Promise.resolve();
   public acquireInstallLock(): Promise<() => void> {
@@ -2322,7 +2361,12 @@ endif
 
   public async ingestPackage(
     sourceInput: string,
-    options?: { autoSplitMultiAgent?: boolean; metadataOverride?: Partial<GameBananaModItem> }
+    options?: {
+      autoSplitMultiAgent?: boolean;
+      metadataOverride?: Partial<GameBananaModItem>;
+      /** Update: this installed mod is replaced. It goes to backups and the new one keeps its on/off state. */
+      replaceModUuid?: string;
+    }
   ): Promise<IngestionResult> {
     const hashDb = this.getHashDb();
     const stagingId = crypto.randomUUID();
@@ -2441,11 +2485,13 @@ endif
           };
         }
 
+        const replaced = this.prepareReplace(options?.replaceModUuid);
         const installed = this.finalizeLocalizedRoots(
           unpackRes.localizedRoots,
           gbMeta,
           hashDb,
-          logs
+          logs,
+          { enabled: replaced ? replaced.enabled : undefined }
         );
         fs.rmSync(stagingDir, { recursive: true, force: true });
         return { success: true, installedMods: installed, logs };
@@ -2498,11 +2544,13 @@ endif
         };
       }
 
+      const replaced = this.prepareReplace(options?.replaceModUuid);
       const installed = this.finalizeLocalizedRoots(
         unpackRes.localizedRoots,
         gbMeta,
         hashDb,
-        logs
+        logs,
+        { enabled: replaced ? replaced.enabled : undefined }
       );
       fs.rmSync(stagingDir, { recursive: true, force: true });
       return { success: true, installedMods: installed, logs };
@@ -2564,7 +2612,8 @@ endif
     roots: LocalizedModRoot[],
     gbMeta: GameBananaModItem | null,
     hashDb: HashDatabase,
-    logs: string[]
+    logs: string[],
+    opts: { enabled?: boolean } = {}
   ): ModManifest[] {
     const installed: ModManifest[] = [];
     const existingMods = this.scanInstalledMods();
@@ -2585,10 +2634,13 @@ endif
       const agent = gbAgent || titleOrFolderAgent || match.agent;
       const agentId = agent ? agent.agent_id : 'uncategorized';
       const cleanFolder = sanitizeModFolderName(root.folderName);
+      // Installed switched off when asked (an update of a mod that was off stays off).
+      const enabled = opts.enabled !== false;
+      const diskFolder = enabled ? cleanFolder : formatDisabledFolderName(cleanFolder);
 
       const relTargetDir = agent
-        ? path.posix.join('Mods', '_ZZZMM_Managed', agent.folder_name, cleanFolder)
-        : path.posix.join('Mods', '_Uncategorized_UI_Audio', cleanFolder);
+        ? path.posix.join('Mods', '_ZZZMM_Managed', agent.folder_name, diskFolder)
+        : path.posix.join('Mods', '_Uncategorized_UI_Audio', diskFolder);
 
       const absTargetDir = path.join(this.zzmiRootPath, relTargetDir);
       if (fs.existsSync(absTargetDir)) {
@@ -2624,7 +2676,7 @@ endif
         agent_id: agentId,
         folder_name: cleanFolder,
         install_path: relTargetDir,
-        enabled: true,
+        enabled,
         in_h_swap_cycle: agent !== null,
         h_cycle_order: agentModsCount + 1,
         detected_hashes: root.detectedHashes,

@@ -267,8 +267,8 @@ handleIpc(
   }
 );
 
-handleIpc('zzz:standardizeHotkeys', async () => {
-  const res = modService.standardizeAllModHotkeys();
+handleIpc('zzz:standardizeHotkeys', async (_e, agentId?: string) => {
+  const res = modService.standardizeAllModHotkeys(typeof agentId === 'string' ? agentId : undefined);
   return { ...res, state: modService.getFullState() };
 });
 
@@ -520,13 +520,10 @@ handleIpc('zzz:selectLocalArchiveOrFolder', async (_e, mode: 'file' | 'folder' |
 
 // Mod updates: move the previous version into backups instead of deleting it.
 handleIpc('mods:archive', async (_e, modUuid: string) => {
-  const mods = modService.scanInstalledMods();
-  const target = mods.find((m) => m.mod_uuid === modUuid);
-  if (!target) return { state: modService.getFullState(), archivedTo: null };
-  const cfg = modService.getConfig();
-  const src = path.join(cfg.zzmiRootPath, target.install_path);
-  const destRoot = path.join(cfg.appDataPath, 'backups', 'mod-updates');
-  fs.mkdirSync(destRoot, { recursive: true });
+  const target = modService.scanInstalledMods().find((m) => m.mod_uuid === modUuid);
+  const archivedTo = target ? modService.archiveModToBackups(target) : null;
+  return { state: modService.getFullState(), archivedTo };
+});
   const dest = path.join(destRoot, `${path.basename(src)}__${new Date().toISOString().replace(/[:.]/g, '-')}`);
   if (fs.existsSync(src)) {
     try {

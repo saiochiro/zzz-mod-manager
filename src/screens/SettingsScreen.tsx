@@ -287,9 +287,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = (p) => {
                 <div className="setting">
                   <div className="setting__text">
                     <div className="setting__title">Tidy hotkeys</div>
-                    <div className="setting__desc">Gives every mod the same simple J / K / L layout so keys don’t clash.</div>
+                    <div className="setting__desc">
+                      Gives every mod a simple layout (J, K, L, then spare keys) with no two toggles of a mod on the same key, and makes
+                      each mod's keys work only while its character is on screen, so one key can't change another character's mod.
+                    </div>
                   </div>
-                  <button className="btn btn--secondary btn--sm" onClick={p.onStandardizeHotkeys}>
+                  <button className="btn btn--secondary btn--sm" onClick={() => p.onStandardizeHotkeys()}>
                     <Keyboard />
                     Tidy now
                   </button>

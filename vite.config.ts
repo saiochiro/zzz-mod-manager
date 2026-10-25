@@ -60,7 +60,7 @@ function fairyBackendMiddlewarePlugin(): Plugin {
               break;
             }
             case 'zzz:standardizeHotkeys':
-              result = { ...svc.standardizeAllModHotkeys(), state: svc.getFullState() };
+              result = { ...svc.standardizeAllModHotkeys(args[0]), state: svc.getFullState() };
               break;
             case 'zzz:repairMod':
               result = {
