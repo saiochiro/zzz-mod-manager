@@ -524,20 +524,6 @@ handleIpc('mods:archive', async (_e, modUuid: string) => {
   const archivedTo = target ? modService.archiveModToBackups(target) : null;
   return { state: modService.getFullState(), archivedTo };
 });
-  const dest = path.join(destRoot, `${path.basename(src)}__${new Date().toISOString().replace(/[:.]/g, '-')}`);
-  if (fs.existsSync(src)) {
-    try {
-      fs.renameSync(src, dest);
-    } catch {
-      fs.cpSync(src, dest, { recursive: true });
-      fs.rmSync(src, { recursive: true, force: true });
-    }
-  }
-  if (target.agent_id !== 'uncategorized') modService.syncAgentHSwap(target.agent_id);
-  modService.scheduleXxmiSync([target]);
-  modService.addLog('info', 'ROUTER', `Kept a backup of the previous version of [${target.title}].`);
-  return { state: modService.getFullState(), archivedTo: dest };
-});
 
 handleIpc('zzz:openModFolder', async (_e, relInstallPath: string) => {
   const cfg = modService.getConfig();
