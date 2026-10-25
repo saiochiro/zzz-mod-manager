@@ -1,6 +1,7 @@
-What's new in 2.14.9
+What's new in 2.14.10
 
-- Tidy keys now hands out keys in a simple order, top to bottom as each mod lists its options: the first gets J, then K, L, U, I, O, P, Y, N, then numpad 1 to 9. No more keys that look random. Press Tidy keys again to re-sort mods you already tidied.
-- New Find in File Explorer button for every mod (in its details and in the card's menu). It opens File Explorer with the mod's folder selected, and it works even after the mod was turned on or off, updated or renamed.
+- Fixed Show more in Browse sometimes doing nothing. When a page only brings mods that are already on screen (new uploads shift GameBanana's pages) or that your filter hides, ProxyLaunch now quietly moves on to the next page instead.
+- If GameBanana doesn't answer, each page is tried again automatically, and if it still fails the button turns into Try again instead of silently skipping mods.
+- At the end of a list you now see "That's everything for this view" instead of a button that does nothing.
 
 Requires XXMI Launcher with ZZMI set up. Questions or bugs? Reach out on Discord: ghxty

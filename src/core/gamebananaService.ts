@@ -492,8 +492,9 @@ export async function fetchLiveGameBananaFeed(
       const startApiPage = (page - 1) * parallelPagesCount + 1;
       const apiPagesToFetch = Array.from({ length: parallelPagesCount }, (_, i) => startApiPage + i);
 
-      const pagePayloads = await Promise.all(
-        apiPagesToFetch.map(async (apiPage) => {
+      // Each page is tried twice (GameBanana sometimes drops a request). null = it didn't answer.
+      const fetchApiPage = async (apiPage: number): Promise<any[] | null> => {
+        for (let attempt = 0; attempt < 2; attempt++) {
           const controller = new AbortController();
           const timeout = setTimeout(() => controller.abort(), 12000);
           try {
@@ -501,16 +502,22 @@ export async function fetchLiveGameBananaFeed(
               signal: controller.signal,
               headers: { 'User-Agent': 'ZZZModManager-v2/2.0' },
             });
-            if (!res.ok) return [];
-            const data: any = await res.json();
-            return Array.isArray(data._aRecords) ? data._aRecords : [];
+            if (res.ok) {
+              const data: any = await res.json();
+              return Array.isArray(data._aRecords) ? data._aRecords : [];
+            }
           } catch {
-            return [];
+            // retry below
           } finally {
             clearTimeout(timeout);
           }
-        })
-      );
+          await new Promise((r) => setTimeout(r, 600));
+        }
+        return null;
+      };
+      const answers = await Promise.all(apiPagesToFetch.map(fetchApiPage));
+      if (answers.every((a) => a === null)) throw new Error("GameBanana didn't answer.");
+      const pagePayloads = answers.map((a) => a ?? []);
 
       const seenRowIds = new Set<number>();
       const records: any[] = [];
@@ -572,7 +579,8 @@ export async function fetchLiveGameBananaFeed(
       return [];
     } catch (err) {
       console.warn('[GameBanana] Live feed fetch failed:', err);
-      return [];
+      // Let Browse tell "GameBanana didn't answer" (try again) apart from "no more mods".
+      throw err;
     } finally {
       inflightFeedRequests.delete(cacheKey);
     }

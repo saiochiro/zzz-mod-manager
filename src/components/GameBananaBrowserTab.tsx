@@ -190,6 +190,9 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
 
   // Layer 2 AI/Canvas Vision Moderation Cache by Mod ID (persisted in localStorage + backend cache)
   const feedCacheRef = React.useRef<Map<string, GameBananaModItem[]>>(new Map());
+  // The latest list, for code that runs after an await (state captured at the start may be old).
+  const modsListRef = React.useRef<GameBananaModItem[]>([]);
+  modsListRef.current = modsList;
   /** Remembers a loaded page (at most 40, oldest dropped) so long sessions don't keep growing. */
   const rememberFeed = (key: string, items: GameBananaModItem[]) => {
     const cache = feedCacheRef.current;
@@ -330,6 +333,20 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
     }
   };
 
+  /** Whether a loaded mod shows in the grid with the current content filter and category. */
+  const isShownInGrid = (item: GameBananaModItem) => {
+    if (isHiddenByNsfwFilter(item, nsfwFilterState)) return false;
+    if (categoryFilter !== 'all') {
+      const tag = (item.category_tag || 'Skins').toLowerCase();
+      if (categoryFilter !== tag) return false;
+    }
+    return true;
+  };
+
+  /* "Show more": 'end' when there's nothing left, 'error' when GameBanana didn't answer. */
+  const [moreState, setMoreState] = useState<'idle' | 'end' | 'error'>('idle');
+  const emptyPagesRef = React.useRef(0);
+
   const loadOnlineFeed = async () => {
     const requestId = ++feedRequestIdRef.current;
     const selectedAgent =
@@ -376,6 +393,12 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
 
     setIsLoading(true);
     setFeedError(null);
+    if (page === 1) {
+      setMoreState('idle');
+      emptyPagesRef.current = 0;
+    } else if (moreState === 'error') {
+      setMoreState('idle');
+    }
     try {
       const items = await fairyClient.getGameBananaFeed({
         page,
@@ -439,18 +462,32 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
           }
           setModsList(processed);
         }
-      } else if (processed.length > 0) {
-        rememberFeed(cacheKey, processed);
-        setModsList((prev) => {
-          const existingIds = new Set(prev.map((m) => m.id));
-          const newOnly = processed.filter((m: GameBananaModItem) => !existingIds.has(m.id));
-          return [...prev, ...newOnly];
-        });
+      } else {
+        // A page can bring nothing new to show (mods already listed because new uploads shifted the
+        // pages, or all hidden by the filter). Then quietly try the next page, a few times, instead of
+        // a "Show more" click that seems to do nothing.
+        const existingIds = new Set(modsListRef.current.map((m) => m.id));
+        const newOnly = processed.filter((m: GameBananaModItem) => !existingIds.has(m.id));
+        if (processed.length > 0) rememberFeed(cacheKey, processed);
+        if (newOnly.length) setModsList((prev) => [...prev, ...newOnly.filter((m) => !prev.some((p) => p.id === m.id))]);
+        if (processed.length === 0) {
+          setMoreState('end');
+        } else if (!newOnly.some(isShownInGrid)) {
+          if (emptyPagesRef.current < 4) {
+            emptyPagesRef.current++;
+            setPage((pg) => pg + 1);
+            return;
+          }
+          setMoreState('end');
+        } else {
+          emptyPagesRef.current = 0;
+        }
       }
     } catch (err) {
       console.warn('Failed to fetch GameBanana feed:', err);
       if (requestId === feedRequestIdRef.current) {
         setFeedError((err as Error)?.message || 'The mod site did not respond.');
+        if (page > 1) setMoreState('error');
       }
     } finally {
       if (requestId === feedRequestIdRef.current) {
@@ -470,21 +507,7 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
     []
   );
 
-  const displayedMods = useMemo(() => {
-    return modsList.filter((item) => {
-      if (isHiddenByNsfwFilter(item, nsfwFilterState)) {
-        return false;
-      }
-      if (categoryFilter !== 'all') {
-        const tag = (item.category_tag || 'Skins').toLowerCase();
-        if (categoryFilter === 'skins' && tag !== 'skins') return false;
-        if (categoryFilter === 'weapons' && tag !== 'weapons') return false;
-        if (categoryFilter === 'ui' && tag !== 'ui') return false;
-        if (categoryFilter === 'audio' && tag !== 'audio') return false;
-      }
-      return true;
-    });
-  }, [modsList, nsfwFilterState, categoryFilter]);
+  const displayedMods = useMemo(() => modsList.filter((item) => isShownInGrid(item)), [modsList, nsfwFilterState, categoryFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const spotlightMods = useMemo(() => {
     return displayedMods.filter((m) => m.nsfw_checked && nsfwLevelOf(m) === 'sfw').slice(0, 3);
@@ -946,11 +969,22 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
 
               {displayedMods.length > 0 && (
                 <div className="stack" style={{ alignItems: 'center', paddingTop: 32 }}>
-                  <button className="btn btn--secondary btn--lg" onClick={() => setPage((pg) => pg + 1)} disabled={isLoading}>
-                    {isLoading ? <Loader2 className="spin" /> : <ChevronRight style={{ transform: 'rotate(90deg)' }} />}
-                    {isLoading ? 'Loading…' : 'Show more'}
-                  </button>
-                  {feedError && <span className="caption" style={{ color: 'var(--error)' }}>Couldn’t load more right now.</span>}
+                  {moreState === 'end' && !isLoading ? (
+                    <span className="caption">That’s everything for this view.</span>
+                  ) : (
+                    <button
+                      className="btn btn--secondary btn--lg"
+                      // After a failed page, the same page is tried again.
+                      onClick={() => (moreState === 'error' ? setReloadTick((t) => t + 1) : setPage((pg) => pg + 1))}
+                      disabled={isLoading}
+                    >
+                      {isLoading ? <Loader2 className="spin" /> : <ChevronRight style={{ transform: 'rotate(90deg)' }} />}
+                      {isLoading ? 'Loading…' : moreState === 'error' ? 'Try again' : 'Show more'}
+                    </button>
+                  )}
+                  {moreState === 'error' && !isLoading && (
+                    <span className="caption" style={{ color: 'var(--error)' }}>GameBanana didn’t answer. Try again in a moment.</span>
+                  )}
                 </div>
               )}
             </section>
