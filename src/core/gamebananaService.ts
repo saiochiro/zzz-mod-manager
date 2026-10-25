@@ -563,6 +563,10 @@ export async function fetchLiveGameBananaFeed(
         // Labels come from the pre-scanned list (applied on every read, so a newer list counts at once).
         await nsfwVerdictsReady();
         feedResponseCache.set(cacheKey, { timestamp: Date.now(), items: liveItems });
+        // Keep the cache small over long sessions: drop expired pages, and the oldest past 40.
+        for (const [k, v] of feedResponseCache) {
+          if (Date.now() - v.timestamp > FEED_CACHE_TTL_MS || feedResponseCache.size > 40) feedResponseCache.delete(k);
+        }
         return finalizeNsfw(liveItems, hideNsfw);
       }
       return [];

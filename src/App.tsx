@@ -35,7 +35,7 @@ import {
   storeCursorSettings,
   CursorSettings,
 } from './themes';
-import { EffectsSettings, readEffectsSettings, storeEffectsSettings, useInteractionEffects } from './ui/effects';
+import { EffectsSettings, readEffectsSettings, storeEffectsSettings, useInteractionEffects, usePauseWhenInactive } from './ui/effects';
 import { EmptyState, Skeleton, ToastProvider, useToast, CardSkeletonGrid } from './ui';
 import { getModHealth } from './ui/modStatus';
 import { AppUpdatePrompt, useAppUpdate, useModUpdates } from './ui/updates';
@@ -89,6 +89,7 @@ const AppInner: React.FC = () => {
     applyCursor(cursorSettings, theme);
   }, [cursorSettings, theme]);
   useInteractionEffects(effects);
+  usePauseWhenInactive();
   useEffect(() => {
     const root = document.documentElement;
     if (effects.background === 'scene') root.dataset.scene = '1';

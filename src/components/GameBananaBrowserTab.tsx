@@ -190,6 +190,13 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
 
   // Layer 2 AI/Canvas Vision Moderation Cache by Mod ID (persisted in localStorage + backend cache)
   const feedCacheRef = React.useRef<Map<string, GameBananaModItem[]>>(new Map());
+  /** Remembers a loaded page (at most 40, oldest dropped) so long sessions don't keep growing. */
+  const rememberFeed = (key: string, items: GameBananaModItem[]) => {
+    const cache = feedCacheRef.current;
+    cache.delete(key);
+    cache.set(key, items);
+    while (cache.size > 40) cache.delete(cache.keys().next().value as string);
+  };
 
   const makeClientCacheKey = (
     p: number,
@@ -268,13 +275,13 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
     ])
       .then(([popularItems, updatedItems]) => {
         if (Array.isArray(popularItems) && popularItems.length > 0) {
-          feedCacheRef.current.set(
+          rememberFeed(
             makeClientCacheKey(1, 'likes', '', 'all', undefined, hide),
             popularItems
           );
         }
         if (Array.isArray(updatedItems) && updatedItems.length > 0) {
-          feedCacheRef.current.set(
+          rememberFeed(
             makeClientCacheKey(1, 'updated', '', 'all', undefined, hide),
             updatedItems
           );
@@ -423,17 +430,17 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
             ...cachedAuthorMatches.filter((m) => !seenIds.has(m.id)),
           ];
           if (merged.length > 0) {
-            feedCacheRef.current.set(cacheKey, merged);
+            rememberFeed(cacheKey, merged);
           }
           setModsList(merged);
         } else {
           if (processed.length > 0) {
-            feedCacheRef.current.set(cacheKey, processed);
+            rememberFeed(cacheKey, processed);
           }
           setModsList(processed);
         }
       } else if (processed.length > 0) {
-        feedCacheRef.current.set(cacheKey, processed);
+        rememberFeed(cacheKey, processed);
         setModsList((prev) => {
           const existingIds = new Set(prev.map((m) => m.id));
           const newOnly = processed.filter((m: GameBananaModItem) => !existingIds.has(m.id));

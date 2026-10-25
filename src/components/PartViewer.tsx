@@ -257,9 +257,13 @@ export const PartViewer: React.FC<Props> = ({ meshes, highlight, color, height =
     const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     const tick = (now: number) => {
       const st = stateRef.current;
-      if (!st.dragging && !st.touched && !reduce) st.yaw += ((now - last) / 1000) * 0.45;
+      // App in the background: keep the model where it is and skip drawing.
+      const paused = document.documentElement.hasAttribute('data-paused');
+      if (!paused) {
+        if (!st.dragging && !st.touched && !reduce) st.yaw += ((now - last) / 1000) * 0.45;
+        draw();
+      }
       last = now;
-      draw();
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);

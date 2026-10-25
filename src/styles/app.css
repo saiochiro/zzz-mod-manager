@@ -4991,3 +4991,13 @@ html[data-scene] .card {
     transition: none;
   }
 }
+
+/* ProxyLaunch isn't the active window: freeze every animation so it uses no CPU/GPU in the background */
+html[data-paused] *,
+html[data-paused] *::before,
+html[data-paused] *::after {
+  animation-play-state: paused !important;
+}
+html[data-paused] .fx-glow {
+  opacity: 0 !important;
+}

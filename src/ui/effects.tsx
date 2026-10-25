@@ -72,13 +72,16 @@ export function useInteractionEffects(settings: EffectsSettings) {
     let raf = 0;
     let tiltEl: HTMLElement | null = null;
 
+    // Only animates while the glow is catching up with the cursor; idle = no work at all.
     const loop = () => {
       gx += (x - gx) * 0.22;
       gy += (y - gy) * 0.22;
       glow.style.transform = `translate(${gx}px, ${gy}px) translate(-50%, -50%)`;
-      raf = requestAnimationFrame(loop);
+      raf = Math.abs(x - gx) + Math.abs(y - gy) > 0.5 ? requestAnimationFrame(loop) : 0;
     };
-    raf = requestAnimationFrame(loop);
+    const wake = () => {
+      if (!raf) raf = requestAnimationFrame(loop);
+    };
 
     const resetTilt = () => {
       if (tiltEl) {
@@ -92,6 +95,7 @@ export function useInteractionEffects(settings: EffectsSettings) {
     const onMove = (e: PointerEvent) => {
       x = e.clientX;
       y = e.clientY;
+      wake();
       const target = e.target as Element | null;
       glow.classList.toggle('is-hot', Boolean(target?.closest(INTERACTIVE)));
       const card = target?.closest<HTMLElement>('[data-tilt]') ?? null;
@@ -111,6 +115,7 @@ export function useInteractionEffects(settings: EffectsSettings) {
     const onLeave = () => {
       x = -300;
       y = -300;
+      wake();
       resetTilt();
     };
     window.addEventListener('pointermove', onMove, { passive: true });
@@ -123,4 +128,34 @@ export function useInteractionEffects(settings: EffectsSettings) {
       glow.remove();
     };
   }, [settings.glow]);
+}
+
+/**
+ * Pauses every animation (background scene, patterns, glows) while ProxyLaunch isn't the window
+ * you're using: tabbed out, behind another window, or minimized. Animations pick up where they left
+ * off when you come back, so the app costs next to nothing while it sits in the background.
+ */
+export function usePauseWhenInactive() {
+  useEffect(() => {
+    const root = document.documentElement;
+    let timer = 0;
+    const update = () => {
+      window.clearTimeout(timer);
+      const active = document.visibilityState === 'visible' && document.hasFocus();
+      if (active) root.removeAttribute('data-paused');
+      // A short delay so clicking a file dialog or a tooltip doesn't flicker the scene.
+      else timer = window.setTimeout(() => root.setAttribute('data-paused', ''), 400);
+    };
+    window.addEventListener('focus', update);
+    window.addEventListener('blur', update);
+    document.addEventListener('visibilitychange', update);
+    update();
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('focus', update);
+      window.removeEventListener('blur', update);
+      document.removeEventListener('visibilitychange', update);
+      root.removeAttribute('data-paused');
+    };
+  }, []);
 }

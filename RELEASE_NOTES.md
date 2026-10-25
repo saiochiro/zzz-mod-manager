@@ -1,11 +1,8 @@
-What's new in 2.14.6
+What's new in 2.14.7
 
-- Fixed Library covers. Mods with a GameBanana picture now always show it, instead of a random texture or note image from the mod's folder. Covers that pointed to a folder from before you turned the mod on or off are fixed too. If a picture can't load, the mod's next picture is shown instead.
-- Your own covers still win: a preview.png in the mod folder, or one you set with Change cover or Paste cover.
-- New: Surprise me. Pick a character in the Library and get a random outfit for them in one click.
-- New: All off. Turns off every mod you're looking at, for one character or for everything.
-- Ctrl+F jumps to the search box on any screen.
-- ProxyLaunch remembers which screen and character you had open.
-- Covers fade in smoothly instead of popping in.
+- ProxyLaunch now goes quiet when you're not using it. As soon as you tab out, open another window on top, or minimize it, every animation pauses (the background scene, moving patterns, the cursor glow and the Workshop's 3D preview), and picks up where it left off when you come back.
+- The cursor glow only does work while your mouse is moving, instead of running nonstop.
+- Long sessions stay light: Browse no longer keeps every page you've ever looked at in memory.
+- Tip: for the lightest setup, turn off Moving patterns or set Background to Plain in Themes.
 
 Requires XXMI Launcher with ZZMI set up. Questions or bugs? Reach out on Discord: ghxty
