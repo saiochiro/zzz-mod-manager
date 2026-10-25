@@ -1,7 +1,8 @@
-What's new in 2.14.4
+What's new in 2.14.5
 
-- Fixed mod updates. Updating a mod could install the new version under a made-up name like "GameBanana ZZZ Mod #1823399" by "ProxyModder" with a placeholder cover. Updates now install under the mod's real name, and mods that were mislabeled this way get their real name, creator, pictures and GameBanana link back automatically when you open the app.
-- Updates no longer fail with "operation not permitted" when Windows briefly locks a mod folder. ProxyLaunch now waits and tries again, and if the folder stays locked it tells you to close the game or the folder window.
-- Library: the "on" pill is clickable and shows only the mods that are on. The pills and category counts now match the character you picked.
+- Much faster all around. ProxyLaunch now remembers what it already read about each mod and only re-reads mods that changed, instead of going through every mod on every click.
+- Turning mods on and off is instant. Copying to XXMI and the in-game reload now happen in the background, and only for the character you changed.
+- Downloading several mods at once works properly: up to three download at the same time, they install one after another so they never get in each other's way, and big archives unpack without freezing the app.
+- Menus and screens load faster, because mod covers are no longer copied into the app's memory every time something changes.
 
 Requires XXMI Launcher with ZZMI set up. Questions or bugs? Reach out on Discord: ghxty
