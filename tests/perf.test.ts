@@ -83,3 +83,35 @@ describe('Switching several mods at once', () => {
     expect(service.setModsEnabled(changes)).toBe(0);
   });
 });
+
+describe('Library covers', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cover-'));
+  });
+  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  const png = (w: number, h: number) => {
+    const b = Buffer.alloc(33);
+    b.writeUInt32BE(0x89504e47, 0);
+    b.writeUInt32BE(0x0d0a1a0a, 4);
+    b.write('IHDR', 12, 'ascii');
+    b.writeUInt32BE(w, 16);
+    b.writeUInt32BE(h, 20);
+    return b;
+  };
+
+  it('the GameBanana cover beats stray pictures in the folder; a named preview beats both', () => {
+    const service = new ModManagerService(dir);
+    service.seedInitialSandboxMods();
+    const mod = service.scanInstalledMods()[0];
+    const abs = path.join(dir, 'ZZMI_Root', mod.install_path);
+    const mf = path.join(abs, 'mod_manifest.json');
+    const gb = 'https://images.gamebanana.com/img/ss/mods/abc.jpg';
+    fs.writeFileSync(mf, JSON.stringify({ ...JSON.parse(fs.readFileSync(mf, 'utf-8')), thumbnail_url: gb, preview_images: [gb] }, null, 2));
+    fs.writeFileSync(path.join(abs, 'LAria.png'), png(1920, 1080)); // not a preview: notes, textures...
+    expect(service.scanInstalledMods().find((m) => m.mod_uuid === mod.mod_uuid)!.thumbnail_url).toBe(gb);
+    fs.writeFileSync(path.join(abs, 'preview.png'), png(800, 450)); // a real preview (or one you set)
+    expect(service.scanInstalledMods().find((m) => m.mod_uuid === mod.mod_uuid)!.thumbnail_url).toMatch(/^proxylaunch-img:\/\/f\/.*preview\.png/);
+  });
+});
