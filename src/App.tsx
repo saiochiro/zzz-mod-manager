@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CloudOff, RefreshCw, UploadCloud } from 'lucide-react';
 import { CustomTitleBar } from './components/CustomTitleBar';
 import { GameBananaBrowserTab } from './components/GameBananaBrowserTab';
@@ -390,14 +390,17 @@ const AppInner: React.FC = () => {
     }
   };
 
+  const toggleSeqRef = useRef(0);
   const handleToggleEnabled = async (modUuid: string) => {
     // Optimistic flip so the switch responds instantly
     setAppState((prev) =>
       prev ? { ...prev, mods: prev.mods.map((m) => (m.mod_uuid === modUuid ? { ...m, enabled: !m.enabled } : m)) } : prev
     );
+    const seq = ++toggleSeqRef.current;
     try {
       const res = await fairyClient.toggleEnabled(modUuid);
-      setAppState(res.state);
+      // With several quick clicks, only the newest answer replaces the list (no flicker back).
+      if (seq === toggleSeqRef.current) setAppState(res.state);
       if (res.autoDisabledMods && res.autoDisabledMods.length > 0) {
         notify({ tone: 'info', title: `Turned on “${res.mod.title}”`, message: `Turned off: ${res.autoDisabledMods.join(', ')}` });
       }
@@ -572,7 +575,7 @@ const AppInner: React.FC = () => {
   /* Installing                                                       */
   /* ---------------------------------------------------------------- */
   const handleInstallFromGameBanana = async (mod: GameBananaModItem) => {
-    const queueId = `q-${Date.now()}`;
+    const queueId = `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     setDownloadQueue((prev) => [
       ...prev,
       { queue_id: queueId, mod_id: mod.id, title: mod.title, status: 'downloading', progress: 25, stage_label: 'Downloading…' },

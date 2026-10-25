@@ -1,4 +1,5 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, safeStorage, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, net, protocol, safeStorage, session, shell } from 'electron';
+import { pathToFileURL } from 'url';
 import fs from 'fs';
 import path from 'path';
 import { fetchGameBananaModProfile } from '../src/core/gamebananaService';
@@ -6,6 +7,12 @@ import { applyNsfwReview, onNsfwVerdictsUpdated, refreshNsfwVerdicts } from '../
 import { ModManagerService } from '../src/core/modManagerService';
 import { CommunityClient, type StoredSession } from '../src/core/communityClient';
 import { setupUpdater } from './updater';
+
+// Mod covers on disk are shown through this scheme (instead of copying every picture into the
+// app state as text, which made every refresh slow). Must be registered before the app is ready.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'proxylaunch-img', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+]);
 
 // Give the app its own Windows identity so the taskbar shows our icon, not Electron's.
 if (process.platform === 'win32') {
@@ -119,6 +126,24 @@ function createWindow() {
   setupModsDirectoryWatcher();
 }
 
+/**
+ * The folder watcher only reports changes made outside the app. While (and just after) the app
+ * itself changes mod folders, its own renames and writes are not reported back as "external".
+ */
+let ownChangesInFlight = 0;
+let ownChangesQuietUntil = 0;
+function handleIpc(channel: string, fn: (e: Electron.IpcMainInvokeEvent, ...args: any[]) => unknown) {
+  ipcMain.handle(channel, async (e, ...args) => {
+    ownChangesInFlight++;
+    try {
+      return await fn(e, ...args);
+    } finally {
+      ownChangesInFlight--;
+      ownChangesQuietUntil = Date.now() + 1500;
+    }
+  });
+}
+
 let modsWatcher: fs.FSWatcher | null = null;
 let watcherDebounceTimer: NodeJS.Timeout | null = null;
 
@@ -133,6 +158,8 @@ function setupModsDirectoryWatcher() {
         if (filename.includes('master_swap.ini') || filename.includes('staging_temp') || filename.includes('.tmp')) {
           return;
         }
+        modService.invalidateModCache(path.join(modsDir, String(filename)));
+        if (ownChangesInFlight > 0 || Date.now() < ownChangesQuietUntil) return;
 
         if (watcherDebounceTimer) clearTimeout(watcherDebounceTimer);
         watcherDebounceTimer = setTimeout(() => {
@@ -155,12 +182,12 @@ function setupModsDirectoryWatcher() {
 // ============================================================================
 // IPC Handlers: Frameless Window Controls
 // ============================================================================
-ipcMain.handle('window:minimize', () => {
+handleIpc('window:minimize', () => {
   mainWindow?.minimize();
   return true;
 });
 
-ipcMain.handle('window:toggle-maximize', () => {
+handleIpc('window:toggle-maximize', () => {
   if (!mainWindow) return false;
   if (mainWindow.isMaximized()) {
     mainWindow.unmaximize();
@@ -171,19 +198,19 @@ ipcMain.handle('window:toggle-maximize', () => {
   }
 });
 
-ipcMain.handle('window:close', () => {
+handleIpc('window:close', () => {
   mainWindow?.close();
   return true;
 });
 
-ipcMain.handle('window:is-maximized', () => {
+handleIpc('window:is-maximized', () => {
   return mainWindow?.isMaximized() || false;
 });
 
 // ============================================================================
 // IPC Handlers: Theme & OS Icon System
 // ============================================================================
-ipcMain.handle('theme:update-icon', async (_e, themeId: string, iconDataUrl?: string) => {
+handleIpc('theme:update-icon', async (_e, themeId: string, iconDataUrl?: string) => {
   try {
     if (iconDataUrl && iconDataUrl.startsWith('data:image')) {
       const img = nativeImage.createFromDataURL(iconDataUrl);
@@ -205,25 +232,25 @@ ipcMain.handle('theme:update-icon', async (_e, themeId: string, iconDataUrl?: st
 // ============================================================================
 // IPC Handlers: Core ZZZ & XXMI Management
 // ============================================================================
-ipcMain.handle('zzz:getState', async () => {
+handleIpc('zzz:getState', async () => {
   return modService.getFullState();
 });
 
-ipcMain.handle('zzz:toggleEnabled', async (_e, modUuid: string) => {
+handleIpc('zzz:toggleEnabled', async (_e, modUuid: string) => {
   const res = modService.toggleModEnabled(modUuid);
   return { ...res, state: modService.getFullState() };
 });
 
-ipcMain.handle('zzz:toggleHCycle', async (_e, modUuid: string) => {
+handleIpc('zzz:toggleHCycle', async (_e, modUuid: string) => {
   const res = modService.toggleModHCycle(modUuid);
   return { ...res, state: modService.getFullState() };
 });
 
-ipcMain.handle('zzz:inspectMod', async (_e, modUuid: string) => {
+handleIpc('zzz:inspectMod', async (_e, modUuid: string) => {
   return modService.inspectMod(modUuid);
 });
 
-ipcMain.handle(
+handleIpc(
   'zzz:remapSubToggle',
   async (_e, modUuid: string, sectionName: string, newKey: string) => {
     const mod = modService.remapModSubToggle(modUuid, sectionName, newKey);
@@ -235,12 +262,12 @@ ipcMain.handle(
   }
 );
 
-ipcMain.handle('zzz:standardizeHotkeys', async () => {
+handleIpc('zzz:standardizeHotkeys', async () => {
   const res = modService.standardizeAllModHotkeys();
   return { ...res, state: modService.getFullState() };
 });
 
-ipcMain.handle('zzz:repairMod', async (_e, modUuid: string) => {
+handleIpc('zzz:repairMod', async (_e, modUuid: string) => {
   const res = modService.repairMod(modUuid);
   return {
     ...res,
@@ -249,12 +276,12 @@ ipcMain.handle('zzz:repairMod', async (_e, modUuid: string) => {
   };
 });
 
-ipcMain.handle('zzz:repairAll', async () => {
+handleIpc('zzz:repairAll', async () => {
   const results = modService.repairAllBrokenMods();
   return { results, state: modService.getFullState() };
 });
 
-ipcMain.handle('zzz:undoRepair', async (_e, modUuid: string) => {
+handleIpc('zzz:undoRepair', async (_e, modUuid: string) => {
   const res = modService.undoModRepair(modUuid);
   return {
     ...res,
@@ -263,87 +290,97 @@ ipcMain.handle('zzz:undoRepair', async (_e, modUuid: string) => {
   };
 });
 
-ipcMain.handle('zzz:deleteMod', async (_e, modUuid: string) => {
+handleIpc('zzz:deleteMod', async (_e, modUuid: string) => {
   modService.deleteMod(modUuid);
   return { state: modService.getFullState() };
 });
 
-ipcMain.handle('zzz:ingestPackage', async (_e, sourceInput: string, options?: any) => {
+handleIpc('zzz:ingestPackage', async (_e, sourceInput: string, options?: any) => {
   const res = await modService.ingestPackage(sourceInput, options);
   return { ...res, state: modService.getFullState() };
 });
 
-ipcMain.handle('zzz:confirmMultiAgentSplit', async (_e, stagingId: string) => {
-  const res = modService.confirmMultiAgentSplit(stagingId);
-  return { ...res, state: modService.getFullState() };
+handleIpc('zzz:confirmMultiAgentSplit', async (_e, stagingId: string) => {
+  const release = await modService.acquireInstallLock();
+  try {
+    const res = modService.confirmMultiAgentSplit(stagingId);
+    return { ...res, state: modService.getFullState() };
+  } finally {
+    release();
+  }
 });
 
-ipcMain.handle('zzz:getGameBananaFeed', async (_e, options?: any) => {
+handleIpc('zzz:getGameBananaFeed', async (_e, options?: any) => {
   return await modService.getGameBananaFeed(options);
 });
 
-ipcMain.handle('zzz:importExistingFolder', async (_e, folderPath: string, mode?: 'copy' | 'symlink') => {
-  const res = modService.importExistingModFolder(folderPath, mode || 'copy');
-  return { ...res, state: modService.getFullState() };
+handleIpc('zzz:importExistingFolder', async (_e, folderPath: string, mode?: 'copy' | 'symlink') => {
+  const release = await modService.acquireInstallLock();
+  try {
+    const res = modService.importExistingModFolder(folderPath, mode || 'copy');
+    return { ...res, state: modService.getFullState() };
+  } finally {
+    release();
+  }
 });
 
-ipcMain.handle('zzz:scanExternalLaunchers', async () => {
+handleIpc('zzz:scanExternalLaunchers', async () => {
   return modService.scanForExternalModLaunchers();
 });
 
-ipcMain.handle('zzz:detectExternalLaunchersDetailed', async () => {
+handleIpc('zzz:detectExternalLaunchersDetailed', async () => {
   return modService.detectExternalLaunchersDetailed();
 });
 
-ipcMain.handle('zzz:setCustomThumbnail', async (_e, modUuid: string, imageSource: string) => {
+handleIpc('zzz:setCustomThumbnail', async (_e, modUuid: string, imageSource: string) => {
   const mod = modService.setCustomModThumbnail(modUuid, imageSource);
   return { mod, state: modService.getFullState() };
 });
 
-ipcMain.handle('zzz:saveProfile', async (_e, profileName: string) => {
+handleIpc('zzz:saveProfile', async (_e, profileName: string) => {
   const res = modService.saveLoadoutProfile(profileName);
   return { ...res, state: modService.getFullState() };
 });
 
-ipcMain.handle('zzz:applyProfile', async (_e, profileName: string) => {
+handleIpc('zzz:applyProfile', async (_e, profileName: string) => {
   const res = modService.applyLoadoutProfile(profileName);
   return { ...res, state: modService.getFullState() };
 });
 
-ipcMain.handle('zzz:deleteProfile', async (_e, profileName: string) => {
+handleIpc('zzz:deleteProfile', async (_e, profileName: string) => {
   const res = modService.deleteLoadoutProfile(profileName);
   return { ...res, state: modService.getFullState() };
 });
 
-ipcMain.handle('zzz:renameProfile', async (_e, oldName: string, newName: string) => {
+handleIpc('zzz:renameProfile', async (_e, oldName: string, newName: string) => {
   const res = modService.renameLoadoutProfile(oldName, newName);
   return { ...res, state: modService.getFullState() };
 });
 
-ipcMain.handle('zzz:organizeFolders', async () => {
+handleIpc('zzz:organizeFolders', async () => {
   const res = modService.organizeAndStandardizeFolders();
   return { ...res, state: modService.getFullState() };
 });
 
-ipcMain.handle('zzz:undoOrganizeFolders', async () => {
+handleIpc('zzz:undoOrganizeFolders', async () => {
   const res = modService.undoOrganizeFolders();
   return { ...res, state: modService.getFullState() };
 });
 
 // Mod Workshop (experimental)
-ipcMain.handle('workshop:catalog', async (_e, agentId: string) => modService.getWorkshopCatalog(agentId));
-ipcMain.handle('workshop:build', async (_e, req: any) => {
+handleIpc('workshop:catalog', async (_e, agentId: string) => modService.getWorkshopCatalog(agentId));
+handleIpc('workshop:build', async (_e, req: any) => {
   const res = await modService.buildWorkshopMod(req);
   return { ...res, state: modService.getFullState() };
 });
-ipcMain.handle('workshop:rebuild', async (_e, modUuid: string) => {
+handleIpc('workshop:rebuild', async (_e, modUuid: string) => {
   const res = await modService.rebuildWorkshopMod(modUuid);
   return { ...res, state: modService.getFullState() };
 });
-ipcMain.handle('workshop:preview', async (_e, modUuid: string) => modService.getWorkshopPreview(modUuid));
-ipcMain.handle('workshop:shareCode', async (_e, modUuid: string) => modService.getWorkshopShareCode(modUuid));
-ipcMain.handle('workshop:resolveCode', async (_e, code: string) => modService.resolveWorkshopCode(code));
-ipcMain.handle('workshop:resolveRecipe', async (_e, recipe: any) => modService.resolveWorkshopRecipe(recipe));
+handleIpc('workshop:preview', async (_e, modUuid: string) => modService.getWorkshopPreview(modUuid));
+handleIpc('workshop:shareCode', async (_e, modUuid: string) => modService.getWorkshopShareCode(modUuid));
+handleIpc('workshop:resolveCode', async (_e, code: string) => modService.resolveWorkshopCode(code));
+handleIpc('workshop:resolveRecipe', async (_e, recipe: any) => modService.resolveWorkshopRecipe(recipe));
 
 // Community page (Supabase). Tokens stay in the main process, encrypted with the OS keychain.
 const communitySessionFile = () => path.join(app.getPath('userData'), 'community_session.bin');
@@ -373,85 +410,85 @@ const community = new CommunityClient(
   },
   (url) => shell.openExternal(url)
 );
-ipcMain.handle('community:me', async () => community.me());
-ipcMain.handle('community:signIn', async () => {
+handleIpc('community:me', async () => community.me());
+handleIpc('community:signIn', async () => {
   const me = await community.signIn();
   mainWindow?.show();
   mainWindow?.focus();
   return me;
 });
-ipcMain.handle('community:signOut', async () => community.signOut());
-ipcMain.handle('community:list', async (_e, q: any) => community.list(q));
-ipcMain.handle('community:publish', async (_e, modUuid: string, description: string) =>
+handleIpc('community:signOut', async () => community.signOut());
+handleIpc('community:list', async (_e, q: any) => community.list(q));
+handleIpc('community:publish', async (_e, modUuid: string, description: string) =>
   community.publish(modService.getWorkshopRecipe(modUuid), String(description || ''))
 );
-ipcMain.handle('community:like', async (_e, postId: string, liked: boolean) => community.setLiked(postId, liked));
-ipcMain.handle('community:report', async (_e, postId: string, reason: string) => community.report(postId, String(reason || '')));
-ipcMain.handle('community:remove', async (_e, postId: string) => community.remove(postId));
-ipcMain.handle('community:moderate', async (_e, postId: string, status: any, isNsfw: any) => community.moderate(postId, status ?? null, isNsfw ?? null));
-ipcMain.handle('community:ban', async (_e, userId: string, banned: boolean) => community.setBanned(userId, banned));
+handleIpc('community:like', async (_e, postId: string, liked: boolean) => community.setLiked(postId, liked));
+handleIpc('community:report', async (_e, postId: string, reason: string) => community.report(postId, String(reason || '')));
+handleIpc('community:remove', async (_e, postId: string) => community.remove(postId));
+handleIpc('community:moderate', async (_e, postId: string, status: any, isNsfw: any) => community.moderate(postId, status ?? null, isNsfw ?? null));
+handleIpc('community:ban', async (_e, userId: string, banned: boolean) => community.setBanned(userId, banned));
 
-ipcMain.handle('zzz:fetchGameBananaMod', async (_e, modId: number) => {
+handleIpc('zzz:fetchGameBananaMod', async (_e, modId: number) => {
   return applyNsfwReview(await fetchGameBananaModProfile(modId), `gb:${modId}`);
 });
 
 // XXMI Sync & Auto-Thumbnail Fetching
-ipcMain.handle('xxmi:sync', async () => {
+handleIpc('xxmi:sync', async () => {
   modService.scanInstalledMods();
   return { state: modService.getFullState() };
 });
 
-ipcMain.handle('xxmi:fetchMissingPreviews', async () => {
+handleIpc('xxmi:fetchMissingPreviews', async () => {
   const res = await modService.fetchMissingPreviewsForLocalMods();
   return res;
 });
 
-ipcMain.handle('xxmi:detectPaths', async () => {
+handleIpc('xxmi:detectPaths', async () => {
   return modService.detectXxmiModsPath();
 });
 
-ipcMain.handle('zzz:syncHashDb', async () => {
+handleIpc('zzz:syncHashDb', async () => {
   const res = modService.syncHashDatabaseFromCloud();
   return { ...res, state: modService.getFullState() };
 });
 
-ipcMain.handle('setup:status', async () => modService.getSetupStatus());
+handleIpc('setup:status', async () => modService.getSetupStatus());
 
-ipcMain.handle('app:openExternal', async (_e, url: string) => {
+handleIpc('app:openExternal', async (_e, url: string) => {
   if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return false;
   await shell.openExternal(url);
   return true;
 });
 
-ipcMain.handle('zzz:autoDiscoverPaths', async () => {
+handleIpc('zzz:autoDiscoverPaths', async () => {
   const res = modService.autoDiscoverSystemPaths();
   return { ...res, state: modService.getFullState() };
 });
 
-ipcMain.handle('zzz:updateConfig', async (_e, partial: any) => {
+handleIpc('zzz:updateConfig', async (_e, partial: any) => {
   modService.updateConfig(partial);
   return { state: modService.getFullState() };
 });
 
-ipcMain.handle('zzz:launchGame', async (_e, mode?: 'modded' | 'vanilla') => {
+handleIpc('zzz:launchGame', async (_e, mode?: 'modded' | 'vanilla') => {
   const res = modService.launchNewEridu(mode || 'modded');
   return { ...res, state: modService.getFullState() };
 });
 
-ipcMain.handle('zzz:moderateModImage', async (_e, mod: any) => {
+handleIpc('zzz:moderateModImage', async (_e, mod: any) => {
   return await modService.moderateModImage(mod);
 });
 
-ipcMain.handle('zzz:recordVisionResult', async (_e, result: any) => {
+handleIpc('zzz:recordVisionResult', async (_e, result: any) => {
   return modService.recordClientVisionResult(result);
 });
 
-ipcMain.handle('zzz:sendF10', async () => {
-  const res = modService.sendLiveReloadF10();
+handleIpc('zzz:sendF10', async () => {
+  const res = await modService.sendLiveReloadF10();
   return { ...res, state: modService.getFullState() };
 });
 
-ipcMain.handle('zzz:selectLocalArchiveOrFolder', async (_e, mode: 'file' | 'folder' | 'image' | 'exe') => {
+handleIpc('zzz:selectLocalArchiveOrFolder', async (_e, mode: 'file' | 'folder' | 'image' | 'exe') => {
   if (!mainWindow) return null;
   const result = await dialog.showOpenDialog(mainWindow, {
     title:
@@ -477,7 +514,7 @@ ipcMain.handle('zzz:selectLocalArchiveOrFolder', async (_e, mode: 'file' | 'fold
 });
 
 // Mod updates: move the previous version into backups instead of deleting it.
-ipcMain.handle('mods:archive', async (_e, modUuid: string) => {
+handleIpc('mods:archive', async (_e, modUuid: string) => {
   const mods = modService.scanInstalledMods();
   const target = mods.find((m) => m.mod_uuid === modUuid);
   if (!target) return { state: modService.getFullState(), archivedTo: null };
@@ -495,12 +532,12 @@ ipcMain.handle('mods:archive', async (_e, modUuid: string) => {
     }
   }
   if (target.agent_id !== 'uncategorized') modService.syncAgentHSwap(target.agent_id);
-  modService.syncModsToXxmiLauncher();
+  modService.scheduleXxmiSync([target]);
   modService.addLog('info', 'ROUTER', `Kept a backup of the previous version of [${target.title}].`);
   return { state: modService.getFullState(), archivedTo: dest };
 });
 
-ipcMain.handle('zzz:openModFolder', async (_e, relInstallPath: string) => {
+handleIpc('zzz:openModFolder', async (_e, relInstallPath: string) => {
   const cfg = modService.getConfig();
   const absPath = path.join(cfg.zzmiRootPath, relInstallPath);
   await shell.openPath(absPath);
@@ -508,6 +545,20 @@ ipcMain.handle('zzz:openModFolder', async (_e, relInstallPath: string) => {
 });
 
 app.whenReady().then(() => {
+  // Only pictures inside the app's own folders (mods, backups) can be loaded.
+  protocol.handle('proxylaunch-img', (req) => {
+    try {
+      const file = path.resolve(decodeURIComponent(new URL(req.url).pathname.slice(1)));
+      const cfg = modService.getConfig();
+      const roots = [cfg.zzmiRootPath, cfg.appDataPath].filter(Boolean).map((r) => path.resolve(r).toLowerCase() + path.sep);
+      const inside = roots.some((r) => file.toLowerCase().startsWith(r));
+      if (!inside || !/\.(png|jpe?g|webp|gif)$/i.test(file)) return new Response(null, { status: 403 });
+      return net.fetch(pathToFileURL(file).toString());
+    } catch {
+      return new Response(null, { status: 400 });
+    }
+  });
+
   try {
     session.defaultSession.webRequest.onBeforeSendHeaders(
       { urls: ['*://*.gamebanana.com/*'] },

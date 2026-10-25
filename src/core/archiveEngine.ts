@@ -1,5 +1,5 @@
 import AdmZip from 'adm-zip';
-import { execFileSync } from 'child_process';
+import { execFile, execFileSync } from 'child_process';
 import { createRequire } from 'module';
 import fs from 'fs';
 import path from 'path';
@@ -56,6 +56,40 @@ function tryExtractWith(cmd: string, args: string[], targetDir: string): string 
     }
   }
   return fs.readdirSync(targetDir).length > 0 ? null : 'nothing was extracted';
+}
+
+/**
+ * Unpacks an archive with the bundled 7-Zip in a separate process, so the app stays responsive
+ * (and other downloads keep going) while big mods unpack. The files land in
+ * `<parentDir>/<archive name without extension>`, so mod names come out the same as before.
+ * Returns that folder, or null when 7-Zip isn't available or couldn't unpack it (the caller then
+ * falls back to the in-process extractors).
+ */
+export function extractArchiveAsync(archivePath: string, parentDir: string): Promise<string | null> {
+  const exe = sevenZipPath();
+  let isFile = false;
+  try {
+    isFile = fs.statSync(archivePath).isFile();
+  } catch {
+    // missing: let the normal path report it
+  }
+  if (!exe || !isFile) return Promise.resolve(null);
+  const out = path.join(parentDir, path.basename(archivePath).replace(/\.(zip|7z|rar)$/i, '') || 'archive');
+  fs.mkdirSync(out, { recursive: true });
+  return new Promise((resolve) => {
+    execFile(exe, ['x', '-y', '-bd', `-o${out}`, archivePath], { windowsHide: true, maxBuffer: 64 * 1024 * 1024 }, (err) => {
+      // 7-Zip exit code 1 = warnings only (files were still extracted).
+      const code = (err as { code?: number } | null)?.code;
+      let ok = !err || code === 1;
+      try {
+        ok = ok && fs.readdirSync(out).length > 0;
+      } catch {
+        ok = false;
+      }
+      if (!ok) fs.rmSync(out, { recursive: true, force: true });
+      resolve(ok ? out : null);
+    });
+  });
 }
 
 /**

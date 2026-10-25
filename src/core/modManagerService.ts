@@ -1,8 +1,10 @@
 import crypto from 'crypto';
-import { execSync, spawn } from 'child_process';
+import { execFile, execSync, spawn } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { Readable } from 'stream';
+import { pipeline } from 'stream/promises';
 import { DEFAULT_HASH_DB } from '../shared/defaultHashDb';
 import {
   AgentHashEntry,
@@ -30,6 +32,7 @@ import {
 } from '../shared/types';
 import {
   copyDirRecursive,
+  extractArchiveAsync,
   LocalizedModRoot,
   unpackAndLocalizeModArchive,
 } from './archiveEngine';
@@ -178,14 +181,21 @@ function looksLikeTexture(filePath: string, buf: Buffer): boolean {
  * screenshot.png...) always win. Any other image is only used if it doesn't look like
  * a game texture, so a face or hair texture never ends up as the cover.
  */
-export function resolveLocalModThumbnailDataUrl(modAbsDir: string): string | undefined {
+/** Address of a picture on disk that the app window can load (served by the proxylaunch-img protocol). */
+export function localImageUrl(filePath: string): string {
+  let v = '';
+  try {
+    v = `?v=${Math.round(fs.statSync(filePath).mtimeMs)}`;
+  } catch {
+    // missing: the window shows the fallback cover
+  }
+  return `proxylaunch-img://f/${encodeURIComponent(path.resolve(filePath))}${v}`;
+}
+
+export function resolveLocalModThumbnailUrl(modAbsDir: string): string | undefined {
   const imageExts = ['.webp', '.png', '.jpg', '.jpeg', '.gif'];
   const priorityPrefixes = ['preview', 'thumb', 'thumbnail', 'cover', 'screenshot', 'showcase', 'banner', 'icon'];
 
-  const mimeFor = (filePath: string) => {
-    const ext = path.extname(filePath).toLowerCase();
-    return ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : ext === '.gif' ? 'image/gif' : 'image/jpeg';
-  };
   const read = (filePath: string): Buffer | undefined => {
     try {
       return fs.readFileSync(filePath);
@@ -223,7 +233,7 @@ export function resolveLocalModThumbnailDataUrl(modAbsDir: string): string | und
     for (const prefix of priorityPrefixes) {
       const matched = allCandidates.find((p) => path.basename(p).toLowerCase().startsWith(prefix));
       const buf = matched && read(matched);
-      if (matched && buf) return `data:${mimeFor(matched)};base64,${buf.toString('base64')}`;
+      if (matched && buf) return localImageUrl(matched);
     }
 
     const ordered = [...allCandidates].sort(
@@ -231,12 +241,113 @@ export function resolveLocalModThumbnailDataUrl(modAbsDir: string): string | und
     );
     for (const candidate of ordered) {
       const buf = read(candidate);
-      if (buf && !looksLikeTexture(candidate, buf)) return `data:${mimeFor(candidate)};base64,${buf.toString('base64')}`;
+      if (buf && !looksLikeTexture(candidate, buf)) return localImageUrl(candidate);
     }
     return undefined;
   } catch {
     return undefined;
   }
+}
+
+/** Cheap change marker for one file: modified time + size ('' when missing). */
+function fileSig(p: string): string {
+  try {
+    const st = fs.statSync(p);
+    return `${st.mtimeMs}:${st.size}`;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Change marker for a mod folder: the folder itself (files added, removed or renamed) and its
+ * top-level files (ini edits, manifest writes, new covers). Nested changes are picked up by the
+ * folder watcher, which clears the cache for that mod.
+ */
+function modFolderSig(dir: string): string {
+  try {
+    const parts = [String(fs.statSync(dir).mtimeMs)];
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!e.isFile()) continue;
+      parts.push(`${e.name}:${fileSig(path.join(dir, e.name))}`);
+    }
+    return parts.join('|');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Mirrors the mod folders inside `srcDir` into `dstDir`: new mods are copied, changed files are
+ * updated (.ini/.json always, others when their size changed), on/off renames are done in place,
+ * and mods that are gone are removed. Returns the number of mod folders.
+ */
+function syncModFolders(srcDir: string, dstDir: string): number {
+  fs.mkdirSync(dstDir, { recursive: true });
+  const srcChildren = fs.readdirSync(srcDir, { withFileTypes: true });
+  const dstEntries = fs.readdirSync(dstDir);
+  const keep = new Set<string>();
+  let count = 0;
+  for (const child of srcChildren) {
+    const srcChild = path.join(srcDir, child.name);
+    const dstChild = path.join(dstDir, child.name);
+    keep.add(child.name.toLowerCase());
+    if (child.isFile()) {
+      if (!fs.existsSync(dstChild) || /\.(ini|json)$/i.test(child.name) || fs.statSync(srcChild).size !== fs.statSync(dstChild).size) {
+        fs.copyFileSync(srcChild, dstChild);
+      }
+      continue;
+    }
+    if (!child.isDirectory()) continue;
+    count++;
+    // Switched on/off: rename the copy instead of copying it again.
+    const base = child.name.replace(/^DISABLED[_-]*/i, '');
+    const opposite = child.name.toUpperCase().startsWith('DISABLED') ? base : `DISABLED_${base}`;
+    const existingOpposite = dstEntries.find((d) => d.toLowerCase() === opposite.toLowerCase());
+    if (existingOpposite && !fs.existsSync(dstChild)) {
+      try {
+        renameWithRetry(path.join(dstDir, existingOpposite), dstChild);
+      } catch {
+        // copied below
+      }
+    }
+    if (!fs.existsSync(dstChild)) {
+      copyDirRecursive(srcChild, dstChild);
+      continue;
+    }
+    const dstFiles = new Set(fs.readdirSync(dstChild).map((n) => n.toLowerCase()));
+    for (const f of fs.readdirSync(srcChild, { withFileTypes: true })) {
+      const sFile = path.join(srcChild, f.name);
+      const dFile = path.join(dstChild, f.name);
+      const lower = f.name.toLowerCase();
+      // XXMI Launcher 2.4.6+ renames duplicate library / rogue d3dx inis to DISABLED_<name>.
+      // Respect that instead of copying the file back, which made XXMI warn on every launch.
+      if (f.isFile() && lower.endsWith('.ini') && !dstFiles.has(lower) && dstFiles.has(`disabled_${lower}`)) continue;
+      if (f.isDirectory()) {
+        if (!fs.existsSync(dFile)) copyDirRecursive(sFile, dFile);
+      } else if (!dstFiles.has(lower) || /\.(ini|json)$/i.test(f.name) || fs.statSync(sFile).size !== fs.statSync(dFile).size) {
+        fs.copyFileSync(sFile, dFile);
+      }
+    }
+  }
+  for (const d of fs.readdirSync(dstDir)) {
+    if (!keep.has(d.toLowerCase())) fs.rmSync(path.join(dstDir, d), { recursive: true, force: true });
+  }
+  return count;
+}
+
+/** Streams a download straight to disk (no whole-file copy in memory). True when it got a real file. */
+async function downloadToFile(url: string, dest: string): Promise<boolean> {
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      Referer: 'https://gamebanana.com/',
+    },
+    redirect: 'follow',
+  });
+  if (!res.ok || !res.body) return false;
+  await pipeline(Readable.fromWeb(res.body as import('stream/web').ReadableStream), fs.createWriteStream(dest));
+  return fs.statSync(dest).size > 500;
 }
 
 export class ModManagerService {
@@ -246,6 +357,12 @@ export class ModManagerService {
   private configPath: string;
   private hashDbPath: string;
   private logs: FairyLogEntry[] = [];
+
+  /* Caches: reading and parsing the same files on every call made the app slow. */
+  private configCache: { sig: string; value: AppConfig } | null = null;
+  private hashDbCache: { sig: string; value: HashDatabase } | null = null;
+  /** Parsed mods, by folder. Re-read only when the folder or its top-level files change. */
+  private manifestCache = new Map<string, { sig: string; hashDbSig: string; manifest: ModManifest }>();
 
   constructor(workspaceRootDir?: string) {
     this.baseDir = workspaceRootDir || process.cwd();
@@ -305,6 +422,7 @@ export class ModManagerService {
         sandboxMode: false,
       };
       fs.writeFileSync(this.configPath, JSON.stringify(defaultConfig, null, 2), 'utf-8');
+      this.configCache = null;
     }
 
     // Auto-discover real ZenlessZoneZero.exe and Mod Loader paths if current paths do not exist on disk
@@ -322,6 +440,7 @@ export class ModManagerService {
 
     if (!fs.existsSync(this.hashDbPath)) {
       fs.writeFileSync(this.hashDbPath, JSON.stringify(DEFAULT_HASH_DB, null, 2), 'utf-8');
+      this.hashDbCache = null;
     } else {
       try {
         const existing = JSON.parse(fs.readFileSync(this.hashDbPath, 'utf-8'));
@@ -333,9 +452,11 @@ export class ModManagerService {
           (existing.builtin_revision || 0) < (DEFAULT_HASH_DB.builtin_revision || 0)
         ) {
           fs.writeFileSync(this.hashDbPath, JSON.stringify(DEFAULT_HASH_DB, null, 2), 'utf-8');
+          this.hashDbCache = null;
         }
       } catch {
         fs.writeFileSync(this.hashDbPath, JSON.stringify(DEFAULT_HASH_DB, null, 2), 'utf-8');
+        this.hashDbCache = null;
       }
     }
 
@@ -923,25 +1044,48 @@ endif
   }
 
   public getConfig(): AppConfig {
-    return JSON.parse(fs.readFileSync(this.configPath, 'utf-8'));
+    const sig = fileSig(this.configPath);
+    if (!this.configCache || this.configCache.sig !== sig) {
+      this.configCache = { sig, value: JSON.parse(fs.readFileSync(this.configPath, 'utf-8')) };
+    }
+    return { ...this.configCache.value };
   }
 
   public updateConfig(partial: Partial<AppConfig>): AppConfig {
     const current = this.getConfig();
     const updated = { ...current, ...partial };
     fs.writeFileSync(this.configPath, JSON.stringify(updated, null, 2), 'utf-8');
+    this.configCache = null;
     this.addLog('info', 'FAIRY_CORE', 'System configuration updated in config.json.');
     return updated;
   }
 
   public getHashDb(): HashDatabase {
-    return JSON.parse(fs.readFileSync(this.hashDbPath, 'utf-8'));
+    const sig = fileSig(this.hashDbPath);
+    if (!this.hashDbCache || this.hashDbCache.sig !== sig) {
+      this.hashDbCache = { sig, value: JSON.parse(fs.readFileSync(this.hashDbPath, 'utf-8')) };
+    }
+    return structuredClone(this.hashDbCache.value);
+  }
+
+  /** Forget cached mods (after files were changed behind the app's back, e.g. by the folder watcher). */
+  public invalidateModCache(absDir?: string): void {
+    if (!absDir) {
+      this.manifestCache.clear();
+      return;
+    }
+    const norm = path.resolve(absDir).toLowerCase();
+    for (const key of this.manifestCache.keys()) {
+      const k = key.split('|')[0].toLowerCase();
+      if (norm.startsWith(k) || k.startsWith(norm)) this.manifestCache.delete(key);
+    }
   }
 
   public syncHashDatabaseFromCloud(): { hashDb: HashDatabase; message: string } {
     const current = this.getHashDb();
     current.last_synced = new Date().toISOString();
     fs.writeFileSync(this.hashDbPath, JSON.stringify(current, null, 2), 'utf-8');
+    this.hashDbCache = null;
     const msg = `Synced hash_db.json (Schema v${current.schema_version}) — ${Object.keys(current.agents).length} ZZZ Agents verified for Patch 1.6+.`;
     this.addLog('cyan', 'FAIRY_CORE', msg);
     return { hashDb: current, message: msg };
@@ -1247,6 +1391,26 @@ endif
     relInstallPath: string,
     hashDb: HashDatabase
   ): ModManifest | null {
+    const key = `${path.resolve(modAbsDir)}|${relInstallPath}`;
+    const hashDbSig = this.hashDbCache?.sig ?? '';
+    const sig = modFolderSig(modAbsDir);
+    const hit = this.manifestCache.get(key);
+    if (hit && hit.sig === sig && hit.hashDbSig === hashDbSig) return structuredClone(hit.manifest);
+    const manifest = this.readModManifest(modAbsDir, relInstallPath, hashDb);
+    if (manifest) {
+      // Signature after reading: a rebuilt mod_manifest.json shouldn't force a second read.
+      this.manifestCache.set(key, { sig: modFolderSig(modAbsDir), hashDbSig, manifest: structuredClone(manifest) });
+    } else {
+      this.manifestCache.delete(key);
+    }
+    return manifest;
+  }
+
+  private readModManifest(
+    modAbsDir: string,
+    relInstallPath: string,
+    hashDb: HashDatabase
+  ): ModManifest | null {
     const manifestPath = path.join(modAbsDir, 'mod_manifest.json');
     const modJsonPath = path.join(modAbsDir, 'mod.json');
     const folderBase = path.basename(modAbsDir);
@@ -1254,7 +1418,7 @@ endif
     const cleanFolder = sanitizeModFolderName(folderBase);
 
     // 1. Deep Local Mod Thumbnail Resolver (scans root and 1 level deep for preview.*, thumb.*, cover.*, or first .png/.jpg/.webp/.gif)
-    const localPreviewDataUrl = resolveLocalModThumbnailDataUrl(modAbsDir);
+    const localPreviewDataUrl = resolveLocalModThumbnailUrl(modAbsDir);
 
     // 2. Check for mod.json or .mod_meta.json
     let metaInfo: any = null;
@@ -1529,7 +1693,7 @@ endif
       // Workshop mixes are not on GameBanana: matching them by name would link a stranger's mod.
       if ((mod.tags || []).includes('Workshop')) continue;
 
-      const hasLocalImg = Boolean(resolveLocalModThumbnailDataUrl(absPath));
+      const hasLocalImg = Boolean(resolveLocalModThumbnailUrl(absPath));
 
       if (!hasLocalImg && (!mod.thumbnail_url || mod.thumbnail_url.startsWith('data:image/svg+xml'))) {
         const res = await searchAndFetchGameBananaPreviewForFolder(absPath, mod.folder_name);
@@ -1777,11 +1941,8 @@ endif
       target.mod_uuid
     );
 
-    this.syncModsToXxmiLauncher();
-
-    if (cfg.autoSendF10OnToggle) {
-      this.sendLiveReloadF10();
-    }
+    // Copy to XXMI and reload in game in the background: the switch itself is done.
+    this.scheduleXxmiSync([target], Boolean(cfg.autoSendF10OnToggle));
 
     return { mod: target, elapsedMs, masterSwapCompiled, autoDisabledMods };
   }
@@ -1822,7 +1983,7 @@ endif
       );
     }
 
-    this.syncModsToXxmiLauncher();
+    this.scheduleXxmiSync([target]);
 
     return { mod: target, masterSwapContent: syncRes.generatedIniContent };
   }
@@ -2072,7 +2233,7 @@ endif
     if (target.agent_id !== 'uncategorized') {
       this.syncAgentHSwap(target.agent_id);
     }
-    this.syncModsToXxmiLauncher();
+    this.scheduleXxmiSync([target]);
     this.addLog('info', 'ROUTER', `Removed mod package [${target.title}] from ZZMI library.`);
   }
 
@@ -2080,6 +2241,30 @@ endif
    * Ingests a GameBanana mod (by ID or `zzzmgr://` URL or `https://gamebanana.com/mods/...` URL)
    * or a local `.zip`/`.7z`/`.rar`/directory path.
    */
+  /* One install at a time: unpacking and filing mods never overlap. */
+  private installChain: Promise<void> = Promise.resolve();
+  public acquireInstallLock(): Promise<() => void> {
+    let release!: () => void;
+    const done = new Promise<void>((r) => (release = r));
+    const prev = this.installChain;
+    this.installChain = prev.then(() => done);
+    return prev.then(() => release);
+  }
+
+  /* Up to 3 downloads at once; more wait their turn instead of slowing everything down. */
+  private activeDownloads = 0;
+  private downloadWaiters: Array<() => void> = [];
+  private async withDownloadSlot<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.activeDownloads >= 3) await new Promise<void>((r) => this.downloadWaiters.push(r));
+    this.activeDownloads++;
+    try {
+      return await fn();
+    } finally {
+      this.activeDownloads--;
+      this.downloadWaiters.shift()?.();
+    }
+  }
+
   public async ingestPackage(
     sourceInput: string,
     options?: { autoSplitMultiAgent?: boolean; metadataOverride?: Partial<GameBananaModItem> }
@@ -2093,6 +2278,7 @@ endif
     let gbMeta: GameBananaModItem | null = null;
     let archivePathToUnpack = sourceInput;
 
+    let release: (() => void) | null = null;
     try {
       // Check if sourceInput is a GameBanana URL, zzzmgr:// URI, or numeric Mod ID
       // A gamebanana.com/dl/<n> link holds a FILE number, not the mod's: use the mod id we were given.
@@ -2143,21 +2329,7 @@ endif
         if (gbMeta.download_url && gbMeta.download_url.startsWith('http')) {
           try {
             this.addLog('info', 'GB_INGEST', `Downloading mod archive from GameBanana: ${gbMeta.download_url}`);
-            const dlRes = await fetch(gbMeta.download_url, {
-              headers: {
-                'User-Agent':
-                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                Referer: 'https://gamebanana.com/',
-              },
-              redirect: 'follow',
-            });
-            if (dlRes.ok) {
-              const buf = Buffer.from(await dlRes.arrayBuffer());
-              if (buf.length > 500) {
-                fs.writeFileSync(dlArchivePath, buf);
-                downloadedRealArchive = true;
-              }
-            }
+            downloadedRealArchive = await this.withDownloadSlot(() => downloadToFile(gbMeta!.download_url, dlArchivePath));
           } catch (dlErr) {
             this.addLog(
               'warning',
@@ -2181,7 +2353,10 @@ endif
         this.addLog('info', 'GB_INGEST', msg);
         logs.push(msg);
 
-        const unpackRes = unpackAndLocalizeModArchive(dlArchivePath, archivePathToUnpack, hashDb);
+        // One install at a time (downloads still run side by side), unpacked outside the main process.
+        release = await this.acquireInstallLock();
+        const preExtracted = await extractArchiveAsync(dlArchivePath, path.join(stagingDir, 'raw'));
+        const unpackRes = unpackAndLocalizeModArchive(preExtracted ?? dlArchivePath, archivePathToUnpack, hashDb);
 
         if (unpackRes.isMultiAgentPack && !options?.autoSplitMultiAgent) {
           const candidates: MultiAgentCandidate[] = unpackRes.localizedRoots.map((r) => {
@@ -2227,7 +2402,9 @@ endif
       }
 
       const unpackTarget = path.join(stagingDir, 'extracted');
-      const unpackRes = unpackAndLocalizeModArchive(sourceInput, unpackTarget, hashDb);
+      release = await this.acquireInstallLock();
+      const preExtracted = await extractArchiveAsync(sourceInput, path.join(stagingDir, 'raw'));
+      const unpackRes = unpackAndLocalizeModArchive(preExtracted ?? sourceInput, unpackTarget, hashDb);
 
       const unpkMsg = `Intercepting local package [${path.basename(sourceInput)}]... Unpacked ${unpackRes.totalNestedFolders} nested wrapper layer(s).`;
       this.addLog('info', 'GB_INGEST', unpkMsg);
@@ -2285,6 +2462,8 @@ endif
         logs: [...logs, errMsg],
         error: errMsg,
       };
+    } finally {
+      release?.();
     }
   }
 
@@ -2470,7 +2649,7 @@ endif
       installed.push(manifest);
     }
 
-    this.syncModsToXxmiLauncher();
+    this.scheduleXxmiSync(installed);
     return installed;
   }
 
@@ -2627,7 +2806,12 @@ endif
    * cross-drive symlinks/junctions that 3DMigoto's directory scanner might skip), and resets
    * XXMI Launcher's Ini Optimizer cache so newly added/toggled mods are always loaded.
    */
-  public syncModsToXxmiLauncher(): { synced: boolean; targetModsDir: string; syncedModsCount: number } {
+  /**
+   * Copies the app's mods into XXMI Launcher's ZZMI/Mods folder (when they're different folders).
+   * Only changed files are copied. `scope` limits the work to some top-level folders: agent
+   * folder names under _ZZZMM_Managed, or "_Uncategorized_UI_Audio". Without it, everything syncs.
+   */
+  public syncModsToXxmiLauncher(scope?: string[]): { synced: boolean; targetModsDir: string; syncedModsCount: number } {
     const isTempTestDir = this.baseDir.toLowerCase().includes(os.tmpdir().toLowerCase());
     if (isTempTestDir || process.platform !== 'win32') {
       return { synced: false, targetModsDir: '', syncedModsCount: 0 };
@@ -2648,118 +2832,43 @@ endif
       return { synced: true, targetModsDir: xxmiModsDir, syncedModsCount: this.scanInstalledMods().length };
     }
 
+    const inScope = scope ? new Set(scope.map((x) => x.toLowerCase())) : null;
     let syncedModsCount = 0;
+    const replaceSymlink = (dst: string) => {
+      try {
+        if (fs.lstatSync(dst).isSymbolicLink()) fs.unlinkSync(dst);
+      } catch {
+        // does not exist yet
+      }
+    };
 
-    // 1. Sync _ZZZMM_Managed (only non-empty agent directories as physical folders)
+    // 1. _ZZZMM_Managed/<Agent>/<Mod>
     const srcManaged = path.join(localModsDir, '_ZZZMM_Managed');
     const dstManaged = path.join(xxmiModsDir, '_ZZZMM_Managed');
-    try {
-      const lstat = fs.lstatSync(dstManaged);
-      if (lstat.isSymbolicLink()) {
-        fs.unlinkSync(dstManaged);
-      }
-    } catch {
-      // Does not exist yet
-    }
-
+    replaceSymlink(dstManaged);
     if (fs.existsSync(srcManaged)) {
       try {
         fs.mkdirSync(dstManaged, { recursive: true });
-        const validAgents = new Set<string>();
-
+        const keepAgents = new Set<string>();
         for (const agentEntry of fs.readdirSync(srcManaged, { withFileTypes: true })) {
           if (!agentEntry.isDirectory()) continue;
+          const name = agentEntry.name.toLowerCase();
           const srcAgentDir = path.join(srcManaged, agentEntry.name);
-          const agentChildren = fs.readdirSync(srcAgentDir, { withFileTypes: true });
           const dstAgentDir = path.join(dstManaged, agentEntry.name);
-
-          if (agentChildren.length === 0) {
-            if (fs.existsSync(dstAgentDir)) {
-              fs.rmSync(dstAgentDir, { recursive: true, force: true });
-            }
+          if (inScope && !inScope.has(name)) {
+            keepAgents.add(name); // not part of this sync: leave as is
             continue;
           }
-
-          validAgents.add(agentEntry.name.toLowerCase());
-          fs.mkdirSync(dstAgentDir, { recursive: true });
-
-          const dstEntries = fs.readdirSync(dstAgentDir);
-          const validModNames = new Set<string>();
-
-          for (const child of agentChildren) {
-            const srcChildPath = path.join(srcAgentDir, child.name);
-            const dstChildPath = path.join(dstAgentDir, child.name);
-            validModNames.add(child.name.toLowerCase());
-
-            if (child.isFile()) {
-              fs.copyFileSync(srcChildPath, dstChildPath);
-              continue;
-            }
-
-            if (child.isDirectory()) {
-              syncedModsCount++;
-              const cleanBase = child.name.replace(/^DISABLED[_-]*/i, '');
-              const oppositeName = child.name.toUpperCase().startsWith('DISABLED')
-                ? cleanBase
-                : `DISABLED_${cleanBase}`;
-
-              // Fast in-place rename if mod was toggled between enabled and DISABLED_
-              const existingOpposite = dstEntries.find(
-                (d) => d.toLowerCase() === oppositeName.toLowerCase()
-              );
-              if (existingOpposite && !fs.existsSync(dstChildPath)) {
-                try {
-                  renameWithRetry(path.join(dstAgentDir, existingOpposite), dstChildPath);
-                } catch {
-                  // Fallback to copy below
-                }
-              }
-
-              if (!fs.existsSync(dstChildPath)) {
-                copyDirRecursive(srcChildPath, dstChildPath);
-              } else {
-                // Sync updated .ini / .json files or missing files without re-copying unchanged multi-MB .buf/.dds files
-                const dstModFiles = new Set(fs.readdirSync(dstChildPath).map((n) => n.toLowerCase()));
-                for (const modFile of fs.readdirSync(srcChildPath, { withFileTypes: true })) {
-                  const sFile = path.join(srcChildPath, modFile.name);
-                  const dFile = path.join(dstChildPath, modFile.name);
-                  // XXMI Launcher 2.4.6+ renames duplicate library / rogue d3dx inis to DISABLED_<name>.
-                  // Respect that instead of copying the file back, which made XXMI warn on every launch.
-                  if (
-                    modFile.isFile() &&
-                    /\.ini$/i.test(modFile.name) &&
-                    !dstModFiles.has(modFile.name.toLowerCase()) &&
-                    dstModFiles.has(`disabled_${modFile.name.toLowerCase()}`)
-                  ) {
-                    continue;
-                  }
-                  if (modFile.isDirectory()) {
-                    if (!fs.existsSync(dFile)) {
-                      copyDirRecursive(sFile, dFile);
-                    }
-                  } else if (
-                    !fs.existsSync(dFile) ||
-                    /\.(ini|json)$/i.test(modFile.name) ||
-                    fs.statSync(sFile).size !== fs.statSync(dFile).size
-                  ) {
-                    fs.copyFileSync(sFile, dFile);
-                  }
-                }
-              }
-            }
+          if (fs.readdirSync(srcAgentDir).length === 0) {
+            fs.rmSync(dstAgentDir, { recursive: true, force: true });
+            continue;
           }
-
-          // Remove any deleted mod folders in dstAgentDir
-          for (const dstEntry of fs.readdirSync(dstAgentDir)) {
-            if (!validModNames.has(dstEntry.toLowerCase())) {
-              fs.rmSync(path.join(dstAgentDir, dstEntry), { recursive: true, force: true });
-            }
-          }
+          keepAgents.add(name);
+          syncedModsCount += syncModFolders(srcAgentDir, dstAgentDir);
         }
-
-        // Remove any agent folders in dstManaged that no longer have mods
+        // Agent folders that no longer have mods
         for (const dstAgent of fs.readdirSync(dstManaged)) {
-          if (!validAgents.has(dstAgent.toLowerCase())) {
+          if (!keepAgents.has(dstAgent.toLowerCase())) {
             fs.rmSync(path.join(dstManaged, dstAgent), { recursive: true, force: true });
           }
         }
@@ -2768,31 +2877,19 @@ endif
       }
     }
 
-    // 2. Sync _Uncategorized_UI_Audio
-    const srcUncat = path.join(localModsDir, '_Uncategorized_UI_Audio');
-    const dstUncat = path.join(xxmiModsDir, '_Uncategorized_UI_Audio');
-    try {
-      const lstat = fs.lstatSync(dstUncat);
-      if (lstat.isSymbolicLink()) {
-        fs.unlinkSync(dstUncat);
-      }
-    } catch {
-      // Does not exist yet
-    }
-
-    if (fs.existsSync(srcUncat)) {
+    // 2. _Uncategorized_UI_Audio/<Mod>
+    if (!inScope || inScope.has('_uncategorized_ui_audio')) {
+      const srcUncat = path.join(localModsDir, '_Uncategorized_UI_Audio');
+      const dstUncat = path.join(xxmiModsDir, '_Uncategorized_UI_Audio');
+      replaceSymlink(dstUncat);
       try {
-        const uncatChildren = fs.readdirSync(srcUncat);
-        if (uncatChildren.length === 0) {
-          if (fs.existsSync(dstUncat)) {
-            fs.rmSync(dstUncat, { recursive: true, force: true });
-          }
+        if (!fs.existsSync(srcUncat) || fs.readdirSync(srcUncat).length === 0) {
+          fs.rmSync(dstUncat, { recursive: true, force: true });
         } else {
-          copyDirRecursive(srcUncat, dstUncat);
-          syncedModsCount += uncatChildren.length;
+          syncedModsCount += syncModFolders(srcUncat, dstUncat);
         }
-      } catch {
-        // Ignore
+      } catch (err) {
+        this.addLog('warning', 'ZZMI_HOOK', `XXMI UI mods sync warning: ${(err as Error).message}`);
       }
     }
 
@@ -2807,6 +2904,37 @@ endif
     }
 
     return { synced: true, targetModsDir: xxmiModsDir, syncedModsCount };
+  }
+
+  /* Background XXMI sync + in-game reload, batched so quick clicks share one sync. */
+  private pendingSync: { scope: Set<string> | 'all'; reload: boolean; timer: NodeJS.Timeout } | null = null;
+
+  /** The top-level sync folder for a mod: its agent folder, or "_Uncategorized_UI_Audio". */
+  private syncScopeOf(mod: Pick<ModManifest, 'install_path'>): string {
+    const parts = mod.install_path.split(/[\\/]/);
+    const i = parts.findIndex((p) => p.toLowerCase() === '_zzzmm_managed');
+    return i >= 0 && parts[i + 1] ? parts[i + 1] : '_Uncategorized_UI_Audio';
+  }
+
+  /** Syncs to XXMI (and reloads mods in the running game) shortly after, without blocking the caller. */
+  public scheduleXxmiSync(mods: Array<Pick<ModManifest, 'install_path'>> | 'all', reload = false): void {
+    const prev = this.pendingSync;
+    if (prev) clearTimeout(prev.timer);
+    let scope: Set<string> | 'all' = prev?.scope ?? new Set<string>();
+    if (mods === 'all' || scope === 'all') scope = 'all';
+    else for (const m of mods) scope.add(this.syncScopeOf(m));
+    const timer = setTimeout(() => {
+      const job = this.pendingSync;
+      this.pendingSync = null;
+      if (!job) return;
+      try {
+        this.syncModsToXxmiLauncher(job.scope === 'all' ? undefined : [...job.scope]);
+      } catch (err) {
+        this.addLog('warning', 'ZZMI_HOOK', `XXMI sync warning: ${(err as Error).message}`);
+      }
+      if (job.reload) void this.sendLiveReloadF10({ skipSync: true });
+    }, 120);
+    this.pendingSync = { scope, reload: Boolean(prev?.reload) || reload, timer };
   }
 
   /**
@@ -3127,36 +3255,35 @@ endif
    * Sends a virtual `VK_F10` (0x79) keystroke message directly to the `ZenlessZoneZero` window handle (`HWND`)
    * via Win32 PostMessage (WM_KEYDOWN / WM_KEYUP) if running on Windows, hot-reloading 3DMigoto/ZZMI in-game.
    */
-  public sendLiveReloadF10(): {
+  /**
+   * Presses F10 in the running game so ZZMI reloads mods. Runs PowerShell in the background
+   * (it takes a second or two to start), so the app never waits on it.
+   */
+  public async sendLiveReloadF10(opts: { skipSync?: boolean } = {}): Promise<{
     success: boolean;
     hwndFound: boolean;
     gameRunning: boolean;
     message: string;
-  } {
-    this.syncModsToXxmiLauncher();
+  }> {
+    if (!opts.skipSync) this.syncModsToXxmiLauncher();
     let hwndFound = false;
     if (process.platform === 'win32') {
-      try {
-        const psScript = [
-          `$p = Get-Process -Name 'ZenlessZoneZero' -ErrorAction SilentlyContinue | Select-Object -First 1;`,
-          `if ($p -and $p.MainWindowHandle -ne 0) {`,
-          `  Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class Win32 { [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam); }';`,
-          `  [Win32]::PostMessage($p.MainWindowHandle, 0x0100, [IntPtr]0x79, [IntPtr]0) | Out-Null;`,
-          `  Start-Sleep -Milliseconds 35;`,
-          `  [Win32]::PostMessage($p.MainWindowHandle, 0x0101, [IntPtr]0x79, [IntPtr]0) | Out-Null;`,
-          `  Write-Output $p.MainWindowHandle;`,
-          `}`,
-        ].join(' ');
-        const out = execSync(`powershell -NoProfile -Command "${psScript.replace(/"/g, '\\"')}"`, {
-          encoding: 'utf-8',
-          timeout: 2000,
-        }).trim();
-        if (out && out !== '0') {
-          hwndFound = true;
-        }
-      } catch {
-        // Ignore if game not currently running
-      }
+      const psScript = [
+        `$p = Get-Process -Name 'ZenlessZoneZero' -ErrorAction SilentlyContinue | Select-Object -First 1;`,
+        `if ($p -and $p.MainWindowHandle -ne 0) {`,
+        `  Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class Win32 { [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam); }';`,
+        `  [Win32]::PostMessage($p.MainWindowHandle, 0x0100, [IntPtr]0x79, [IntPtr]0) | Out-Null;`,
+        `  Start-Sleep -Milliseconds 35;`,
+        `  [Win32]::PostMessage($p.MainWindowHandle, 0x0101, [IntPtr]0x79, [IntPtr]0) | Out-Null;`,
+        `  Write-Output $p.MainWindowHandle;`,
+        `}`,
+      ].join(' ');
+      const out = await new Promise<string>((resolve) => {
+        execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', psScript], { windowsHide: true, timeout: 6000 }, (_err, stdout) =>
+          resolve(String(stdout || '').trim())
+        );
+      });
+      hwndFound = Boolean(out && out !== '0');
     }
 
     const msg = hwndFound
@@ -3194,7 +3321,7 @@ endif
       const ext = path.extname(imageSource).toLowerCase() || '.png';
       const destFile = path.join(modAbsDir, `preview${ext}`);
       fs.copyFileSync(imageSource, destFile);
-      target.thumbnail_url = resolveLocalModThumbnailDataUrl(modAbsDir) || target.thumbnail_url;
+      target.thumbnail_url = resolveLocalModThumbnailUrl(modAbsDir) || target.thumbnail_url;
     } else {
       throw new Error('Image source not found');
     }
@@ -3311,9 +3438,7 @@ endif
     }
 
     this.updateConfig({ activeProfile: profileName });
-    if (cfg.autoSendF10OnToggle) {
-      this.sendLiveReloadF10();
-    }
+    this.scheduleXxmiSync('all', Boolean(cfg.autoSendF10OnToggle));
 
     const message = `Activated Loadout Profile [${profileName}] (${enabledCount} active mods).`;
     this.addLog('cyan', 'FAIRY_CORE', message);
@@ -3653,7 +3778,7 @@ endif
           copyDirRecursive(modDir, destAbsDir);
         }
 
-        const localThumb = resolveLocalModThumbnailDataUrl(destAbsDir);
+        const localThumb = resolveLocalModThumbnailUrl(destAbsDir);
 
         const manifest: ModManifest = {
           mod_uuid: crypto.randomUUID(),
