@@ -1,8 +1,11 @@
-What's new in 2.14.5
+What's new in 2.14.6
 
-- Much faster all around. ProxyLaunch now remembers what it already read about each mod and only re-reads mods that changed, instead of going through every mod on every click.
-- Turning mods on and off is instant. Copying to XXMI and the in-game reload now happen in the background, and only for the character you changed.
-- Downloading several mods at once works properly: up to three download at the same time, they install one after another so they never get in each other's way, and big archives unpack without freezing the app.
-- Menus and screens load faster, because mod covers are no longer copied into the app's memory every time something changes.
+- Fixed Library covers. Mods with a GameBanana picture now always show it, instead of a random texture or note image from the mod's folder. Covers that pointed to a folder from before you turned the mod on or off are fixed too. If a picture can't load, the mod's next picture is shown instead.
+- Your own covers still win: a preview.png in the mod folder, or one you set with Change cover or Paste cover.
+- New: Surprise me. Pick a character in the Library and get a random outfit for them in one click.
+- New: All off. Turns off every mod you're looking at, for one character or for everything.
+- Ctrl+F jumps to the search box on any screen.
+- ProxyLaunch remembers which screen and character you had open.
+- Covers fade in smoothly instead of popping in.
 
 Requires XXMI Launcher with ZZMI set up. Questions or bugs? Reach out on Discord: ghxty
