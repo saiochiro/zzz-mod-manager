@@ -1,8 +1,7 @@
-What's new in 2.14.7
+What's new in 2.14.8
 
-- ProxyLaunch now goes quiet when you're not using it. As soon as you tab out, open another window on top, or minimize it, every animation pauses (the background scene, moving patterns, the cursor glow and the Workshop's 3D preview), and picks up where it left off when you come back.
-- The cursor glow only does work while your mouse is moving, instead of running nonstop.
-- Long sessions stay light: Browse no longer keeps every page you've ever looked at in memory.
-- Tip: for the lightest setup, turn off Moving patterns or set Background to Plain in Themes.
+- Tidy hotkeys is much smarter. Each mod's keys now only work while that mod's character is on screen, so pressing a key for one character's outfit no longer opens another character's menu. No two toggles in the same mod share a key, and keys the game uses (WASD, Q, E, R, F, numbers and more) and H (outfit rotation) are never used. Your original files are kept in backups.
+- New Tidy keys button in the Library. With a character picked it tidies just that character's mods, otherwise all of them. If you tidied before, press it once more to get the new behavior.
+- Fixed Update all turning mods on. Updated mods now stay on or off exactly like before the update, and the previous version is kept in backups.
 
 Requires XXMI Launcher with ZZMI set up. Questions or bugs? Reach out on Discord: ghxty
