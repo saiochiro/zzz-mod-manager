@@ -41,6 +41,9 @@ function fairyBackendMiddlewarePlugin(): Plugin {
             case 'zzz:toggleEnabled':
               result = { ...svc.toggleModEnabled(args[0]), state: svc.getFullState() };
               break;
+            case 'zzz:setModsEnabled':
+              result = { changed: svc.setModsEnabled(args[0] || []), state: svc.getFullState() };
+              break;
             case 'zzz:toggleHCycle':
               result = { ...svc.toggleModHCycle(args[0]), state: svc.getFullState() };
               break;
@@ -182,7 +185,7 @@ function fairyBackendMiddlewarePlugin(): Plugin {
               result = svc.recordClientVisionResult(args[0]);
               break;
             case 'zzz:sendF10':
-              result = { ...svc.sendLiveReloadF10(), state: svc.getFullState() };
+              result = { ...(await svc.sendLiveReloadF10()), state: svc.getFullState() };
               break;
             default:
               result = svc.getFullState();

@@ -5,6 +5,7 @@ import {
   Loader2,
   AlertTriangle,
   Compass,
+  Dices,
   FolderInput,
   FolderPlus,
   HardDriveDownload,
@@ -13,6 +14,7 @@ import {
   MoreHorizontal,
   PackageOpen,
   Power,
+  PowerOff,
   RotateCcw,
   SearchX,
   ShieldCheck,
@@ -60,10 +62,26 @@ interface LibraryScreenProps {
   onOrganizeFolders: () => void;
   onUndoOrganize: () => void;
   canUndoOrganize: boolean;
+  /** Turns several mods on/off at once; `message` is shown when it's done. */
+  onSetModsEnabled: (changes: Array<{ modUuid: string; enabled: boolean }>, message: string) => void;
 }
 
 export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
-  const [agentId, setAgentId] = useState('ALL');
+  const [agentId, setAgentIdState] = useState<string>(() => {
+    try {
+      return localStorage.getItem('pl_library_agent') || 'ALL';
+    } catch {
+      return 'ALL';
+    }
+  });
+  const setAgentId = (id: string) => {
+    setAgentIdState(id);
+    try {
+      localStorage.setItem('pl_library_agent', id);
+    } catch {
+      // per-viewer convenience only
+    }
+  };
   const [status, setStatus] = useState<StatusFilter>('ALL');
   const [category, setCategory] = useState<CategoryFilter>('ALL');
   const [sortBy, setSortBy] = useState<SortBy>('alphabetical');
@@ -113,6 +131,19 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
         return a.title.localeCompare(b.title);
       });
   }, [visibleMods, agentId, category, status, query, sortBy, p]);
+
+  // "Surprise me": a random outfit (skin) for the picked character; its other outfits go off.
+  const outfitChoices = scopedMods.filter((m) => (m.category_tag || 'Skins') === 'Skins' && getModHealth(m) !== 'broken');
+  const surpriseOutfit = () => {
+    const current = outfitChoices.filter((m) => m.enabled).map((m) => m.mod_uuid);
+    const pool = outfitChoices.filter((m) => !(current.length === 1 && current[0] === m.mod_uuid));
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    if (!pick) return;
+    p.onSetModsEnabled(
+      outfitChoices.map((m) => ({ modUuid: m.mod_uuid, enabled: m.mod_uuid === pick.mod_uuid })),
+      `Wearing “${pick.title}”`
+    );
+  };
 
   const hasFilters = agentId !== 'ALL' || category !== 'ALL' || status !== 'ALL' || query.trim() !== '';
   const clearFilters = () => {
@@ -192,6 +223,27 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
                   <button className="btn btn--warning" onClick={p.onRepairAll}>
                     <Wand2 />
                     Fix {fixableCount} mod{fixableCount === 1 ? '' : 's'}
+                  </button>
+                )}
+                {selectedAgent && outfitChoices.length >= 2 && (
+                  <button className="btn btn--secondary" onClick={surpriseOutfit} title="Turn on a random outfit for this character">
+                    <Dices />
+                    Surprise me
+                  </button>
+                )}
+                {onCount > 0 && (
+                  <button
+                    className="btn btn--secondary"
+                    onClick={() =>
+                      p.onSetModsEnabled(
+                        scopedMods.filter((m) => m.enabled).map((m) => ({ modUuid: m.mod_uuid, enabled: false })),
+                        selectedAgent ? `Turned off all of ${selectedAgent.display_name}'s mods` : 'Turned off all mods'
+                      )
+                    }
+                    title={selectedAgent ? `Turn off all of ${selectedAgent.display_name}'s mods` : 'Turn off every mod'}
+                  >
+                    <PowerOff />
+                    All off
                   </button>
                 )}
                 <button className="btn btn--primary" onClick={p.onInstallArchive}>

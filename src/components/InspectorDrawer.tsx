@@ -102,7 +102,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
     <div className="drawer-wrap" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <aside className="drawer" role="dialog" aria-modal="true" aria-labelledby="details-title">
         <div className="details__hero">
-          <ThumbImage src={mod.thumbnail_url} alt={mod.title} motif={motif} loading="eager" />
+          <ThumbImage src={mod.thumbnail_url} fallbacks={mod.preview_images} alt={mod.title} motif={motif} loading="eager" />
           <div className="details__hero-shade" />
           <button className="icon-btn details__close" onClick={onClose} aria-label="Close details">
             <X />

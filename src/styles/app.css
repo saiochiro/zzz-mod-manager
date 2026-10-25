@@ -4977,3 +4977,17 @@ html[data-scene] .card {
   display: grid;
   place-items: center;
 }
+
+/* Covers fade in when they arrive instead of popping in */
+.thumb-img {
+  opacity: 0;
+  transition: opacity 220ms var(--ease-out);
+}
+.thumb-img.is-loaded {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .thumb-img {
+    transition: none;
+  }
+}

@@ -176,11 +176,6 @@ function looksLikeTexture(filePath: string, buf: Buffer): boolean {
   return (pow2(size.w) && pow2(size.h)) || size.w === size.h;
 }
 
-/**
- * Picks a mod's cover from its own folder. Named previews (preview.png, cover.jpg,
- * screenshot.png...) always win. Any other image is only used if it doesn't look like
- * a game texture, so a face or hair texture never ends up as the cover.
- */
 /** Address of a picture on disk that the app window can load (served by the proxylaunch-img protocol). */
 export function localImageUrl(filePath: string): string {
   let v = '';
@@ -192,7 +187,17 @@ export function localImageUrl(filePath: string): string {
   return `proxylaunch-img://f/${encodeURIComponent(path.resolve(filePath))}${v}`;
 }
 
+/**
+ * Picks a mod's cover from its own folder. Named previews (preview.png, cover.jpg,
+ * screenshot.png...) always win. Any other image is only used if it doesn't look like
+ * a game texture, so a face or hair texture never ends up as the cover.
+ */
 export function resolveLocalModThumbnailUrl(modAbsDir: string): string | undefined {
+  return resolveLocalModCover(modAbsDir)?.url;
+}
+
+/** Like resolveLocalModThumbnailUrl, and says whether the picture is a named preview (preview.png, cover.jpg...). */
+export function resolveLocalModCover(modAbsDir: string): { url: string; named: boolean } | undefined {
   const imageExts = ['.webp', '.png', '.jpg', '.jpeg', '.gif'];
   const priorityPrefixes = ['preview', 'thumb', 'thumbnail', 'cover', 'screenshot', 'showcase', 'banner', 'icon'];
 
@@ -233,7 +238,7 @@ export function resolveLocalModThumbnailUrl(modAbsDir: string): string | undefin
     for (const prefix of priorityPrefixes) {
       const matched = allCandidates.find((p) => path.basename(p).toLowerCase().startsWith(prefix));
       const buf = matched && read(matched);
-      if (matched && buf) return localImageUrl(matched);
+      if (matched && buf) return { url: localImageUrl(matched), named: true };
     }
 
     const ordered = [...allCandidates].sort(
@@ -241,7 +246,7 @@ export function resolveLocalModThumbnailUrl(modAbsDir: string): string | undefin
     );
     for (const candidate of ordered) {
       const buf = read(candidate);
-      if (buf && !looksLikeTexture(candidate, buf)) return localImageUrl(candidate);
+      if (buf && !looksLikeTexture(candidate, buf)) return { url: localImageUrl(candidate), named: false };
     }
     return undefined;
   } catch {
@@ -1418,7 +1423,7 @@ endif
     const cleanFolder = sanitizeModFolderName(folderBase);
 
     // 1. Deep Local Mod Thumbnail Resolver (scans root and 1 level deep for preview.*, thumb.*, cover.*, or first .png/.jpg/.webp/.gif)
-    const localPreviewDataUrl = resolveLocalModThumbnailUrl(modAbsDir);
+    const localCover = resolveLocalModCover(modAbsDir);
 
     // 2. Check for mod.json or .mod_meta.json
     let metaInfo: any = null;
@@ -1555,8 +1560,16 @@ endif
           stored.previous_folder_name = metaInfo.previous_folder_name;
         }
 
-        if (localPreviewDataUrl) {
-          stored.thumbnail_url = localPreviewDataUrl;
+        // Cover: a named preview in the folder (preview.png, cover.jpg, or one you set) first, then the
+        // GameBanana picture, then any other picture in the folder. Other pictures in mod folders are
+        // often textures or notes, so they never beat the GameBanana cover.
+        const gbCover = [stored.thumbnail_url, ...(stored.preview_images || []), metaInfo?.thumbnail_url].find(
+          (u: unknown): u is string => typeof u === 'string' && u.startsWith('http')
+        );
+        if (localCover && (localCover.named || !gbCover)) {
+          stored.thumbnail_url = localCover.url;
+        } else if (gbCover && !stored.thumbnail_url?.startsWith('http')) {
+          stored.thumbnail_url = upgradeGameBananaImageUrl(gbCover);
         } else if (stored.thumbnail_url?.startsWith('data:image/') && !stored.thumbnail_url.startsWith('data:image/svg')) {
           // An older version picked a texture from the mod folder as the cover. Use the
           // GameBanana preview instead, or a generated cover if there isn't one.
@@ -1594,6 +1607,18 @@ endif
           stored.preview_images = stored.preview_images.map((u: string) => upgradeGameBananaImageUrl(u));
         }
 
+        // A saved address of a picture in this folder from before it was renamed (switched on/off).
+        if (stored.thumbnail_url?.startsWith('proxylaunch-img://') && stored.thumbnail_url !== localCover?.url) {
+          stored.thumbnail_url =
+            localCover?.url ||
+            makeModCoverSvg(
+              cleanFolder.slice(0, 20).toUpperCase(),
+              matchedAgent ? matchedAgent.display_name.toUpperCase() : 'CUSTOM PACKAGE',
+              matchedAgent?.accent_color || '#00F0FF',
+              '#B8FF01',
+              'LOCAL MOD'
+            );
+        }
         return stored;
       } catch {
         // Reconstruct below
@@ -1604,7 +1629,7 @@ endif
 
     const agentId = matchedAgent ? matchedAgent.agent_id : 'uncategorized';
     const fallbackThumb =
-      localPreviewDataUrl ||
+      localCover?.url ||
       upgradeGameBananaImageUrl(metaInfo?.thumbnail_url) ||
       makeModCoverSvg(
         cleanFolder.slice(0, 20).toUpperCase(),
@@ -1945,6 +1970,36 @@ endif
     this.scheduleXxmiSync([target], Boolean(cfg.autoSendF10OnToggle));
 
     return { mod: target, elapsedMs, masterSwapCompiled, autoDisabledMods };
+  }
+
+  /**
+   * Turns several mods on or off in one go (e.g. "all off" for a character, or a random outfit).
+   * One background sync and one in-game reload for the whole batch. Returns how many changed.
+   */
+  public setModsEnabled(changes: Array<{ modUuid: string; enabled: boolean }>): number {
+    const mods = this.scanInstalledMods();
+    const byId = new Map(mods.map((m) => [m.mod_uuid, m]));
+    const changed: ModManifest[] = [];
+    for (const { modUuid, enabled } of changes) {
+      const mod = byId.get(modUuid);
+      if (!mod || mod.enabled === enabled) continue;
+      const oldAbs = path.join(this.zzmiRootPath, mod.install_path);
+      const newFolder = enabled ? sanitizeModFolderName(mod.folder_name) : formatDisabledFolderName(mod.folder_name);
+      const newAbs = path.join(path.dirname(oldAbs), newFolder);
+      if (oldAbs !== newAbs && fs.existsSync(oldAbs)) renameWithRetry(oldAbs, newAbs);
+      mod.enabled = enabled;
+      mod.install_path = path.posix.join(path.posix.dirname(mod.install_path), newFolder);
+      fs.writeFileSync(path.join(newAbs, 'mod_manifest.json'), JSON.stringify(mod, null, 2), 'utf-8');
+      changed.push(mod);
+    }
+    if (!changed.length) return 0;
+    for (const agentId of new Set(changed.map((m) => m.agent_id))) {
+      if (agentId !== 'uncategorized') this.syncAgentHSwap(agentId);
+    }
+    const on = changed.filter((m) => m.enabled).length;
+    this.addLog('info', 'ROUTER', `Switched ${changed.length} mod${changed.length === 1 ? '' : 's'} (${on} on, ${changed.length - on} off).`);
+    this.scheduleXxmiSync(changed, Boolean(this.getConfig().autoSendF10OnToggle));
+    return changed.length;
   }
 
   /**
@@ -3316,7 +3371,7 @@ endif
       const base64Part = imageSource.split(',')[1];
       if (!base64Part) throw new Error('Invalid image data URL');
       fs.writeFileSync(previewDest, Buffer.from(base64Part, 'base64'));
-      target.thumbnail_url = imageSource;
+      target.thumbnail_url = resolveLocalModThumbnailUrl(modAbsDir) || imageSource;
     } else if (fs.existsSync(imageSource)) {
       const ext = path.extname(imageSource).toLowerCase() || '.png';
       const destFile = path.join(modAbsDir, `preview${ext}`);

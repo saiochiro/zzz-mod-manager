@@ -353,6 +353,10 @@ export const fairyClient = {
     return null;
   },
 
+  /** Turns several mods on/off at once (one sync and one in-game reload for all of them). */
+  setModsEnabled: (changes: Array<{ modUuid: string; enabled: boolean }>): Promise<{ changed: number; state: FullAppState }> =>
+    invokeBackend('zzz:setModsEnabled', changes),
+
   /** Moves a mod's folder into backups (used after updating it to a newer version). */
   archiveMod: (modUuid: string): Promise<{ state: FullAppState; archivedTo: string | null }> =>
     invokeBackend('mods:archive', modUuid),

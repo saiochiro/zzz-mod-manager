@@ -63,3 +63,23 @@ describe('Speed-ups stay correct', () => {
     expect(fs.existsSync(path.join(out, 'Cool Mod', 'mod.ini'))).toBe(true);
   });
 });
+
+describe('Switching several mods at once', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'batch-'));
+  });
+  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  it('turns a set of mods off and one on in a single call', () => {
+    const service = new ModManagerService(dir);
+    service.seedInitialSandboxMods();
+    const mods = service.scanInstalledMods();
+    const changes = mods.map((m, i) => ({ modUuid: m.mod_uuid, enabled: i === 0 }));
+    service.setModsEnabled(changes);
+    const after = service.scanInstalledMods();
+    for (const c of changes) expect(after.find((m) => m.mod_uuid === c.modUuid)!.enabled).toBe(c.enabled);
+    // Nothing left to change: a second call is a no-op.
+    expect(service.setModsEnabled(changes)).toBe(0);
+  });
+});

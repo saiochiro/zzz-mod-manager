@@ -83,7 +83,7 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
       aria-label={`${mod.title}, ${mod.enabled ? 'on' : 'off'}, ${meta.label}`}
     >
       <div className="mod-card__thumb">
-        <ThumbImage src={mod.thumbnail_url} alt={mod.title} motif={motif} />
+        <ThumbImage src={mod.thumbnail_url} fallbacks={mod.preview_images} alt={mod.title} motif={motif} />
         {blurred && (
           <button
             className="nsfw-cover"

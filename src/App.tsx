@@ -63,7 +63,22 @@ const AppInner: React.FC = () => {
 
   const [appState, setAppState] = useState<FullAppState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [screen, setScreen] = useState<ScreenId>('library');
+  const [screen, setScreenState] = useState<ScreenId>(() => {
+    try {
+      const last = localStorage.getItem('pl_last_screen') as ScreenId | null;
+      return last && ['library', 'browse', 'sync', 'themes', 'settings', 'workshop'].includes(last) ? last : 'library';
+    } catch {
+      return 'library';
+    }
+  });
+  const setScreen = useCallback((next: ScreenId) => {
+    setScreenState(next);
+    try {
+      localStorage.setItem('pl_last_screen', next);
+    } catch {
+      // per-viewer convenience only
+    }
+  }, []);
 
   const [activeTheme, setActiveTheme] = useState<string>(() => document.documentElement.dataset.theme || getTheme().id);
   const theme = getTheme(activeTheme);
@@ -412,6 +427,40 @@ const AppInner: React.FC = () => {
         prev ? { ...prev, mods: prev.mods.map((m) => (m.mod_uuid === modUuid ? { ...m, enabled: !m.enabled } : m)) } : prev
       );
       notify({ tone: 'error', title: 'Couldn’t switch that mod', message: errMsg(err) });
+    }
+  };
+
+  // Ctrl+F jumps to the search box of the screen you're on.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+        const box = Array.from(document.querySelectorAll<HTMLInputElement>('.search input')).find((el) => el.offsetParent !== null);
+        if (box) {
+          e.preventDefault();
+          box.focus();
+          box.select();
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  /** Several mods on/off at once ("All off", "Surprise me"): instant on screen, one sync behind it. */
+  const handleSetModsEnabled = async (changes: Array<{ modUuid: string; enabled: boolean }>, message: string) => {
+    if (!changes.length) return;
+    const want = new Map(changes.map((c) => [c.modUuid, c.enabled]));
+    setAppState((prev) =>
+      prev ? { ...prev, mods: prev.mods.map((m) => (want.has(m.mod_uuid) ? { ...m, enabled: want.get(m.mod_uuid)! } : m)) } : prev
+    );
+    const seq = ++toggleSeqRef.current;
+    try {
+      const res = await fairyClient.setModsEnabled(changes);
+      if (seq === toggleSeqRef.current) setAppState(res.state);
+      notify({ tone: 'success', title: message });
+    } catch (err) {
+      fairyClient.getState().then(setAppState).catch(() => {});
+      notify({ tone: 'error', title: 'Couldn’t switch those mods', message: errMsg(err) });
     }
   };
 
@@ -1085,6 +1134,7 @@ const AppInner: React.FC = () => {
               onOrganizeFolders={handleOrganizeFolders}
               onUndoOrganize={handleUndoOrganizeFolders}
               canUndoOrganize={canUndoOrganize}
+              onSetModsEnabled={handleSetModsEnabled}
             />
           )}
 

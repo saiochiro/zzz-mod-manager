@@ -323,14 +323,24 @@ function initials(title: string): string {
 /** Shows the image, or a themed gradient + motif + initials if it's missing or fails. */
 export const ThumbImage: React.FC<{
   src?: string | null;
+  /** Tried in order when a picture fails to load (e.g. the mod's other GameBanana pictures). */
+  fallbacks?: Array<string | null | undefined>;
   alt: string;
   motif: MotifKind;
   className?: string;
   loading?: 'lazy' | 'eager';
-}> = ({ src, alt, motif, className, loading = 'lazy' }) => {
-  const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [src]);
-  if (!src || failed) {
+}> = ({ src, fallbacks, alt, motif, className, loading = 'lazy' }) => {
+  const sources = useMemo(
+    () => [src, ...(fallbacks ?? [])].filter((u, i, a): u is string => Boolean(u) && a.indexOf(u) === i),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [src, (fallbacks ?? []).join('|')]
+  );
+  const [index, setIndex] = useState(0);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => setIndex(0), [sources]);
+  const current = sources[index];
+  useEffect(() => setLoaded(false), [current]);
+  if (!current) {
     return (
       <div className="thumb-fallback" aria-label={alt} role="img">
         <Motif kind={motif} bias="edges" density={12} opacity={0.6} seed={alt} />
@@ -340,13 +350,15 @@ export const ThumbImage: React.FC<{
   }
   return (
     <img
-      src={src}
+      key={current}
+      src={current}
       alt={alt}
-      className={className}
+      className={`thumb-img ${loaded ? 'is-loaded' : ''} ${className ?? ''}`}
       loading={loading}
       decoding="async"
       draggable={false}
-      onError={() => setFailed(true)}
+      onLoad={() => setLoaded(true)}
+      onError={() => setIndex((i) => i + 1)}
     />
   );
 };

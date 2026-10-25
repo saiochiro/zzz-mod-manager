@@ -241,6 +241,11 @@ handleIpc('zzz:toggleEnabled', async (_e, modUuid: string) => {
   return { ...res, state: modService.getFullState() };
 });
 
+handleIpc('zzz:setModsEnabled', async (_e, changes: Array<{ modUuid: string; enabled: boolean }>) => {
+  const changed = modService.setModsEnabled(Array.isArray(changes) ? changes : []);
+  return { changed, state: modService.getFullState() };
+});
+
 handleIpc('zzz:toggleHCycle', async (_e, modUuid: string) => {
   const res = modService.toggleModHCycle(modUuid);
   return { ...res, state: modService.getFullState() };
