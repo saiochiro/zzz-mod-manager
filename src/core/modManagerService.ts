@@ -356,6 +356,15 @@ async function downloadToFile(url: string, dest: string): Promise<boolean> {
   return fs.statSync(dest).size > 500;
 }
 
+/** Two mods are versions of the same mod when they share most of their game hashes. */
+function sharesHashes(a: Pick<ModManifest, 'detected_hashes'>, b: Pick<ModManifest, 'detected_hashes'>): boolean {
+  const ha = new Set((a.detected_hashes || []).map((h) => h.toLowerCase()));
+  const hb = (b.detected_hashes || []).map((h) => h.toLowerCase());
+  if (!ha.size || !hb.length) return false;
+  const common = hb.filter((h) => ha.has(h)).length;
+  return common > 0 && common >= Math.min(ha.size, hb.length) / 2;
+}
+
 export class ModManagerService {
   private baseDir: string;
   private appDataPath: string;
@@ -1282,16 +1291,18 @@ endif
     const used = new Set<string>();
     for (const fake of fakes) {
       const installedAt = Date.parse(fake.installed_at || '') || 0;
-      const sameAgent = (m: ModManifest) => m.agent_id === fake.agent_id;
-      // 1. The version that update moved to backups (same character, moved right after the install).
+      // Only ever borrow details from a version of the SAME mod: same character and shared game
+      // hashes. (Without the hash check, a UI mod once took the name of the only other UI mod.)
+      const sameMod = (m: ModManifest) => m.agent_id === fake.agent_id && sharesHashes(m, fake);
+      // 1. The version that update moved to backups (moved right after the install).
       const fromBackup = backups
-        .filter((b) => sameAgent(b.m) && !used.has(b.dir) && Math.abs(b.at - installedAt) < 60 * 60 * 1000)
+        .filter((b) => sameMod(b.m) && !used.has(b.dir) && Math.abs(b.at - installedAt) < 60 * 60 * 1000)
         .sort((a, b) => Math.abs(a.at - installedAt) - Math.abs(b.at - installedAt))[0];
-      // 2. The update stopped before moving it: the only other GameBanana mod of that character.
+      // 2. The update stopped before moving it: the only other installed version of that mod.
       const stillInstalled = fromBackup
         ? null
         : (() => {
-            const c = mods.filter((m) => sameAgent(m) && !isFake(m) && m.gamebanana_id && !(m.tags || []).includes('Workshop'));
+            const c = mods.filter((m) => sameMod(m) && !isFake(m) && m.gamebanana_id && !(m.tags || []).includes('Workshop'));
             return c.length === 1 ? c[0] : null;
           })();
       const prev = fromBackup?.m ?? stillInstalled;
@@ -1352,6 +1363,76 @@ endif
       }
     }
     return fixed;
+  }
+
+  /**
+   * Undoes the 2.14.4 repair mistake: a mod installed under a made-up name could get the name and
+   * GameBanana link of an unrelated mod (e.g. an icon pack became "HideUID"), and the next update
+   * then replaced it with that other mod. Such mods are found in backups (made-up "Captured via
+   * GameBanana" description, and no game hashes in common with the mod now installed under that
+   * GameBanana link) and put back as their own mod, without a GameBanana link. Returns how many.
+   */
+  public restoreWronglyReplacedMods(): number {
+    if (this.getConfig().sandboxMode) return 0;
+    const backupRoot = path.join(this.appDataPath, 'backups', 'mod-updates');
+    let entries: string[] = [];
+    try {
+      entries = fs.readdirSync(backupRoot);
+    } catch {
+      return 0;
+    }
+    const installed = this.scanInstalledMods();
+    let restored = 0;
+    for (const name of entries) {
+      const dir = path.join(backupRoot, name);
+      let m: ModManifest & { previous_folder_name?: string };
+      try {
+        m = JSON.parse(fs.readFileSync(path.join(dir, 'mod_manifest.json'), 'utf-8'));
+      } catch {
+        continue;
+      }
+      if (m.description !== 'Captured via GameBanana 1-Click stream.' || !m.gamebanana_id) continue;
+      const replacement = installed.find((i) => i.gamebanana_id === m.gamebanana_id);
+      if (!replacement || sharesHashes(replacement, m) || !(m.detected_hashes || []).length) continue;
+      if (installed.some((i) => sharesHashes(i, m) && i.mod_uuid !== replacement.mod_uuid)) continue; // already back
+
+      const original = sanitizeModFolderName(m.previous_folder_name || m.folder_name || 'Restored_Mod');
+      const parentRel = path.posix.dirname(m.install_path || 'Mods/_Uncategorized_UI_Audio/x');
+      let folder = m.enabled === false ? formatDisabledFolderName(original) : original;
+      let target = path.join(this.zzmiRootPath, parentRel, folder);
+      for (let n = 2; fs.existsSync(target); n++) {
+        folder = `${m.enabled === false ? formatDisabledFolderName(original) : original}_${n}`;
+        target = path.join(this.zzmiRootPath, parentRel, folder);
+      }
+      try {
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        renameWithRetry(dir, target);
+      } catch (err) {
+        console.warn('[Restore]', err);
+        continue;
+      }
+      const title = original.replace(/^DISABLED_/i, '').replace(/_/g, ' ');
+      const fixed = {
+        ...m,
+        title,
+        author: 'Unknown',
+        gamebanana_id: null,
+        description: '',
+        folder_name: folder.replace(/^DISABLED_/i, ''),
+        install_path: path.posix.join(parentRel, folder),
+      };
+      for (const file of ['mod_manifest.json', 'mod.json']) {
+        try {
+          fs.writeFileSync(path.join(target, file), JSON.stringify(fixed, null, 2), 'utf-8');
+        } catch {
+          // best effort
+        }
+      }
+      restored++;
+      this.addLog('success', 'ROUTER', `Restored [${title}]: an earlier version mixed it up with [${replacement.title}].`, m.mod_uuid);
+    }
+    if (restored) this.scheduleXxmiSync('all');
+    return restored;
   }
 
   private sanitizeBackupDir(mod: ModManifest): string {

@@ -1,7 +1,6 @@
-What's new in 2.14.11
+What's new in 2.14.12
 
-- Tidy keys now gives each option one key. Some mods repeat the same option (like hair) in several of their files, and those copies used to get different keys, so one press switched only part of the mod and the option showed up twice. Now every copy gets the same key and the Hotkeys tab shows it once, with "used in 2 files" underneath.
-- Changing a key in the Hotkeys tab changes it in every file that uses that option.
-- Press Tidy keys again on mods you already tidied to fix their keys.
+- Fixed missing mods. An earlier fix for mods installed under made-up names could give a mod the name and GameBanana page of a different mod (for example, an icon pack became "HideUID"), and the next update then swapped it out. Mods this happened to are put back automatically under their original name when you open the app. Their files were safe in backups the whole time.
+- That repair now only takes details from a real earlier version of the same mod, checked by the mod's own game data, so it can't mix up two different mods again.
 
 Requires XXMI Launcher with ZZMI set up. Questions or bugs? Reach out on Discord: ghxty

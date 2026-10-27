@@ -115,3 +115,47 @@ describe('Library covers', () => {
     expect(service.scanInstalledMods().find((m) => m.mod_uuid === mod.mod_uuid)!.thumbnail_url).toMatch(/^proxylaunch-img:\/\/f\/.*preview\.png/);
   });
 });
+
+describe('Undoing a mod mixed up with another one', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mixup-'));
+  });
+  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  it('puts an icon pack back that an "update" replaced with an unrelated mod', async () => {
+    const service = new ModManagerService(dir);
+    // HideUID, installed normally.
+    const src = path.join(dir, 'src', 'HideUID');
+    fs.mkdirSync(src, { recursive: true });
+    fs.writeFileSync(path.join(src, 'Config.ini'), '[TextureOverrideUID]\nhash = 11111111\n');
+    const hide = (await service.ingestPackage(src, { metadataOverride: { id: 553291, title: 'HideUID', author: 'Satan1c' } as any })).installedMods[0];
+    expect(hide).toBeTruthy();
+    // The icon pack, wrongly named HideUID and moved to backups by that "update".
+    const backup = path.join(dir, 'ZZZ_Mod_Manager_AppData', 'backups', 'mod-updates', 'Global_-_GameBanana_ZZZ_#1858613_(Head)__2026');
+    fs.mkdirSync(backup, { recursive: true });
+    fs.writeFileSync(path.join(backup, 'MindscapeIcons.ini'), '[TextureOverrideIcon]\nhash = 7bf57b2b\n');
+    fs.writeFileSync(
+      path.join(backup, 'mod_manifest.json'),
+      JSON.stringify({
+        ...hide,
+        mod_uuid: 'icons-1',
+        title: 'HideUID',
+        gamebanana_id: 553291,
+        description: 'Captured via GameBanana 1-Click stream.',
+        detected_hashes: ['7bf57b2b'],
+        previous_folder_name: 'Mindscape_Icons',
+        folder_name: 'Global_-_GameBanana_ZZZ_#1858613_(Head)',
+        install_path: 'Mods/_Uncategorized_UI_Audio/Global_-_GameBanana_ZZZ_#1858613_(Head)',
+        enabled: true,
+      })
+    );
+    expect(service.restoreWronglyReplacedMods()).toBe(1);
+    const icons = service.scanInstalledMods().find((m) => m.mod_uuid === 'icons-1')!;
+    expect(icons).toMatchObject({ title: 'Mindscape Icons', gamebanana_id: null, enabled: true });
+    expect(icons.install_path).toBe('Mods/_Uncategorized_UI_Audio/Mindscape_Icons');
+    // HideUID itself is untouched, and running again changes nothing.
+    expect(service.scanInstalledMods().find((m) => m.mod_uuid === hide.mod_uuid)?.title).toBe('HideUID');
+    expect(service.restoreWronglyReplacedMods()).toBe(0);
+  });
+});

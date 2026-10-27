@@ -584,6 +584,11 @@ app.whenReady().then(() => {
       writeBootLog(`restore sanitized mods: ${(err as Error).message}`);
     }
     try {
+      if (modService.restoreWronglyReplacedMods()) mainWindow?.webContents.send('zzz:stateUpdated', modService.getFullState());
+    } catch (err) {
+      writeBootLog(`restore wrongly replaced mods: ${(err as Error).message}`);
+    }
+    try {
       if (modService.repairMislabeledUpdates()) mainWindow?.webContents.send('zzz:stateUpdated', modService.getFullState());
     } catch (err) {
       writeBootLog(`repair mislabeled updates: ${(err as Error).message}`);
