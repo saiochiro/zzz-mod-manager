@@ -158,6 +158,19 @@ const AppInner: React.FC = () => {
   const modUpdates = useModUpdates(appState?.mods ?? null);
   const [updatingIds, setUpdatingIds] = useState<Set<string>>(new Set());
   const [fetchingIds, setFetchingIds] = useState<Set<string>>(new Set());
+  /** Get missing files: what each mod's button says while downloading ("Downloading 42%"). */
+  const [fetchLabels, setFetchLabels] = useState<Record<string, string>>({});
+  useEffect(
+    () =>
+      fairyClient.onDownloadProgress((p) => {
+        const pct = p.total ? Math.min(100, Math.round((p.received / p.total) * 100)) : null;
+        const mb = (p.received / 1024 / 1024).toFixed(p.received < 10 * 1024 * 1024 ? 1 : 0);
+        const amount = pct === null ? `${mb} MB` : pct >= 100 ? 'unpacking…' : `${pct}%`;
+        const label = `Downloading${p.steps > 1 ? ` ${p.step} of ${p.steps}` : ''} ${amount}`;
+        setFetchLabels((prev) => (prev[p.modUuid] === label ? prev : { ...prev, [p.modUuid]: label }));
+      }),
+    []
+  );
   const [setupOpen, setSetupOpen] = useState(false);
 
   /* ---------------------------------------------------------------- */
@@ -502,6 +515,10 @@ const AppInner: React.FC = () => {
         next.delete(modUuid);
         return next;
       });
+      setFetchLabels((prev) => {
+        const { [modUuid]: _done, ...rest } = prev;
+        return rest;
+      });
     }
   };
 
@@ -831,7 +848,13 @@ const AppInner: React.FC = () => {
     try {
       const res = await fairyClient.confirmMultiAgentSplit(stagingId);
       setAppState(res.state);
-      notify({ tone: 'success', title: `Installed ${res.installedMods.length} mods` });
+      const replaced = res.replacedModUuids ?? [];
+      for (const id of replaced) modUpdates.clear(id);
+      notify({
+        tone: 'success',
+        title: replaced.length ? `Updated ${res.installedMods.length} mods` : `Installed ${res.installedMods.length} mods`,
+        message: replaced.length ? 'Each one kept its on/off state, keys and cover. The previous versions are saved in backups.' : undefined,
+      });
     } catch (err) {
       notify({ tone: 'error', title: 'Couldn’t split the pack', message: errMsg(err) });
     } finally {
@@ -842,7 +865,8 @@ const AppInner: React.FC = () => {
   /* ---------------------------------------------------------------- */
   /* Mod updates                                                      */
   /* ---------------------------------------------------------------- */
-  const handleUpdateMod = async (uuid: string, opts: { quiet?: boolean; fileId?: number } = {}): Promise<boolean> => {
+  /** True when updated; 'split' when it's a several-character pack waiting for the split prompt. */
+  const handleUpdateMod = async (uuid: string, opts: { quiet?: boolean; fileId?: number } = {}): Promise<boolean | 'split'> => {
     const profile = modUpdates.updates[uuid];
     const old = appState?.mods.find((m) => m.mod_uuid === uuid);
     if (!profile || !old) return false;
@@ -869,7 +893,7 @@ const AppInner: React.FC = () => {
           title: 'Choose how to install the new version',
           message: `The current version of “${old.title}” stays installed until you're happy with the new one.`,
         });
-        return false;
+        return 'split';
       }
       if (!res.success) throw new Error(res.error || 'The update failed.');
       if (!res.installedMods.length) throw new Error(res.error || 'The download had no installable files.');
@@ -930,8 +954,14 @@ const AppInner: React.FC = () => {
   const handleUpdateAllMods = async () => {
     const ids = Object.keys(modUpdates.updates);
     let ok = 0;
+    // A pack split into one mod per character is updated once (the split prompt does all parts).
+    const splitPages = new Set<number>();
     for (const id of ids) {
-      if (await handleUpdateMod(id, { quiet: true })) ok++;
+      const page = modUpdates.updates[id]?.id;
+      if (page && splitPages.has(page)) continue;
+      const res = await handleUpdateMod(id, { quiet: true });
+      if (res === 'split' && page) splitPages.add(page);
+      else if (res === true) ok++;
     }
     if (ok > 0) {
       notify({ tone: 'success', title: `Updated ${ok} mod${ok === 1 ? '' : 's'}`, message: 'Previous versions are saved in backups.' });
@@ -1263,6 +1293,7 @@ const AppInner: React.FC = () => {
               onRepairAll={handleRepairAllBroken}
               canFetchMissing={canFetchMissing}
               fetchingIds={fetchingIds}
+              fetchLabels={fetchLabels}
               onDownloadMissing={(id) => handleDownloadMissing(id)}
               onDownloadAllMissing={handleDownloadAllMissing}
               onSetCustomImage={handleSetCustomImageFile}
@@ -1426,6 +1457,7 @@ const AppInner: React.FC = () => {
           onOpenFolder={handleRevealMod}
           onDownloadMissing={canFetchMissing(selectedMod) ? (id) => handleDownloadMissing(id) : undefined}
           isFetchingFiles={fetchingIds.has(selectedMod.mod_uuid)}
+          fetchLabel={fetchLabels[selectedMod.mod_uuid]}
           onSetCustomImageFile={handleSetCustomImageFile}
           onPasteThumbnailFromClipboard={handlePasteThumbnailFromClipboard}
           onStateChange={setAppState}

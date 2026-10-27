@@ -60,6 +60,7 @@ interface ModDeckCardProps {
   /** Set when the mod has missing files that can be downloaded from GameBanana again. */
   onDownloadMissing?: () => void;
   isFetchingFiles?: boolean;
+  fetchLabel?: string;
 }
 
 export const ModDeckCard: React.FC<ModDeckCardProps> = ({
@@ -87,6 +88,7 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
   onPick,
   onDownloadMissing,
   isFetchingFiles,
+  fetchLabel,
 }) => {
   const menu = usePopover();
   // The menu is drawn at the top level (not inside the card), so the sticky toolbar and the cards
@@ -253,7 +255,7 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
               title="Download this mod's missing files from GameBanana. Nothing else is changed."
             >
               <CloudDownload />
-              {isFetchingFiles ? 'Downloading…' : 'Get missing files'}
+              {isFetchingFiles ? fetchLabel || 'Downloading…' : 'Get missing files'}
             </button>
           </div>
         )}

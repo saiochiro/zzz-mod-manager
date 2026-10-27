@@ -168,7 +168,7 @@ export const fairyClient = {
 
   confirmMultiAgentSplit: (
     stagingId: string
-  ): Promise<IngestionResult & { state: FullAppState }> =>
+  ): Promise<IngestionResult & { replacedModUuids?: string[]; state: FullAppState }> =>
     invokeBackend('zzz:confirmMultiAgentSplit', stagingId),
 
   getGameBananaFeed: (options?: any): Promise<GameBananaModItem[]> =>
@@ -388,6 +388,10 @@ export const fairyClient = {
   onUpdateStatus: (cb: (s: AppUpdateStatus) => void): (() => void) =>
     window.fairyBridge?.on ? window.fairyBridge.on('app:update-status', cb) : () => {},
   /** A newer list of pre-scanned content labels was downloaded. */
+  /** Progress of a Get missing files download. */
+  onDownloadProgress: (cb: (p: { modUuid: string; received: number; total: number; file: string; step: number; steps: number }) => void): (() => void) =>
+    window.fairyBridge?.on ? window.fairyBridge.on('zzz:downloadProgress', cb) : () => {},
+
   onNsfwVerdictsUpdated: (cb: () => void): (() => void) =>
     window.fairyBridge?.on ? window.fairyBridge.on('nsfw:verdicts-updated', cb) : () => {},
 

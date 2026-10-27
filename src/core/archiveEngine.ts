@@ -93,6 +93,65 @@ export function extractArchiveAsync(archivePath: string, parentDir: string): Pro
 }
 
 /**
+ * Unpacks only the files with these names (anywhere in the archive, keeping their folders) into
+ * `outDir`. Much faster than unpacking a whole multi-GB mod pack to get a few missing files.
+ * Uses 7-Zip when it's there, else reads just those entries from a zip; anything else is unpacked
+ * whole. Returns false when nothing could be unpacked.
+ */
+export async function extractArchiveFiles(archivePath: string, outDir: string, fileNames: string[]): Promise<boolean> {
+  const names = [...new Set(fileNames.map((n) => path.basename(n.replace(/\\/g, '/')).toLowerCase()).filter(Boolean))];
+  fs.mkdirSync(outDir, { recursive: true });
+  const hasFiles = () => {
+    try {
+      return fs.readdirSync(outDir).length > 0;
+    } catch {
+      return false;
+    }
+  };
+  const exe = sevenZipPath();
+  if (exe && names.length) {
+    const list = path.join(path.dirname(outDir), `${path.basename(outDir)}.names.txt`);
+    // Archives inside the archive come along too: the missing files may be in one of them.
+    fs.writeFileSync(list, [...names, '*.zip', '*.7z', '*.rar'].join('\n'), 'utf-8');
+    const ok = await new Promise<boolean>((resolve) => {
+      execFile(
+        exe,
+        ['x', '-y', '-bd', '-scsUTF-8', `-o${outDir}`, archivePath, `-ir@${list}`],
+        { windowsHide: true, maxBuffer: 64 * 1024 * 1024 },
+        (err) => resolve(!err || (err as { code?: number }).code === 1)
+      );
+    });
+    fs.rmSync(list, { force: true });
+    if (ok) {
+      sweepNestedArchives(outDir);
+      return true; // nothing matched is fine too: those files just aren't in this download
+    }
+  }
+  if (names.length && /\.zip$/i.test(archivePath)) {
+    try {
+      const zip = new AdmZip(archivePath);
+      for (const e of zip.getEntries()) {
+        const base = path.basename(e.entryName).toLowerCase();
+        if (!e.isDirectory && (names.includes(base) || /\.(zip|7z|rar)$/.test(base))) {
+          zip.extractEntryTo(e, outDir, true, true);
+        }
+      }
+      sweepNestedArchives(outDir);
+      return true;
+    } catch {
+      // not a plain zip after all: unpack it whole below
+    }
+  }
+  try {
+    extractToDir(archivePath, outDir);
+    sweepNestedArchives(outDir);
+  } catch {
+    return false;
+  }
+  return hasFiles();
+}
+
+/**
  * Extracts an archive (.zip, .7z, .rar) or copies a folder into `stagingDir`.
  * Order: built-in zip reader, then the bundled 7-Zip (7z, zip, Unicode names), then
  * Windows' tar.exe (RAR on Windows 11).

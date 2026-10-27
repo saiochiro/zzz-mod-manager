@@ -3,7 +3,7 @@ import { execFile, execSync, spawn } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { Readable } from 'stream';
+import { Readable, Transform } from 'stream';
 import { pipeline } from 'stream/promises';
 import { DEFAULT_HASH_DB } from '../shared/defaultHashDb';
 import {
@@ -35,9 +35,8 @@ import {
 import {
   copyDirRecursive,
   extractArchiveAsync,
-  extractToDir,
+  extractArchiveFiles,
   LocalizedModRoot,
-  sweepNestedArchives,
   unpackAndLocalizeModArchive,
 } from './archiveEngine';
 import {
@@ -350,7 +349,10 @@ function syncModFolders(srcDir: string, dstDir: string): number {
 }
 
 /** Streams a download straight to disk (no whole-file copy in memory). True when it got a real file. */
-async function downloadToFile(url: string, dest: string): Promise<boolean> {
+/** How far a download got: bytes so far and the full size (0 when the server doesn't say). */
+export type DownloadProgress = (received: number, total: number) => void;
+
+async function downloadToFile(url: string, dest: string, onProgress?: DownloadProgress): Promise<boolean> {
   const res = await fetch(url, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -359,11 +361,42 @@ async function downloadToFile(url: string, dest: string): Promise<boolean> {
     redirect: 'follow',
   });
   if (!res.ok || !res.body) return false;
-  await pipeline(Readable.fromWeb(res.body as import('stream/web').ReadableStream), fs.createWriteStream(dest));
+  const total = Number(res.headers.get('content-length')) || 0;
+  let received = 0;
+  let lastReport = 0;
+  const counter = new Transform({
+    transform(chunk: Buffer, _enc, done) {
+      received += chunk.length;
+      const now = Date.now();
+      if (onProgress && now - lastReport > 250) {
+        lastReport = now;
+        onProgress(received, total);
+      }
+      done(null, chunk);
+    },
+  });
+  // Big write buffer: fewer, larger disk writes for multi-GB mods.
+  await pipeline(
+    Readable.fromWeb(res.body as import('stream/web').ReadableStream),
+    counter,
+    fs.createWriteStream(dest, { highWaterMark: 4 * 1024 * 1024 })
+  );
+  onProgress?.(received, total || received);
   return fs.statSync(dest).size > 500;
 }
 
 const BUILT_IN_LOADOUTS = new Set(['Default', 'Stream Safe', 'Main Team']);
+
+/** Get missing files: how many other downloads of a mod page to try after its own file. */
+const MISSING_FILES_EXTRA_TRIES = 2;
+
+/** Other files of a mod page, likeliest to belong to this mod first (shared words, then smaller). */
+function rankOtherFiles<T extends { name: string; size: number }>(files: T[], mod: Pick<ModManifest, 'folder_name' | 'title' | 'gamebanana_file_name'>): T[] {
+  const words = (s: string) => new Set(s.toLowerCase().replace(/\.(zip|7z|rar)$/, '').split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !/^v?\d+$/.test(w)));
+  const mine = new Set([...words(mod.folder_name), ...words(mod.title), ...words(mod.gamebanana_file_name || '')]);
+  const score = (f: T) => [...words(f.name)].filter((w) => mine.has(w)).length;
+  return [...files].sort((a, b) => score(b) - score(a) || (a.size || 0) - (b.size || 0));
+}
 
 /** Timestamp used in backup folder names: "<folder>__2026-10-26T19-09-00-000Z". */
 function backupStamp(at = new Date()): string {
@@ -2847,6 +2880,8 @@ endif
           this.addLog('warning', 'ROUTER', promptMsg);
           logs.push(promptMsg);
 
+          // The split is confirmed later: remember what this install was for.
+          this.savePendingSplit(stagingDir, gbMeta, options?.replaceModUuid);
           return {
             success: true,
             installedMods: [],
@@ -2907,6 +2942,8 @@ endif
         this.addLog('warning', 'ROUTER', promptMsg);
         logs.push(promptMsg);
 
+        // The split is confirmed later: remember what this install was for.
+        this.savePendingSplit(stagingDir, gbMeta, options?.replaceModUuid);
         return {
           success: true,
           installedMods: [],
@@ -2948,7 +2985,20 @@ endif
   /**
    * Resolves a pending Multi-Agent pack prompt by splitting each candidate into its Agent folder.
    */
-  public confirmMultiAgentSplit(stagingId: string): IngestionResult {
+  private savePendingSplit(stagingDir: string, gbMeta: GameBananaModItem | null, replaceModUuid?: string): void {
+    try {
+      fs.writeFileSync(path.join(stagingDir, 'pending.json'), JSON.stringify({ gbMeta, replaceModUuid: replaceModUuid ?? null }), 'utf-8');
+    } catch {
+      // the split still works, just without the GameBanana details
+    }
+  }
+
+  /**
+   * A pack with several characters, split into one mod per character. When it's an update, each
+   * new part replaces the installed mod for the same character from the same GameBanana page:
+   * that one goes to backups, and the new part keeps its id, cover, keys and on/off state.
+   */
+  public confirmMultiAgentSplit(stagingId: string): IngestionResult & { replacedModUuids?: string[] } {
     const stagingDir = path.join(this.appDataPath, 'staging_temp', stagingId);
     const extractedDir = path.join(stagingDir, 'extracted');
     const hashDb = this.getHashDb();
@@ -2963,24 +3013,61 @@ endif
       };
     }
 
-    const unpackRes = unpackAndLocalizeModArchive(
-      extractedDir,
-      path.join(stagingDir, 'split_pass'),
-      hashDb
-    );
-    const installed = this.finalizeLocalizedRoots(
-      unpackRes.localizedRoots,
-      null,
-      hashDb,
-      logs
-    );
+    let pending: { gbMeta: GameBananaModItem | null; replaceModUuid: string | null } = { gbMeta: null, replaceModUuid: null };
+    try {
+      pending = JSON.parse(fs.readFileSync(path.join(stagingDir, 'pending.json'), 'utf-8'));
+    } catch {
+      // older staging folder: plain split
+    }
+    const gb = pending.gbMeta;
+
+    const unpackRes = unpackAndLocalizeModArchive(extractedDir, path.join(stagingDir, 'split_pass'), hashDb);
+
+    // What this update replaces: the mod being updated and the other parts from the same page.
+    const before = this.scanInstalledMods();
+    const counterparts = pending.replaceModUuid
+      ? before.filter((m) => m.mod_uuid === pending.replaceModUuid || (gb?.id && m.gamebanana_id === gb.id))
+      : [];
+    const anyOn = counterparts.some((m) => m.enabled);
+    const used = new Set<string>();
+    const installed: ModManifest[] = [];
+    const replacedModUuids: string[] = [];
+
+    for (const root of unpackRes.localizedRoots) {
+      const hashes = new Set(root.detectedHashes.map((h) => h.toLowerCase()));
+      const shared = (m: ModManifest) => (m.detected_hashes || []).filter((h) => hashes.has(h.toLowerCase())).length;
+      const match = counterparts
+        .filter((m) => !used.has(m.mod_uuid) && m.agent_id === root.matchedAgentId)
+        .sort((a, b) => shared(b) - shared(a))[0];
+      if (match) used.add(match.mod_uuid);
+      // A part with nothing to replace (a character new in this version) follows the rest of the pack.
+      const enabled = match ? match.enabled : counterparts.length ? anyOn : undefined;
+      const replaced = match ? { old: match, backupDir: this.archiveModToBackups(match), enabled: match.enabled } : null;
+      let mods = this.finalizeLocalizedRoots([root], null, hashDb, logs, { enabled });
+      if (gb) mods = mods.map((m) => this.withGameBananaSource(m, gb));
+      mods = this.carryOverIdentity(replaced, mods);
+      if (match) replacedModUuids.push(match.mod_uuid);
+      installed.push(...mods);
+    }
 
     fs.rmSync(stagingDir, { recursive: true, force: true });
-    return {
-      success: true,
-      installedMods: installed,
-      logs,
+    return { success: true, installedMods: installed, logs, replacedModUuids };
+  }
+
+  /** Links a split part to the GameBanana page it came from (author, page, file), keeping its own name. */
+  private withGameBananaSource(mod: ModManifest, gb: GameBananaModItem): ModManifest {
+    const next: ModManifest = {
+      ...mod,
+      gamebanana_id: gb.id || mod.gamebanana_id,
+      author: gb.author || mod.author,
+      gamebanana_file_id: gb.file_id ?? mod.gamebanana_file_id,
+      gamebanana_file_name: gb.file_id ? gb.file_name : mod.gamebanana_file_name,
+      is_nsfw: Boolean(gb.is_nsfw),
     };
+    const dir = path.join(this.zzmiRootPath, next.install_path);
+    for (const f of ['mod_manifest.json', 'mod.json']) fs.writeFileSync(path.join(dir, f), JSON.stringify(next, null, 2), 'utf-8');
+    this.invalidateModCache(dir);
+    return next;
   }
 
   private finalizeLocalizedRoots(
@@ -4218,6 +4305,9 @@ endif
    * Downloads the mod again from GameBanana and copies in only the files the mod's .ini files point
    * to but that aren't there. Everything else stays as it is: on/off state, keys, settings, edits.
    */
+  /** Set by the app window: progress of Get missing files downloads, for the card's button. */
+  public onDownloadProgress?: (p: { modUuid: string; received: number; total: number; file: string; step: number; steps: number }) => void;
+
   public async downloadMissingFiles(modUuid: string): Promise<{ restored: string[]; stillMissing: string[] }> {
     const mod = this.scanInstalledMods().find((m) => m.mod_uuid === modUuid);
     if (!mod) throw new Error('That mod is no longer installed.');
@@ -4244,13 +4334,17 @@ endif
       if (meta.is_placeholder || !meta.download_url?.startsWith('http')) {
         throw new Error(`Couldn't reach GameBanana for "${mod.title}". Check your connection and try again.`);
       }
-      // The file this mod came from first; if it isn't found or doesn't have everything, the
-      // page's other files (an optional part can hold what's missing).
+      // The file this mod came from first. Other files on the page (an optional part can hold
+      // what's missing) are tried only while files are still missing, the likeliest first and at
+      // most a couple: never every download of a big variant pack.
       const files = meta.files?.length
         ? meta.files
         : [{ id: meta.file_id || 0, name: meta.file_name || `GB_${mod.gamebanana_id}.zip`, size: meta.file_size, download_url: meta.download_url }];
       const first = pickGameBananaFile(files, { id: mod.gamebanana_file_id, name: mod.gamebanana_file_name });
-      const order = first ? [first, ...files.filter((f) => f !== first)] : files;
+      const order = first
+        ? [first, ...rankOtherFiles(files.filter((f) => f !== first), mod).slice(0, MISSING_FILES_EXTRA_TRIES)]
+        : rankOtherFiles(files, mod).slice(0, MISSING_FILES_EXTRA_TRIES + 1);
+      const missingNames = [...wanted.values()];
 
       const restored: string[] = [];
       const left = new Map(wanted);
@@ -4260,20 +4354,16 @@ endif
         const work = path.join(stagingDir, String(i));
         fs.mkdirSync(work, { recursive: true });
         const archive = path.join(work, path.basename(file.name) || 'mod.zip');
-        ensureFreeSpace(work, (file.size || 0) * 3, 'download');
-        const ok = await this.withDownloadSlot(() => downloadToFile(file.download_url, archive)).catch(() => false);
+        ensureFreeSpace(work, (file.size || 0) * 2, 'download');
+        const report = (received: number, total: number) =>
+          this.onDownloadProgress?.({ modUuid, received, total: total || file.size || 0, file: file.name, step: i + 1, steps: order.length });
+        report(0, file.size || 0);
+        const ok = await this.withDownloadSlot(() => downloadToFile(file.download_url, archive, report)).catch(() => false);
         if (!ok) continue;
         downloaded++;
-        let extracted = await extractArchiveAsync(archive, path.join(work, 'raw'));
-        if (!extracted) {
-          extracted = path.join(work, 'raw', 'archive');
-          try {
-            extractToDir(archive, extracted); // no 7-Zip: the built-in extractor
-          } catch {
-            continue;
-          }
-        }
-        sweepNestedArchives(extracted);
+        // Only the missing files are unpacked, not the whole (often multi-GB) archive.
+        const extracted = path.join(work, 'raw');
+        if (!(await extractArchiveFiles(archive, extracted, missingNames))) continue;
 
         // The folder in the download that holds the most of the missing files is this mod's folder.
         let best: { dir: string; hits: number } = { dir: '', hits: 0 };

@@ -46,6 +46,7 @@ interface InspectorDrawerProps {
   /** Set when the mod's missing files can be downloaded from GameBanana again. */
   onDownloadMissing?: (modUuid: string) => void;
   isFetchingFiles?: boolean;
+  fetchLabel?: string;
   onSetCustomImageFile?: (modUuid: string) => void;
   onPasteThumbnailFromClipboard?: (modUuid: string) => void;
   /** After you change the mod's content label. */
@@ -75,6 +76,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
   onOpenFolder,
   onDownloadMissing,
   isFetchingFiles,
+  fetchLabel,
   onSetCustomImageFile,
   onPasteThumbnailFromClipboard,
   onStateChange,
@@ -213,7 +215,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                       title="Downloads the mod from GameBanana and copies in only the missing files. Your keys and settings stay."
                     >
                       <CloudDownload />
-                      {isFetchingFiles ? 'Downloading…' : 'Get missing files'}
+                      {isFetchingFiles ? fetchLabel || 'Downloading…' : 'Get missing files'}
                     </button>
                   )}
                   {health === 'fixable' && (

@@ -635,6 +635,8 @@ app.whenReady().then(() => {
   createWindow();
   // Content labels are pre-scanned on GitHub; fetch the newest list every hour and tell Browse.
   onNsfwVerdictsUpdated(() => mainWindow?.webContents.send('nsfw:verdicts-updated', null));
+  // Get missing files: how far the download got, for the mod's button.
+  modService.onDownloadProgress = (p) => mainWindow?.webContents.send('zzz:downloadProgress', p);
   setInterval(() => void refreshNsfwVerdicts(), 60 * 60 * 1000);
   // Undo the Library edits 2.14.0 made to "Experimental" mods.
   setTimeout(() => {

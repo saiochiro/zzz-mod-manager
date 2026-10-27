@@ -73,6 +73,8 @@ interface LibraryScreenProps {
   /** Mods with missing files that came from GameBanana. */
   canFetchMissing: (m: ModManifest) => boolean;
   fetchingIds: Set<string>;
+  /** What a mod's Get missing files button says while it downloads. */
+  fetchLabels: Record<string, string>;
   onDownloadMissing: (uuid: string) => void;
   onDownloadAllMissing: () => void;
   onSetCustomImage: (uuid: string) => void;
@@ -624,6 +626,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
                     onUpdate={() => p.onUpdateMod(mod.mod_uuid)}
                     onDownloadMissing={p.canFetchMissing(mod) ? () => p.onDownloadMissing(mod.mod_uuid) : undefined}
                     isFetchingFiles={p.fetchingIds.has(mod.mod_uuid)}
+                    fetchLabel={p.fetchLabels[mod.mod_uuid]}
                     selectMode={selecting}
                     picked={picked.has(mod.mod_uuid)}
                     onPick={() => togglePick(mod.mod_uuid)}
