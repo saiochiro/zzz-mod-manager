@@ -45,6 +45,8 @@ export interface FullAppState {
   mods: ModManifest[];
   logs: FairyLogEntry[];
   fairyState: FairyState;
+  /** Mods the game loads from outside ProxyLaunch (e.g. left by another mod manager). */
+  unmanagedGameMods?: Array<{ name: string; path: string }>;
 }
 
 async function invokeBackend<T = any>(channel: string, ...args: any[]): Promise<T> {
@@ -383,6 +385,10 @@ export const fairyClient = {
   /** A newer list of pre-scanned content labels was downloaded. */
   onNsfwVerdictsUpdated: (cb: () => void): (() => void) =>
     window.fairyBridge?.on ? window.fairyBridge.on('nsfw:verdicts-updated', cb) : () => {},
+
+  /** A mod the game loads from outside ProxyLaunch: add it to the Library, or turn it off. */
+  resolveUnmanagedMod: (modPath: string, action: 'import' | 'disable'): Promise<{ imported: number; state: FullAppState }> =>
+    invokeBackend('zzz:resolveUnmanagedMod', modPath, action),
 
   /** File Explorer opens with the mod's folder selected. */
   revealMod: (modUuid: string): Promise<boolean> => invokeBackend('zzz:revealMod', modUuid),

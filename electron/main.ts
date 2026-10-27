@@ -527,6 +527,16 @@ handleIpc('mods:archive', async (_e, modUuid: string) => {
 
 // Opens File Explorer with the mod's folder selected. Looks the mod up by id, so it still works
 // after the folder was renamed (switched on/off, updated, tidied).
+handleIpc('zzz:resolveUnmanagedMod', async (_e, modPath: string, action: 'import' | 'disable') => {
+  const release = await modService.acquireInstallLock();
+  try {
+    const res = modService.resolveUnmanagedGameMod(String(modPath), action === 'import' ? 'import' : 'disable');
+    return { ...res, state: modService.getFullState() };
+  } finally {
+    release();
+  }
+});
+
 handleIpc('zzz:revealMod', async (_e, modUuid: string) => {
   const mod = modService.scanInstalledMods().find((m) => m.mod_uuid === modUuid);
   if (!mod) throw new Error('That mod is no longer installed.');

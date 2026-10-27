@@ -456,6 +456,23 @@ const AppInner: React.FC = () => {
     else fairyClient.openModFolder(installPath);
   };
 
+  const handleResolveUnmanaged = async (modPath: string, action: 'import' | 'disable') => {
+    try {
+      const res = await fairyClient.resolveUnmanagedMod(modPath, action);
+      setAppState(res.state);
+      notify({
+        tone: 'success',
+        title: action === 'import' ? 'Added to your Library' : 'Turned off',
+        message:
+          action === 'import'
+            ? 'It now shows in the Library, and the copy outside ProxyLaunch is turned off so it doesn\'t load twice.'
+            : 'It no longer loads in the game. Its files are still in the game folder, renamed DISABLED_.',
+      });
+    } catch (err) {
+      notify({ tone: 'error', title: 'Couldn’t change that mod', message: errMsg(err) });
+    }
+  };
+
   /** Several mods on/off at once ("All off", "Surprise me"): instant on screen, one sync behind it. */
   const handleSetModsEnabled = async (changes: Array<{ modUuid: string; enabled: boolean }>, message: string) => {
     if (!changes.length) return;
@@ -1131,6 +1148,8 @@ const AppInner: React.FC = () => {
               canUndoOrganize={canUndoOrganize}
               onSetModsEnabled={handleSetModsEnabled}
               onTidyHotkeys={handleStandardizeAll}
+              unmanagedGameMods={appState?.unmanagedGameMods ?? []}
+              onResolveUnmanaged={handleResolveUnmanaged}
             />
           )}
 

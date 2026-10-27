@@ -1957,10 +1957,17 @@ endif
 
   public getFullState() {
     const mods = this.scanInstalledMods();
+    let unmanagedGameMods: Array<{ name: string; path: string }> = [];
+    try {
+      unmanagedGameMods = this.findUnmanagedGameMods();
+    } catch {
+      // game folder not reachable
+    }
     return {
       config: this.getConfig(),
       hashDb: this.getHashDb(),
       mods,
+      unmanagedGameMods,
       logs: this.logs,
       fairyState: this.computeFairyState(mods),
     };
@@ -3882,6 +3889,64 @@ endif
    * Scans an external directory (from another launcher like XXMI, 3DMigoto, HoYoPlay, Starward)
    * finds all mod folders, fingerprints their character hashes, and imports or symlinks them cleanly.
    */
+  /**
+   * Mods the game loads that ProxyLaunch doesn't manage: active mod folders (with an .ini) inside
+   * XXMI's ZZMI/Mods, outside ProxyLaunch's own _ZZZMM_Managed and _Uncategorized_UI_Audio folders
+   * (e.g. left there by another mod manager). Folders named DISABLED_ and hidden folders don't load.
+   */
+  public findUnmanagedGameMods(): Array<{ name: string; path: string }> {
+    const xxmi = this.resolveXxmiInstall();
+    const roots = [xxmi?.modsDir, path.join(this.zzmiRootPath, 'Mods')].filter((d): d is string => Boolean(d) && fs.existsSync(d as string));
+    const seen = new Set<string>();
+    const found: Array<{ name: string; path: string }> = [];
+    const walk = (dir: string, depth: number) => {
+      let entries: fs.Dirent[];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      if (entries.some((e) => e.isFile() && /\.ini$/i.test(e.name) && !/^desktop\.ini$/i.test(e.name))) {
+        found.push({ name: path.basename(dir), path: dir });
+        return; // a mod: don't count its sub-folders separately
+      }
+      if (depth >= 4) return;
+      for (const e of entries) {
+        if (!e.isDirectory() || e.name.startsWith('.') || /^disabled/i.test(e.name)) continue;
+        walk(path.join(dir, e.name), depth + 1);
+      }
+    };
+    for (const root of roots) {
+      const key = path.resolve(root).toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      for (const e of fs.readdirSync(root, { withFileTypes: true })) {
+        if (!e.isDirectory() || e.name.startsWith('.') || /^disabled/i.test(e.name)) continue;
+        if (['_zzzmm_managed', '_uncategorized_ui_audio'].includes(e.name.toLowerCase())) continue;
+        walk(path.join(root, e.name), 1);
+      }
+    }
+    return found;
+  }
+
+  /**
+   * Handles an unmanaged mod found by findUnmanagedGameMods: "import" copies it into the Library and
+   * then turns the original off; "disable" only turns the original off (renamed DISABLED_...).
+   */
+  public resolveUnmanagedGameMod(modPath: string, action: 'import' | 'disable'): { imported: number } {
+    const known = this.findUnmanagedGameMods().find((m) => path.resolve(m.path).toLowerCase() === path.resolve(modPath).toLowerCase());
+    if (!known) throw new Error('That mod is no longer in the game folder.');
+    let imported = 0;
+    if (action === 'import') imported = this.importExistingModFolder(known.path, 'copy').importedCount;
+    renameWithRetry(known.path, path.join(path.dirname(known.path), `DISABLED_${path.basename(known.path)}`));
+    this.addLog(
+      'info',
+      'ROUTER',
+      action === 'import' ? `Added [${known.name}] to the Library and turned off the copy outside ProxyLaunch.` : `Turned off [${known.name}] (outside ProxyLaunch).`
+    );
+    return { imported };
+  }
+
   public importExistingModFolder(
     sourceFolder: string,
     mode: 'copy' | 'symlink' = 'copy'

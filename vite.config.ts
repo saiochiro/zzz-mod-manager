@@ -41,6 +41,9 @@ function fairyBackendMiddlewarePlugin(): Plugin {
             case 'zzz:toggleEnabled':
               result = { ...svc.toggleModEnabled(args[0]), state: svc.getFullState() };
               break;
+            case 'zzz:resolveUnmanagedMod':
+              result = { ...svc.resolveUnmanagedGameMod(args[0], args[1]), state: svc.getFullState() };
+              break;
             case 'zzz:revealMod':
               result = true; // browser preview: no File Explorer
               break;

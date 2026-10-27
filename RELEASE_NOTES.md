@@ -1,6 +1,6 @@
-What's new in 2.14.12
+What's new in 2.14.13
 
-- Fixed missing mods. An earlier fix for mods installed under made-up names could give a mod the name and GameBanana page of a different mod (for example, an icon pack became "HideUID"), and the next update then swapped it out. Mods this happened to are put back automatically under their original name when you open the app. Their files were safe in backups the whole time.
-- That repair now only takes details from a real earlier version of the same mod, checked by the mod's own game data, so it can't mix up two different mods again.
+- ProxyLaunch now warns you about mods the game loads that aren't in your Library, for example ones another mod manager put in XXMI's mod folder. They show at the top of the Library, each with Add to Library (it then shows and can be managed like any other mod) or Turn off.
+- When you add one to the Library, the copy outside ProxyLaunch is turned off so it doesn't load twice.
 
 Requires XXMI Launcher with ZZMI set up. Questions or bugs? Reach out on Discord: ghxty

@@ -161,3 +161,30 @@ describe('Undoing a mod mixed up with another one', () => {
     expect(service.restoreWronglyReplacedMods()).toBe(0);
   });
 });
+
+describe('Mods the game loads from outside ProxyLaunch', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hidden-'));
+  });
+  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  it('finds them, and can add one to the Library (turning the outside copy off)', () => {
+    const service = new ModManagerService(dir);
+    const other = path.join(dir, 'ZZMI_Root', 'Mods', 'Playable Characters', 'Alice Thymefield - Celestian Etiquette', 'Alice');
+    fs.mkdirSync(other, { recursive: true });
+    fs.writeFileSync(path.join(other, 'Alice.ini'), '[TextureOverrideAlice]\nhash = 12345678\n');
+    fs.mkdirSync(path.join(dir, 'ZZMI_Root', 'Mods', 'Playable Characters', '.staging', 'x'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'ZZMI_Root', 'Mods', 'Playable Characters', '.staging', 'x', 'a.ini'), '');
+
+    const found = service.findUnmanagedGameMods();
+    expect(found.map((m) => m.name)).toEqual(['Alice']);
+    expect(service.getFullState().unmanagedGameMods).toHaveLength(1);
+
+    const before = service.scanInstalledMods().length;
+    expect(service.resolveUnmanagedGameMod(found[0].path, 'import').imported).toBe(1);
+    expect(service.scanInstalledMods().length).toBe(before + 1);
+    expect(fs.existsSync(path.join(path.dirname(other), 'DISABLED_Alice'))).toBe(true);
+    expect(service.findUnmanagedGameMods()).toEqual([]);
+  });
+});

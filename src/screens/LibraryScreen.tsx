@@ -67,6 +67,9 @@ interface LibraryScreenProps {
   onSetModsEnabled: (changes: Array<{ modUuid: string; enabled: boolean }>, message: string) => void;
   /** Tidy hotkeys for one character (or every mod when no character is picked). */
   onTidyHotkeys: (agentId?: string) => void;
+  /** Mods the game loads from outside ProxyLaunch, and what to do with one. */
+  unmanagedGameMods: Array<{ name: string; path: string }>;
+  onResolveUnmanaged: (modPath: string, action: 'import' | 'disable') => void;
 }
 
 export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
@@ -387,6 +390,34 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
               </div>
             )}
 
+            {p.unmanagedGameMods.length > 0 && agentId === 'ALL' && (
+              <div className="banner banner--warning stack" style={{ marginBottom: 12, alignItems: 'stretch' }}>
+                <div className="row" style={{ gap: 10 }}>
+                  <AlertTriangle style={{ color: 'var(--warning)' }} />
+                  <span style={{ flex: 1 }}>
+                    <strong>
+                      {p.unmanagedGameMods.length} mod{p.unmanagedGameMods.length === 1 ? ' is' : 's are'} active in the game but not in ProxyLaunch
+                    </strong>
+                    <span className="small muted" style={{ display: 'block' }}>
+                      They're in the game's mod folder (often left by another mod manager), so they load even though you can't see them here.
+                    </span>
+                  </span>
+                </div>
+                {p.unmanagedGameMods.map((m) => (
+                  <div key={m.path} className="row" style={{ gap: 8, paddingLeft: 30 }}>
+                    <span className="truncate" style={{ flex: 1, fontWeight: 600 }} title={m.path}>
+                      {m.name}
+                    </span>
+                    <button className="btn btn--sm btn--secondary" onClick={() => p.onResolveUnmanaged(m.path, 'import')}>
+                      Add to Library
+                    </button>
+                    <button className="btn btn--sm btn--ghost" onClick={() => p.onResolveUnmanaged(m.path, 'disable')}>
+                      Turn off
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             {!libraryEmpty && status === 'ATTENTION' && (
               <div className="banner" style={{ marginBottom: 12 }}>
                 <AlertTriangle style={{ color: 'var(--warning)' }} />
