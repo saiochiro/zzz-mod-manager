@@ -1,7 +1,7 @@
-What's new in 2.14.10
+What's new in 2.14.11
 
-- Fixed Show more in Browse sometimes doing nothing. When a page only brings mods that are already on screen (new uploads shift GameBanana's pages) or that your filter hides, ProxyLaunch now quietly moves on to the next page instead.
-- If GameBanana doesn't answer, each page is tried again automatically, and if it still fails the button turns into Try again instead of silently skipping mods.
-- At the end of a list you now see "That's everything for this view" instead of a button that does nothing.
+- Tidy keys now gives each option one key. Some mods repeat the same option (like hair) in several of their files, and those copies used to get different keys, so one press switched only part of the mod and the option showed up twice. Now every copy gets the same key and the Hotkeys tab shows it once, with "used in 2 files" underneath.
+- Changing a key in the Hotkeys tab changes it in every file that uses that option.
+- Press Tidy keys again on mods you already tidied to fix their keys.
 
 Requires XXMI Launcher with ZZMI set up. Questions or bugs? Reach out on Discord: ghxty

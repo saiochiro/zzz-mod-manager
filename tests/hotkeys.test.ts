@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { planModKeys, RESERVED_KEYS, scopeKeysToCharacter } from '../src/core/hotkeyTidy';
+import { groupToggles, planModKeys, RESERVED_KEYS, scopeKeysToCharacter, toggleId } from '../src/shared/hotkeys';
 import { parseIniContent } from '../src/core/iniParser';
 import { ModManagerService } from '../src/core/modManagerService';
 
@@ -40,12 +40,23 @@ describe('Tidy hotkeys', () => {
     const keys = [...plan.values()];
     expect(new Set(keys).size).toBe(keys.length); // no two toggles on one key
     // Top to bottom: J, K, L...
-    expect([...plan.entries()]).toEqual([
-      ['keyjacket', 'J'],
-      ['keyhair', 'K'],
-      ['keybangs', 'L'],
-    ]);
+    expect([...plan.values()]).toEqual(['J', 'K', 'L']);
     for (const k of keys) expect(RESERVED_KEYS.has(k)).toBe(false);
+  });
+
+  it('an option repeated in several files keeps one key everywhere, and shows as one row', () => {
+    const hairA = { section_name: 'KeyHair', variable: '$hair', ini_file: 'hair/a.ini', current_key: 'K', states: ['0', '1'], label: 'hair' };
+    const hairB = { ...hairA, section_name: 'KeyHairSwap', ini_file: 'hair/b.ini' };
+    const tail = { ...hairA, section_name: 'KeyTail', variable: '$tail', ini_file: 'hair/b.ini' };
+    const plan = planModKeys([hairA, hairB, tail]);
+    expect(plan.get(toggleId(hairA))).toBe('J');
+    expect(plan.get(toggleId(hairB))).toBe('J'); // same option, other file: same key
+    expect(plan.get(toggleId(tail))).toBe('K');
+    const rows = groupToggles([{ ...hairA, current_key: 'J' }, { ...hairB, current_key: 'J' }, { ...tail, current_key: 'K' }]);
+    expect(rows.map((r) => [r.toggle.variable, r.sections, r.files])).toEqual([
+      ['$hair', ['KeyHair', 'KeyHairSwap'], 2],
+      ['$tail', ['KeyTail'], 1],
+    ]);
   });
 
   it("makes keys work only while the mod's character is on screen", () => {

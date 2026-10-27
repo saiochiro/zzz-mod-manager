@@ -55,7 +55,7 @@ import {
 } from './nsfwVisionService';
 import { applyNsfwReview, initNsfwReview, nsfwKey } from './nsfwReview';
 import { isSanitized, restoreMod } from './nsfwSanitizer';
-import { planModKeys, scopeKeysToCharacter } from './hotkeyTidy';
+import { planModKeys, scopeKeysToCharacter, toggleId } from '../shared/hotkeys';
 /**
  * Renames a mod folder, retrying for a few seconds when Windows briefly locks it (antivirus,
  * search indexing, Explorer previews, the game reading files). Throws a clear message if it stays locked.
@@ -94,6 +94,7 @@ import {
 } from './workshopEngine';
 import {
   classifyMeshPartsFromTokens,
+  formatReadableKey,
   parseIniContent,
   rewriteIniKeybind,
 } from './iniParser';
@@ -2176,17 +2177,17 @@ endif
       const modAbsDir = path.join(this.zzmiRootPath, mod.install_path);
       const iniFiles = listModInis(modAbsDir);
       const texts = new Map(iniFiles.map((f) => [f, fs.readFileSync(f, 'utf-8')]));
-      // One plan for the whole mod, so toggles in different .ini files still get different keys.
-      const toggles = iniFiles.flatMap((f) => parseIniContent(texts.get(f)!, f).subToggles);
-      const plan = planModKeys(toggles);
+      // One plan for the whole mod: an option repeated in several files keeps one key everywhere.
+      const togglesOf = (text: string, file: string) => parseIniContent(text, file).subToggles.map((t) => ({ ...t, ini_file: file }));
+      const plan = planModKeys(iniFiles.flatMap((f) => togglesOf(texts.get(f)!, f)));
 
       let modChanged = false;
       for (const iniPath of iniFiles) {
         const original = texts.get(iniPath)!;
         let content = original;
-        for (const toggle of parseIniContent(content, iniPath).subToggles) {
-          const key = plan.get(toggle.section_name.toLowerCase());
-          if (key && toggle.current_key.toUpperCase() !== key.toUpperCase()) {
+        for (const toggle of togglesOf(content, iniPath)) {
+          const key = plan.get(toggleId(toggle));
+          if (key && toggle.current_key.toUpperCase() !== formatReadableKey(key).toUpperCase()) {
             content = rewriteIniKeybind(content, toggle.section_name, key);
             totalKeysRemapped++;
           }

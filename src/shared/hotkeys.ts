@@ -24,19 +24,56 @@ export const RESERVED_KEYS = new Set(
 /** The keys handed out, in order: J, K, L first, then the spare keys. */
 export const KEY_ORDER = ['J', 'K', 'L', ...SPARE_KEYS].filter((k) => !RESERVED_KEYS.has(k));
 
+/** Where a toggle lives: its .ini file and section. The keys of a plan from planModKeys. */
+export function toggleId(t: { section_name: string; ini_file?: string }): string {
+  return `${(t.ini_file || '').toLowerCase()}|${t.section_name.toLowerCase()}`;
+}
+
 /**
  * Picks a key for each toggle of one mod, top to bottom in the order the mod lists them (the same
- * order the Hotkeys tab shows): the first toggle gets J, then K, L, U, I, O, P, Y, N, numpad 1-9.
- * Predictable, and no two toggles of a mod share a key. Returns section name (lowercase) -> key.
+ * order the Hotkeys tab shows): the first option gets J, then K, L, U, I, O, P, Y, N, numpad 1-9.
+ *
+ * One option = one key. Mods often repeat an option in several .ini files (each part or variant
+ * file has its own `$hair`, and the copies must switch together), so toggles with the same
+ * variable share a key. Inside a single file, a second section for the same variable (e.g. a
+ * "previous" key) gets its own key. Returns toggleId -> key.
  */
-export function planModKeys(toggles: Array<{ section_name: string; label?: string; variable?: string }>): Map<string, string> {
+export function planModKeys(
+  toggles: Array<{ section_name: string; variable?: string; ini_file?: string }>
+): Map<string, string> {
   const plan = new Map<string, string>();
+  const optionKey = new Map<string, string>(); // option -> key
+  const seenInFile = new Map<string, number>(); // file|variable -> how many sections so far
   for (const t of toggles) {
-    const id = t.section_name.toLowerCase();
+    const id = toggleId(t);
     if (plan.has(id)) continue;
-    plan.set(id, KEY_ORDER[plan.size] ?? KEY_ORDER[KEY_ORDER.length - 1]);
+    const variable = (t.variable || t.section_name).replace(/^\$/, '').toLowerCase();
+    const fileVar = `${(t.ini_file || '').toLowerCase()}|${variable}`;
+    const nth = seenInFile.get(fileVar) ?? 0;
+    seenInFile.set(fileVar, nth + 1);
+    const option = `${variable}#${nth}`;
+    if (!optionKey.has(option)) optionKey.set(option, KEY_ORDER[optionKey.size] ?? KEY_ORDER[KEY_ORDER.length - 1]);
+    plan.set(id, optionKey.get(option)!);
   }
   return plan;
+}
+
+/**
+ * The Hotkeys tab's rows: one per option and key, even when the mod repeats that option in
+ * several files. `sections` lists every section to change when the key is edited.
+ */
+export function groupToggles<T extends { section_name: string; variable: string; current_key: string; ini_file?: string }>(
+  toggles: T[]
+): Array<{ toggle: T; sections: string[]; files: number }> {
+  const rows = new Map<string, { toggle: T; sections: string[]; files: Set<string> }>();
+  for (const t of toggles) {
+    const k = `${t.variable.toLowerCase()}|${t.current_key.toUpperCase()}`;
+    const row = rows.get(k) ?? { toggle: t, sections: [], files: new Set<string>() };
+    if (!row.sections.includes(t.section_name)) row.sections.push(t.section_name);
+    row.files.add((t.ini_file || '').toLowerCase());
+    rows.set(k, row);
+  }
+  return [...rows.values()].map((r) => ({ toggle: r.toggle, sections: r.sections, files: r.files.size }));
 }
 
 interface Section {

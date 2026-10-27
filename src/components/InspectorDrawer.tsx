@@ -1,3 +1,4 @@
+import { groupToggles } from '../shared/hotkeys';
 import React, { useEffect, useState } from 'react';
 import {
   ArrowUpCircle,
@@ -87,7 +88,8 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
   const parts = mod.parts && mod.parts.length > 0 ? mod.parts : [];
   const size = formatBytes(mod.file_size_bytes);
 
-  const onCaptureKey = (e: React.KeyboardEvent, section: string) => {
+  /** A row can stand for the same option in several files: change all of them together. */
+  const onCaptureKey = (e: React.KeyboardEvent, sections: string[]) => {
     e.preventDefault();
     e.stopPropagation();
     if (e.key === 'Escape') {
@@ -95,7 +97,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
       return;
     }
     if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
-    onRemapKey(mod.mod_uuid, section, e.key.toUpperCase());
+    for (const section of sections) onRemapKey(mod.mod_uuid, section, e.key.toUpperCase());
     setCapturing(null);
   };
 
@@ -147,7 +149,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
           {(
             [
               ['overview', 'Overview'],
-              ['hotkeys', `Hotkeys${mod.sub_toggles.length ? ` · ${mod.sub_toggles.length}` : ''}`],
+              ['hotkeys', `Hotkeys${mod.sub_toggles.length ? ` · ${groupToggles(mod.sub_toggles).length}` : ''}`],
               ['advanced', 'Advanced'],
             ] as Array<[Tab, string]>
           ).map(([id, label]) => (
@@ -309,29 +311,31 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                 </div>
               ) : (
                 <div className="stack">
-                  {mod.sub_toggles.map((t) => {
-                    const isCap = capturing === t.section_name;
+                  {groupToggles(mod.sub_toggles).map(({ toggle: t, sections, files }) => {
+                    const rowId = `${t.variable}|${t.current_key}`;
+                    const isCap = capturing === rowId;
                     return (
-                      <div key={t.section_name} className={`hotkey-row ${isCap ? 'is-capturing' : ''}`}>
+                      <div key={rowId} className={`hotkey-row ${isCap ? 'is-capturing' : ''}`}>
                         <div className="min-w-0" style={{ flex: 1 }}>
                           <div className="truncate" style={{ fontWeight: 600 }}>
                             {t.label}
                           </div>
                           <div className="caption">
                             {t.states.length > 1 ? `${t.states.length} options` : 'On / off'}
+                            {files > 1 ? ` · used in ${files} files` : ''}
                           </div>
                         </div>
                         {isCap ? (
                           <button
                             className="btn btn--primary btn--sm"
                             autoFocus
-                            onKeyDown={(e) => onCaptureKey(e, t.section_name)}
+                            onKeyDown={(e) => onCaptureKey(e, sections)}
                             onBlur={() => setCapturing(null)}
                           >
                             Press a key…
                           </button>
                         ) : (
-                          <button className="kbd" onClick={() => setCapturing(t.section_name)} title="Click to change">
+                          <button className="kbd" onClick={() => setCapturing(rowId)} title="Click to change">
                             {t.current_key}
                           </button>
                         )}
