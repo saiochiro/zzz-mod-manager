@@ -30,7 +30,7 @@ function mockGameBanana(modId: number, files: Array<{ id: number; name: string; 
       );
     }
     const f = files.find((x) => String(url).endsWith(`/${x.id}`));
-    return f ? new Response(f.zip, { headers: { 'content-length': String(f.zip.length) } }) : new Response('no', { status: 404 });
+    return f ? new Response(new Uint8Array(f.zip), { headers: { 'content-length': String(f.zip.length) } }) : new Response('no', { status: 404 });
   });
   return calls;
 }
