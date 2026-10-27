@@ -67,3 +67,6 @@ ZZZ_Mod_Manager_AppData/
 _redesign_backup/
 *.lnk
 electron_out.txt
+
+# Claude session loop state
+.claude/*.local.md
