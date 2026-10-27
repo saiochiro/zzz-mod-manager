@@ -29,6 +29,8 @@ import {
   WorkshopRecipe,
   WorkshopPreview,
   WorkshopResolvedRecipe,
+  BackupEntry,
+  BackupKind,
 } from '../shared/types';
 import {
   copyDirRecursive,
@@ -43,6 +45,7 @@ import {
   classifyModCategoryTag,
   CURATED_GAMEBANANA_MODS,
   fetchGameBananaModProfile,
+  pickGameBananaFile,
   fetchLiveGameBananaFeed,
   isModRecordNsfw,
   makeModCoverSvg,
@@ -356,6 +359,91 @@ async function downloadToFile(url: string, dest: string): Promise<boolean> {
   if (!res.ok || !res.body) return false;
   await pipeline(Readable.fromWeb(res.body as import('stream/web').ReadableStream), fs.createWriteStream(dest));
   return fs.statSync(dest).size > 500;
+}
+
+const BUILT_IN_LOADOUTS = new Set(['Default', 'Stream Safe', 'Main Team']);
+
+/** Timestamp used in backup folder names: "<folder>__2026-10-26T19-09-00-000Z". */
+function backupStamp(at = new Date()): string {
+  return at.toISOString().replace(/[:.]/g, '-');
+}
+
+function stampToDate(name: string): Date | null {
+  const m = name.match(/__(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/);
+  if (!m) return null;
+  const d = new Date(`${m[1]}T${m[2]}:${m[3]}:${m[4]}.${m[5]}Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Backup folders by kind: what an update replaced, deleted mods, Tidy keys copies, leftovers. */
+const BACKUP_KINDS: Record<BackupKind, string> = { update: 'mod-updates', deleted: 'deleted', hotkeys: 'hotkeys', leftover: 'leftovers' };
+
+
+function isNsfwLabeled(m: ModManifest): boolean {
+  return Boolean(m.is_nsfw) || m.nsfw_level === 'nsfw';
+}
+
+/** A character mod with no GameBanana page behind it, so nobody has labeled it. */
+function isUnlabeledSkin(m: ModManifest): boolean {
+  return !m.gamebanana_id && m.agent_id !== 'uncategorized' && (m.category_tag || 'Skins') === 'Skins';
+}
+
+/** What an update replaced: the old record and where its files went. */
+interface ReplacedMod {
+  old: ModManifest;
+  backupDir: string | null;
+  enabled: boolean;
+}
+
+/** Raw `key = ...` values of the [Key...] sections in the .ini files of a folder. */
+function rawKeysOf(dir: string): Array<{ file: string; section: string; variable: string | null; key: string }> {
+  const out: Array<{ file: string; section: string; variable: string | null; key: string }> = [];
+  for (const f of listModInis(dir)) {
+    const doc = parseIniContent(fs.readFileSync(f, 'utf-8'), path.relative(dir, f));
+    for (const sec of doc.sections) {
+      if (sec.type !== 'Key') continue;
+      const key = Object.entries(sec.entries).find(([k]) => k.toLowerCase() === 'key')?.[1];
+      if (!key) continue;
+      const variable = Object.keys(sec.entries).find((k) => k.startsWith('$')) ?? null;
+      out.push({ file: path.relative(dir, f).toLowerCase(), section: sec.name.toLowerCase(), variable: variable?.toLowerCase() ?? null, key: key.trim() });
+    }
+  }
+  return out;
+}
+
+/**
+ * Gives the new version of a mod the keys the user had on the old one (their own changes and
+ * Tidy keys), matching toggles by file and section, then by section, then by variable. Toggles
+ * that are new in this version keep the author's key. `scope` re-adds "only while the character
+ * is on screen" (Tidy keys did that on the old version). Returns how many keys were changed.
+ */
+export function reapplyHotkeys(oldDir: string, newDir: string, scope: boolean): number {
+  const old = rawKeysOf(oldDir);
+  if (!old.length) return 0;
+  let changed = 0;
+  for (const f of listModInis(newDir)) {
+    const rel = path.relative(newDir, f).toLowerCase();
+    const original = fs.readFileSync(f, 'utf-8');
+    let text = original;
+    for (const sec of parseIniContent(text, rel).sections) {
+      if (sec.type !== 'Key') continue;
+      const cur = Object.entries(sec.entries).find(([k]) => k.toLowerCase() === 'key')?.[1]?.trim();
+      if (!cur) continue;
+      const name = sec.name.toLowerCase();
+      const variable = Object.keys(sec.entries).find((k) => k.startsWith('$'))?.toLowerCase() ?? null;
+      const match =
+        old.find((o) => o.file === rel && o.section === name) ||
+        old.find((o) => o.section === name) ||
+        (variable ? old.find((o) => o.variable === variable) : undefined);
+      if (match && match.key.toUpperCase() !== cur.toUpperCase()) {
+        text = rewriteIniKeybind(text, sec.name, match.key);
+        changed++;
+      }
+    }
+    if (scope) text = scopeKeysToCharacter(text).text;
+    if (text !== original) fs.writeFileSync(f, text, 'utf-8');
+  }
+  return changed;
 }
 
 /** Two mods are versions of the same mod when they share most of their game hashes. */
@@ -1344,7 +1432,7 @@ endif
           const src = this.modAbsDir(stillInstalled);
           const destRoot = path.join(this.appDataPath, 'backups', 'mod-updates');
           fs.mkdirSync(destRoot, { recursive: true });
-          const dest = path.join(destRoot, `${path.basename(src)}__${new Date().toISOString().replace(/[:.]/g, '-')}`);
+          const dest = path.join(destRoot, `${path.basename(src)}__${backupStamp()}`);
           try {
             renameWithRetry(src, dest);
           } catch {
@@ -2006,45 +2094,12 @@ endif
         (m) => m.agent_id === target.agent_id && m.mod_uuid !== target.mod_uuid && m.enabled
       );
       for (const other of otherEnabledForAgent) {
-        const otherOldAbs = path.join(this.zzmiRootPath, other.install_path);
-        const otherParent = path.dirname(otherOldAbs);
-        const otherDisabledFolder = formatDisabledFolderName(other.folder_name);
-        const otherNewAbs = path.join(otherParent, otherDisabledFolder);
-        if (otherOldAbs !== otherNewAbs && fs.existsSync(otherOldAbs)) {
-          renameWithRetry(otherOldAbs, otherNewAbs);
-        }
-        other.enabled = false;
-        other.install_path = path.posix.join(
-          path.posix.dirname(other.install_path),
-          otherDisabledFolder
-        );
-        fs.writeFileSync(
-          path.join(otherNewAbs, 'mod_manifest.json'),
-          JSON.stringify(other, null, 2),
-          'utf-8'
-        );
+        this.switchModOnDisk(other, false, mods);
         autoDisabledMods.push(other.title);
       }
     }
 
-    const oldAbsPath = path.join(this.zzmiRootPath, target.install_path);
-    const parentDir = path.dirname(oldAbsPath);
-
-    const newDiskFolderName = nextEnabled
-      ? sanitizeModFolderName(target.folder_name)
-      : formatDisabledFolderName(target.folder_name);
-
-    const newAbsPath = path.join(parentDir, newDiskFolderName);
-    if (oldAbsPath !== newAbsPath && fs.existsSync(oldAbsPath)) {
-      renameWithRetry(oldAbsPath, newAbsPath);
-    }
-
-    const relParent = path.posix.dirname(target.install_path);
-    target.enabled = nextEnabled;
-    target.install_path = path.posix.join(relParent, newDiskFolderName);
-
-    const manifestPath = path.join(newAbsPath, 'mod_manifest.json');
-    fs.writeFileSync(manifestPath, JSON.stringify(target, null, 2), 'utf-8');
+    this.switchModOnDisk(target, nextEnabled, mods);
 
     const elapsedMs = Number(process.hrtime.bigint() - startNs) / 1_000_000;
 
@@ -2079,6 +2134,52 @@ endif
   }
 
   /**
+   * The one way a mod is switched on or off on disk (card switch, batches, loadouts, one outfit per
+   * character): renames the folder to/from DISABLED_ and saves the record. A folder already sitting
+   * at the new name that is a leftover (an old copy of this mod, or no .ini at all) is moved to
+   * backups/leftovers first; if it's a different mod, this one gets a free name instead.
+   */
+  private switchModOnDisk(mod: ModManifest, enabled: boolean, installed: ModManifest[]): void {
+    if (mod.enabled === enabled) return;
+    const oldAbs = path.join(this.zzmiRootPath, mod.install_path);
+    let folder = mod.folder_name;
+    const diskName = (f: string) => (enabled ? sanitizeModFolderName(f) : formatDisabledFolderName(f));
+    let newAbs = path.join(path.dirname(oldAbs), diskName(folder));
+    if (fs.existsSync(oldAbs) && path.resolve(oldAbs).toLowerCase() !== path.resolve(newAbs).toLowerCase()) {
+      if (fs.existsSync(newAbs)) {
+        const owner = installed.find(
+          (m) => m.mod_uuid !== mod.mod_uuid && path.resolve(this.zzmiRootPath, m.install_path).toLowerCase() === path.resolve(newAbs).toLowerCase()
+        );
+        // An old copy of this same mod (or a folder with no .ini) is a leftover; anything else is
+        // a different mod that happens to share the name.
+        const stale =
+          !owner ||
+          (owner.detected_hashes || []).length === 0 ||
+          (Boolean(mod.gamebanana_id) && owner.gamebanana_id === mod.gamebanana_id) ||
+          sharesHashes(owner, mod);
+        if (!stale) {
+          for (let n = 2; fs.existsSync(newAbs); n++) {
+            folder = `${mod.folder_name} (${n})`;
+            newAbs = path.join(path.dirname(oldAbs), diskName(folder));
+          }
+          mod.folder_name = folder;
+        } else {
+          const aside = path.join(this.appDataPath, 'backups', 'leftovers', `${path.basename(newAbs)}__${backupStamp()}`);
+          fs.mkdirSync(path.dirname(aside), { recursive: true });
+          renameWithRetry(newAbs, aside);
+          this.addLog('warning', 'ROUTER', `Moved a leftover folder "${path.basename(newAbs)}" to backups so [${mod.title}] could switch.`, mod.mod_uuid);
+        }
+      }
+      renameWithRetry(oldAbs, newAbs);
+    }
+    mod.enabled = enabled;
+    mod.install_path = path.posix.join(path.posix.dirname(mod.install_path), path.basename(newAbs));
+    if (fs.existsSync(newAbs)) fs.writeFileSync(path.join(newAbs, 'mod_manifest.json'), JSON.stringify(mod, null, 2), 'utf-8');
+    this.invalidateModCache(oldAbs);
+    this.invalidateModCache(newAbs);
+  }
+
+  /**
    * Turns several mods on or off in one go (e.g. "all off" for a character, or a random outfit).
    * One background sync and one in-game reload for the whole batch. Returns how many changed.
    */
@@ -2089,13 +2190,7 @@ endif
     for (const { modUuid, enabled } of changes) {
       const mod = byId.get(modUuid);
       if (!mod || mod.enabled === enabled) continue;
-      const oldAbs = path.join(this.zzmiRootPath, mod.install_path);
-      const newFolder = enabled ? sanitizeModFolderName(mod.folder_name) : formatDisabledFolderName(mod.folder_name);
-      const newAbs = path.join(path.dirname(oldAbs), newFolder);
-      if (oldAbs !== newAbs && fs.existsSync(oldAbs)) renameWithRetry(oldAbs, newAbs);
-      mod.enabled = enabled;
-      mod.install_path = path.posix.join(path.posix.dirname(mod.install_path), newFolder);
-      fs.writeFileSync(path.join(newAbs, 'mod_manifest.json'), JSON.stringify(mod, null, 2), 'utf-8');
+      this.switchModOnDisk(mod, enabled, mods);
       changed.push(mod);
     }
     if (!changed.length) return 0;
@@ -2395,15 +2490,24 @@ endif
     const target = mods.find((m) => m.mod_uuid === modUuid);
     if (!target) return;
 
+    // Deleted mods go to backups/deleted, so they can be put back (Backups in Settings).
     const absPath = path.join(this.zzmiRootPath, target.install_path);
     if (fs.existsSync(absPath)) {
-      fs.rmSync(absPath, { recursive: true, force: true });
+      const dest = path.join(this.appDataPath, 'backups', 'deleted', `${path.basename(absPath)}__${backupStamp()}`);
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      try {
+        renameWithRetry(absPath, dest);
+      } catch {
+        fs.cpSync(absPath, dest, { recursive: true });
+        fs.rmSync(absPath, { recursive: true, force: true });
+      }
+      this.invalidateModCache(absPath);
     }
     if (target.agent_id !== 'uncategorized') {
       this.syncAgentHSwap(target.agent_id);
     }
     this.scheduleXxmiSync([target]);
-    this.addLog('info', 'ROUTER', `Removed mod package [${target.title}] from ZZMI library.`);
+    this.addLog('info', 'ROUTER', `Removed [${target.title}] from the Library. A copy is kept in backups.`);
   }
 
   /**
@@ -2419,7 +2523,7 @@ endif
     if (!fs.existsSync(src)) return null;
     const destRoot = path.join(this.appDataPath, 'backups', 'mod-updates');
     fs.mkdirSync(destRoot, { recursive: true });
-    const dest = path.join(destRoot, `${path.basename(src)}__${new Date().toISOString().replace(/[:.]/g, '-')}`);
+    const dest = path.join(destRoot, `${path.basename(src)}__${backupStamp()}`);
     try {
       renameWithRetry(src, dest);
     } catch {
@@ -2433,12 +2537,65 @@ endif
   }
 
   /** Update: puts the old version in backups right before the new one is filed. Returns the old mod. */
-  private prepareReplace(modUuid?: string): ModManifest | null {
+  private prepareReplace(modUuid?: string): ReplacedMod | null {
     if (!modUuid) return null;
     const old = this.scanInstalledMods().find((m) => m.mod_uuid === modUuid);
     if (!old) return null;
-    this.archiveModToBackups(old);
-    return old;
+    const backupDir = this.archiveModToBackups(old);
+    return { old, backupDir, enabled: old.enabled };
+  }
+
+  /**
+   * An update is the same mod with new files: it keeps the old one's id (so loadouts, update
+   * checks and the selection still point at it), its outfit-rotation spot, the cover the user
+   * picked, the GameBanana file it came from, and the user's hotkeys.
+   */
+  private carryOverIdentity(prev: ReplacedMod | null, installed: ModManifest[]): ModManifest[] {
+    if (!prev || !installed.length) return installed;
+    const { old, backupDir } = prev;
+    const oldHashes = new Set((old.detected_hashes || []).map((h) => h.toLowerCase()));
+    const score = (m: ModManifest) =>
+      (m.agent_id === old.agent_id ? 1000 : 0) + (m.detected_hashes || []).filter((h) => oldHashes.has(h.toLowerCase())).length;
+    const pick = installed.length === 1 ? installed[0] : [...installed].sort((a, b) => score(b) - score(a))[0];
+    const dir = path.join(this.zzmiRootPath, pick.install_path);
+
+    if (backupDir && fs.existsSync(backupDir)) {
+      const tidied = this.wasHotkeyTidied(old);
+      reapplyHotkeys(backupDir, dir, tidied);
+      if (old.custom_cover && fs.existsSync(path.join(backupDir, old.custom_cover))) {
+        fs.copyFileSync(path.join(backupDir, old.custom_cover), path.join(dir, old.custom_cover));
+      }
+    }
+
+    const next: ModManifest = {
+      ...pick,
+      mod_uuid: old.mod_uuid,
+      in_h_swap_cycle: old.in_h_swap_cycle,
+      h_cycle_order: old.h_cycle_order,
+      installed_at: old.installed_at || pick.installed_at,
+      updated_at: new Date().toISOString(),
+      custom_cover: old.custom_cover,
+      gamebanana_file_id: pick.gamebanana_file_id ?? old.gamebanana_file_id,
+      gamebanana_file_name: pick.gamebanana_file_name ?? old.gamebanana_file_name,
+      sub_toggles: listModInis(dir).flatMap((f) =>
+        parseIniContent(fs.readFileSync(f, 'utf-8'), path.relative(dir, f)).subToggles
+      ),
+    };
+    if (old.custom_cover) next.thumbnail_url = resolveLocalModThumbnailUrl(dir) || next.thumbnail_url;
+    for (const f of ['mod_manifest.json', 'mod.json']) fs.writeFileSync(path.join(dir, f), JSON.stringify(next, null, 2), 'utf-8');
+    this.invalidateModCache(dir);
+    if (next.agent_id !== 'uncategorized') this.syncAgentHSwap(next.agent_id);
+    return installed.map((m) => (m === pick ? next : m));
+  }
+
+  /** Tidy keys ran on this mod (it keeps a copy of the files it changed). */
+  private wasHotkeyTidied(mod: ModManifest): boolean {
+    const root = path.join(this.appDataPath, 'backups', 'hotkeys');
+    try {
+      return fs.readdirSync(root).some((d) => d.startsWith(`${mod.folder_name}__`));
+    } catch {
+      return false;
+    }
   }
 
   /* One install at a time: unpacking and filing mods never overlap. */
@@ -2472,6 +2629,8 @@ endif
       metadataOverride?: Partial<GameBananaModItem>;
       /** Update: this installed mod is replaced. It goes to backups and the new one keeps its on/off state. */
       replaceModUuid?: string;
+      /** Which file of the GameBanana page to install (a page can have several). */
+      fileId?: number;
     }
   ): Promise<IngestionResult> {
     const hashDb = this.getHashDb();
@@ -2526,6 +2685,35 @@ endif
             category_id: gbMeta.category_id || (options.metadataOverride as any).category_id,
             agent_hint: gbMeta.agent_hint || options.metadataOverride.agent_hint,
             description: gbMeta.description || options.metadataOverride.description || '',
+          };
+        }
+
+        // Which of the page's files: the one picked, or for an update the one the mod came from.
+        if (gbMeta.files && gbMeta.files.length) {
+          const replacing = options?.replaceModUuid
+            ? this.scanInstalledMods().find((m) => m.mod_uuid === options.replaceModUuid)
+            : undefined;
+          const chosen = options?.fileId
+            ? pickGameBananaFile(gbMeta.files, { id: options.fileId })
+            : replacing
+            ? pickGameBananaFile(gbMeta.files, { id: replacing.gamebanana_file_id, name: replacing.gamebanana_file_name })
+            : pickGameBananaFile(gbMeta.files);
+          if (!chosen) {
+            fs.rmSync(stagingDir, { recursive: true, force: true });
+            return {
+              success: true,
+              installedMods: [],
+              filePrompt: { modId, title: gbMeta.title, files: gbMeta.files, replaceModUuid: options?.replaceModUuid },
+              logs,
+            };
+          }
+          gbMeta = {
+            ...gbMeta,
+            file_id: chosen.id,
+            download_url: chosen.download_url,
+            file_name: chosen.name,
+            file_size: chosen.size || gbMeta.file_size,
+            md5_checksum: chosen.md5_checksum || gbMeta.md5_checksum,
           };
         }
 
@@ -2600,7 +2788,7 @@ endif
           { enabled: replaced ? replaced.enabled : undefined }
         );
         fs.rmSync(stagingDir, { recursive: true, force: true });
-        return { success: true, installedMods: installed, logs };
+        return { success: true, installedMods: this.carryOverIdentity(replaced, installed), logs };
       }
 
       // Local archive or folder path
@@ -2659,7 +2847,7 @@ endif
         { enabled: replaced ? replaced.enabled : undefined }
       );
       fs.rmSync(stagingDir, { recursive: true, force: true });
-      return { success: true, installedMods: installed, logs };
+      return { success: true, installedMods: this.carryOverIdentity(replaced, installed), logs };
     } catch (err) {
       const errMsg = (err as Error).message;
       this.addLog('error', 'GB_INGEST', `Ingestion failed: ${errMsg}`);
@@ -2822,6 +3010,8 @@ endif
         installed_at: new Date().toISOString(),
         md5_checksum: gbMeta?.md5_checksum,
         sanitized_warnings: root.sanitizedWarnings,
+        gamebanana_file_id: gbMeta?.file_id,
+        gamebanana_file_name: gbMeta?.file_id ? gbMeta.file_name : undefined,
       };
 
       fs.writeFileSync(
@@ -3530,11 +3720,13 @@ endif
       if (!base64Part) throw new Error('Invalid image data URL');
       fs.writeFileSync(previewDest, Buffer.from(base64Part, 'base64'));
       target.thumbnail_url = resolveLocalModThumbnailUrl(modAbsDir) || imageSource;
+      target.custom_cover = path.basename(previewDest);
     } else if (fs.existsSync(imageSource)) {
       const ext = path.extname(imageSource).toLowerCase() || '.png';
       const destFile = path.join(modAbsDir, `preview${ext}`);
       fs.copyFileSync(imageSource, destFile);
       target.thumbnail_url = resolveLocalModThumbnailUrl(modAbsDir) || target.thumbnail_url;
+      target.custom_cover = path.basename(destFile);
     } else {
       throw new Error('Image source not found');
     }
@@ -3588,74 +3780,73 @@ endif
     profileName: string;
     enabledCount: number;
     message: string;
+    /** Mods switched off by this loadout. */
+    turnedOff: number;
+    /** Stream Safe: mods with no GameBanana label that were switched off to be safe. */
+    unlabeledOff: string[];
   } {
     const mods = this.scanInstalledMods();
     const cfg = this.getConfig();
-    const savedProfiles = cfg.profiles || {};
+    const saved = cfg.profiles || {};
+    const isBuiltIn = BUILT_IN_LOADOUTS.has(profileName) && !saved[profileName];
+    const changes: Array<{ modUuid: string; enabled: boolean }> = [];
+    const unlabeledOff: string[] = [];
+    let message: string;
 
-    let targetEnabledSet: Set<string>;
+    // Remember the usual setup before switching to a built-in one, so Default can bring it back.
+    if (isBuiltIn && profileName !== 'Default' && !BUILT_IN_LOADOUTS.has(cfg.activeProfile || 'Default')) {
+      this.updateConfig({ lastUsualLoadout: mods.filter((m) => m.enabled).map((m) => m.mod_uuid) });
+    }
 
-    if (savedProfiles[profileName]) {
-      targetEnabledSet = new Set(savedProfiles[profileName]);
+    if (saved[profileName]) {
+      // A saved loadout: exactly the mods that were on when it was saved.
+      const want = new Set(saved[profileName]);
+      for (const m of mods) changes.push({ modUuid: m.mod_uuid, enabled: want.has(m.mod_uuid) });
+      message = `Switched to "${profileName}".`;
     } else if (profileName === 'Stream Safe') {
-      // Built-in preset: enable all non-NSFW mods that are currently working
-      targetEnabledSet = new Set(
-        mods.filter((m) => !m.is_nsfw && m.health_status !== 'broken').map((m) => m.mod_uuid)
-      );
-    } else if (profileName === 'Main Team') {
-      // Built-in preset: enable primary 1 skin per character
-      const seenAgents = new Set<string>();
-      const picked: string[] = [];
+      // Only ever turns mods off: NSFW-labeled ones, and character mods with no GameBanana label.
       for (const m of mods) {
-        if (m.health_status === 'broken') continue;
-        if (m.agent_id === 'uncategorized' || !seenAgents.has(m.agent_id)) {
-          picked.push(m.mod_uuid);
-          if (m.agent_id !== 'uncategorized') seenAgents.add(m.agent_id);
+        if (!m.enabled) continue;
+        if (isNsfwLabeled(m)) changes.push({ modUuid: m.mod_uuid, enabled: false });
+        else if (isUnlabeledSkin(m)) {
+          changes.push({ modUuid: m.mod_uuid, enabled: false });
+          unlabeledOff.push(m.title);
         }
       }
-      targetEnabledSet = new Set(picked);
+      message = unlabeledOff.length
+        ? `Stream Safe: turned off NSFW mods and ${unlabeledOff.length} character mod(s) with no GameBanana label.`
+        : 'Stream Safe: turned off NSFW mods.';
+    } else if (profileName === 'Main Team') {
+      // One outfit per character: of the outfits on, keep the first in the outfit rotation
+      // (then the newest). Characters with nothing on, UI mods and other kinds stay as they are.
+      const byAgent = new Map<string, ModManifest[]>();
+      for (const m of mods) {
+        if (!m.enabled || m.agent_id === 'uncategorized' || (m.category_tag || 'Skins') !== 'Skins') continue;
+        byAgent.set(m.agent_id, [...(byAgent.get(m.agent_id) || []), m]);
+      }
+      for (const list of byAgent.values()) {
+        list.sort((a, b) => (a.h_cycle_order || 0) - (b.h_cycle_order || 0) || String(b.installed_at).localeCompare(String(a.installed_at)));
+        for (const m of list.slice(1)) changes.push({ modUuid: m.mod_uuid, enabled: false });
+      }
+      message = 'Main Team: one outfit on per character.';
     } else {
-      // Default: keep current or enable all working mods
-      targetEnabledSet = new Set(mods.filter((m) => m.enabled).map((m) => m.mod_uuid));
-    }
-
-    let enabledCount = 0;
-    const affectedAgents = new Set<string>();
-
-    for (const mod of mods) {
-      const shouldEnable = targetEnabledSet.has(mod.mod_uuid);
-      if (shouldEnable) enabledCount++;
-      if (mod.enabled !== shouldEnable) {
-        const oldAbs = path.join(this.zzmiRootPath, mod.install_path);
-        const parentDir = path.dirname(oldAbs);
-        const newDiskName = shouldEnable
-          ? sanitizeModFolderName(mod.folder_name)
-          : formatDisabledFolderName(mod.folder_name);
-        const newAbs = path.join(parentDir, newDiskName);
-        if (oldAbs !== newAbs && fs.existsSync(oldAbs)) {
-          renameWithRetry(oldAbs, newAbs);
-        }
-        mod.enabled = shouldEnable;
-        mod.install_path = path.posix.join(path.posix.dirname(mod.install_path), newDiskName);
-        fs.writeFileSync(
-          path.join(newAbs, 'mod_manifest.json'),
-          JSON.stringify(mod, null, 2),
-          'utf-8'
-        );
-        if (mod.agent_id !== 'uncategorized') affectedAgents.add(mod.agent_id);
+      // Default: back to the usual setup from before Stream Safe or Main Team. Those only turn
+      // mods off, so this turns those back on; mods switched since then are left as they are.
+      const usual = cfg.lastUsualLoadout;
+      if (usual) {
+        for (const id of usual) changes.push({ modUuid: id, enabled: true });
+        message = 'Back to your usual setup.';
+      } else {
+        message = 'Already on your usual setup.';
       }
     }
 
-    for (const agentId of affectedAgents) {
-      this.syncAgentHSwap(agentId);
-    }
-
-    this.updateConfig({ activeProfile: profileName });
-    this.scheduleXxmiSync('all', Boolean(cfg.autoSendF10OnToggle));
-
-    const message = `Activated Loadout Profile [${profileName}] (${enabledCount} active mods).`;
-    this.addLog('cyan', 'FAIRY_CORE', message);
-    return { profileName, enabledCount, message };
+    const turnedOff = changes.filter((c) => !c.enabled && mods.find((m) => m.mod_uuid === c.modUuid)?.enabled).length;
+    this.setModsEnabled(changes);
+    this.updateConfig({ activeProfile: profileName, ...(profileName === 'Default' && isBuiltIn ? { lastUsualLoadout: undefined } : {}) });
+    const enabledCount = this.scanInstalledMods().filter((m) => m.enabled).length;
+    this.addLog('cyan', 'FAIRY_CORE', `${message} (${enabledCount} on.)`);
+    return { profileName, enabledCount, message, turnedOff, unlabeledOff };
   }
 
   public deleteLoadoutProfile(profileName: string): {
@@ -3968,40 +4159,60 @@ endif
       if (meta.is_placeholder || !meta.download_url?.startsWith('http')) {
         throw new Error(`Couldn't reach GameBanana for "${mod.title}". Check your connection and try again.`);
       }
-      const archive = path.join(stagingDir, meta.file_name || `GB_${mod.gamebanana_id}.zip`);
-      const ok = await this.withDownloadSlot(() => downloadToFile(meta.download_url, archive));
-      if (!ok) throw new Error(`Couldn't download "${mod.title}" from GameBanana.`);
-      let extracted = await extractArchiveAsync(archive, path.join(stagingDir, 'raw'));
-      if (!extracted) {
-        extracted = path.join(stagingDir, 'raw', 'archive');
-        extractToDir(archive, extracted); // no 7-Zip: the built-in extractor
-      }
-      sweepNestedArchives(extracted);
-
-      // The folder in the download that holds the most of the missing files is this mod's folder.
-      let best: { dir: string; hits: number } = { dir: '', hits: 0 };
-      const walk = (dir: string, depth: number) => {
-        let hits = 0;
-        for (const rel of wanted.values()) if (fs.existsSync(path.join(dir, ...rel.split('/')))) hits++;
-        if (hits > best.hits) best = { dir, hits };
-        if (depth >= 6) return;
-        for (const e of fs.readdirSync(dir, { withFileTypes: true })) if (e.isDirectory()) walk(path.join(dir, e.name), depth + 1);
-      };
-      walk(extracted, 0);
+      // The file this mod came from first; if it isn't found or doesn't have everything, the
+      // page's other files (an optional part can hold what's missing).
+      const files = meta.files?.length
+        ? meta.files
+        : [{ id: meta.file_id || 0, name: meta.file_name || `GB_${mod.gamebanana_id}.zip`, size: meta.file_size, download_url: meta.download_url }];
+      const first = pickGameBananaFile(files, { id: mod.gamebanana_file_id, name: mod.gamebanana_file_name });
+      const order = first ? [first, ...files.filter((f) => f !== first)] : files;
 
       const restored: string[] = [];
-      const stillMissing: string[] = [];
-      for (const rel of wanted.values()) {
-        const src = best.dir ? path.join(best.dir, ...rel.split('/')) : '';
-        if (src && fs.existsSync(src) && fs.statSync(src).isFile()) {
-          const dest = path.join(modDir, ...rel.split('/'));
-          fs.mkdirSync(path.dirname(dest), { recursive: true });
-          fs.copyFileSync(src, dest);
-          restored.push(rel);
-        } else {
-          stillMissing.push(rel);
+      const left = new Map(wanted);
+      let downloaded = 0;
+      for (const [i, file] of order.entries()) {
+        if (!left.size) break;
+        const work = path.join(stagingDir, String(i));
+        fs.mkdirSync(work, { recursive: true });
+        const archive = path.join(work, path.basename(file.name) || 'mod.zip');
+        const ok = await this.withDownloadSlot(() => downloadToFile(file.download_url, archive)).catch(() => false);
+        if (!ok) continue;
+        downloaded++;
+        let extracted = await extractArchiveAsync(archive, path.join(work, 'raw'));
+        if (!extracted) {
+          extracted = path.join(work, 'raw', 'archive');
+          try {
+            extractToDir(archive, extracted); // no 7-Zip: the built-in extractor
+          } catch {
+            continue;
+          }
+        }
+        sweepNestedArchives(extracted);
+
+        // The folder in the download that holds the most of the missing files is this mod's folder.
+        let best: { dir: string; hits: number } = { dir: '', hits: 0 };
+        const walk = (dir: string, depth: number) => {
+          let hits = 0;
+          for (const rel of left.values()) if (fs.existsSync(path.join(dir, ...rel.split('/')))) hits++;
+          if (hits > best.hits) best = { dir, hits };
+          if (depth >= 6) return;
+          for (const e of fs.readdirSync(dir, { withFileTypes: true })) if (e.isDirectory()) walk(path.join(dir, e.name), depth + 1);
+        };
+        walk(extracted, 0);
+        if (!best.dir) continue;
+        for (const [k, rel] of [...left]) {
+          const src = path.join(best.dir, ...rel.split('/'));
+          if (fs.existsSync(src) && fs.statSync(src).isFile()) {
+            const dest = path.join(modDir, ...rel.split('/'));
+            fs.mkdirSync(path.dirname(dest), { recursive: true });
+            fs.copyFileSync(src, dest);
+            restored.push(rel);
+            left.delete(k);
+          }
         }
       }
+      if (!downloaded) throw new Error(`Couldn't download "${mod.title}" from GameBanana.`);
+      const stillMissing = [...left.values()];
       this.invalidateModCache(modDir);
       if (restored.length) this.scheduleXxmiSync([mod], Boolean(this.getConfig().autoSendF10OnToggle));
       this.addLog(
@@ -4014,6 +4225,220 @@ endif
     } finally {
       fs.rmSync(stagingDir, { recursive: true, force: true });
     }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Backups                                                            */
+  /* ------------------------------------------------------------------ */
+
+  private backupsRoot(): string {
+    return path.join(this.appDataPath, 'backups');
+  }
+
+  /** Every backup, newest first. */
+  public listBackups(): BackupEntry[] {
+    const out: BackupEntry[] = [];
+    for (const [kind, dirName] of Object.entries(BACKUP_KINDS) as Array<[BackupKind, string]>) {
+      const root = path.join(this.backupsRoot(), dirName);
+      let names: string[] = [];
+      try {
+        names = fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
+      } catch {
+        continue;
+      }
+      for (const name of names) {
+        const abs = path.join(root, name);
+        const folder = name.replace(/__[^_]*$/, '').replace(/^DISABLED_/i, '');
+        let manifest: Partial<ModManifest> | null = null;
+        for (const f of ['mod_manifest.json', 'mod.json']) {
+          try {
+            manifest = JSON.parse(fs.readFileSync(path.join(abs, f), 'utf-8'));
+            break;
+          } catch {
+            // no record in this backup
+          }
+        }
+        let created = stampToDate(name);
+        if (!created) {
+          try {
+            created = fs.statSync(abs).mtime;
+          } catch {
+            created = new Date(0);
+          }
+        }
+        out.push({
+          id: `${dirName}/${name}`,
+          kind,
+          title: manifest?.title || folder.replace(/_/g, ' '),
+          folder_name: folder,
+          mod_uuid: manifest?.mod_uuid,
+          gamebanana_id: manifest?.gamebanana_id ?? null,
+          created_at: created.toISOString(),
+          size_bytes: computeDirectorySizeBytes(abs),
+        });
+      }
+    }
+    return out.sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }
+
+  /** Total size of all backups, and per kind. */
+  public getBackupsSummary(): { total_bytes: number; count: number; by_kind: Record<BackupKind, { count: number; bytes: number }> } {
+    const by_kind = Object.fromEntries(Object.keys(BACKUP_KINDS).map((k) => [k, { count: 0, bytes: 0 }])) as Record<
+      BackupKind,
+      { count: number; bytes: number }
+    >;
+    let total = 0;
+    const list = this.listBackups();
+    for (const b of list) {
+      by_kind[b.kind].count++;
+      by_kind[b.kind].bytes += b.size_bytes;
+      total += b.size_bytes;
+    }
+    return { total_bytes: total, count: list.length, by_kind };
+  }
+
+  /** The folder of a listed backup (ids that aren't in the list are refused). */
+  private backupPath(id: string): { entry: BackupEntry; abs: string } {
+    const entry = this.listBackups().find((b) => b.id === id);
+    if (!entry) throw new Error('That backup no longer exists.');
+    return { entry, abs: path.join(this.backupsRoot(), ...id.split('/')) };
+  }
+
+  /** Deletes one backup. Returns the bytes freed. */
+  public deleteBackup(id: string): number {
+    const { entry, abs } = this.backupPath(id);
+    fs.rmSync(abs, { recursive: true, force: true });
+    return entry.size_bytes;
+  }
+
+  /**
+   * Puts a backup back.
+   * - A previous version (update) replaces the installed version of the same mod, which goes to
+   *   backups in turn (so this can be undone too) and lends it its on/off state.
+   * - A deleted mod or a leftover folder goes back into the Library.
+   * - A Tidy keys copy puts the .ini files back into the mod they came from.
+   */
+  public restoreBackup(id: string): { restored: ModManifest | null; kind: BackupKind } {
+    const { entry, abs } = this.backupPath(id);
+    const installed = this.scanInstalledMods();
+
+    if (entry.kind === 'hotkeys') {
+      const target = installed.find((m) => sanitizeModFolderName(m.folder_name) === sanitizeModFolderName(entry.folder_name));
+      if (!target) throw new Error(`"${entry.title}" isn't installed any more, so its keys can't be put back.`);
+      const dest = path.join(this.zzmiRootPath, target.install_path);
+      fs.cpSync(abs, dest, { recursive: true });
+      fs.rmSync(abs, { recursive: true, force: true });
+      this.invalidateModCache(dest);
+      this.scheduleXxmiSync([target], Boolean(this.getConfig().autoSendF10OnToggle));
+      this.addLog('success', 'FAIRY_CORE', `Put back the keys of [${target.title}] from before Tidy keys.`, target.mod_uuid);
+      return { restored: this.scanInstalledMods().find((m) => m.mod_uuid === target.mod_uuid) ?? null, kind: entry.kind };
+    }
+
+    let manifest: ModManifest | null = null;
+    try {
+      manifest = JSON.parse(fs.readFileSync(path.join(abs, 'mod_manifest.json'), 'utf-8'));
+    } catch {
+      manifest = null;
+    }
+    if (!manifest) {
+      // A folder with no record (a leftover): add it like any mod folder, then drop the backup.
+      const res = this.importExistingModFolder(abs, 'copy');
+      fs.rmSync(abs, { recursive: true, force: true });
+      return { restored: res.importedMods[0] ?? null, kind: entry.kind };
+    }
+    const saved = manifest;
+
+    // The installed version of this mod, if any: same id, else same GameBanana page.
+    const current =
+      installed.find((m) => m.mod_uuid === saved.mod_uuid) ||
+      (saved.gamebanana_id ? installed.find((m) => m.gamebanana_id === saved.gamebanana_id) : undefined);
+    let parentRel: string;
+    let enabled: boolean;
+    if (current) {
+      parentRel = path.posix.dirname(current.install_path);
+      enabled = current.enabled;
+      this.archiveModToBackups(current);
+    } else {
+      parentRel = path.posix.dirname(saved.install_path || 'Mods/_Uncategorized_UI_Audio/mod');
+      enabled = entry.kind === 'deleted' ? Boolean(saved.enabled) : false;
+    }
+    const folder = sanitizeModFolderName(saved.folder_name || entry.folder_name);
+    const diskOf = (f: string) => (enabled ? f : formatDisabledFolderName(f));
+    let finalFolder = folder;
+    for (let n = 2; fs.existsSync(path.join(this.zzmiRootPath, parentRel, diskOf(finalFolder))); n++) finalFolder = `${folder} (${n})`;
+    const diskName = diskOf(finalFolder);
+    const destAbs = path.join(this.zzmiRootPath, parentRel, diskName);
+    fs.mkdirSync(path.dirname(destAbs), { recursive: true });
+    try {
+      renameWithRetry(abs, destAbs);
+    } catch {
+      fs.cpSync(abs, destAbs, { recursive: true });
+      fs.rmSync(abs, { recursive: true, force: true });
+    }
+    const restored: ModManifest = {
+      ...saved,
+      mod_uuid: current ? current.mod_uuid : saved.mod_uuid,
+      folder_name: finalFolder,
+      install_path: path.posix.join(parentRel, diskName),
+      enabled,
+    };
+    for (const f of ['mod_manifest.json', 'mod.json']) fs.writeFileSync(path.join(destAbs, f), JSON.stringify(restored, null, 2), 'utf-8');
+    this.invalidateModCache(destAbs);
+    if (restored.agent_id && restored.agent_id !== 'uncategorized') this.syncAgentHSwap(restored.agent_id);
+    this.scheduleXxmiSync([restored], Boolean(this.getConfig().autoSendF10OnToggle));
+    this.addLog(
+      'success',
+      'FAIRY_CORE',
+      `Put back [${restored.title}] from backups${current ? ' (the version it replaced is in backups now)' : ''}.`,
+      restored.mod_uuid
+    );
+    return { restored: this.scanInstalledMods().find((m) => m.mod_uuid === restored.mod_uuid) ?? restored, kind: entry.kind };
+  }
+
+  /**
+   * Deletes old backups: anything older than `olderThanDays` (default 30), but always keeps the
+   * newest `keepPerMod` (default 1) of each mod, per kind. With `maxTotalBytes`, the oldest of
+   * the rest go next until everything fits (still keeping the newest of each mod).
+   */
+  public pruneBackups(opts: { olderThanDays?: number; keepPerMod?: number; maxTotalBytes?: number } = {}): {
+    removed: number;
+    freed_bytes: number;
+  } {
+    const olderThanDays = opts.olderThanDays ?? 30;
+    const keepPerMod = Math.max(0, opts.keepPerMod ?? 1);
+    const cutoff = Date.now() - olderThanDays * 24 * 60 * 60 * 1000;
+    const list = this.listBackups(); // newest first
+    const seen = new Map<string, number>();
+    const kept = new Set<string>();
+    for (const b of list) {
+      const key = `${b.kind}|${b.mod_uuid || b.folder_name.toLowerCase()}`;
+      const n = (seen.get(key) || 0) + 1;
+      seen.set(key, n);
+      if (n <= keepPerMod) kept.add(b.id);
+    }
+    let removed = 0;
+    let freed = 0;
+    const drop = (b: BackupEntry) => {
+      fs.rmSync(path.join(this.backupsRoot(), ...b.id.split('/')), { recursive: true, force: true });
+      removed++;
+      freed += b.size_bytes;
+    };
+    const left: BackupEntry[] = [];
+    for (const b of list) {
+      if (!kept.has(b.id) && new Date(b.created_at).getTime() < cutoff) drop(b);
+      else left.push(b);
+    }
+    if (opts.maxTotalBytes !== undefined) {
+      let total = left.reduce((n, b) => n + b.size_bytes, 0);
+      for (const b of [...left].reverse()) {
+        if (total <= opts.maxTotalBytes) break;
+        if (kept.has(b.id)) continue;
+        drop(b);
+        total -= b.size_bytes;
+      }
+    }
+    if (removed) this.addLog('info', 'FAIRY_CORE', `Cleaned up ${removed} old backup(s), freeing ${(freed / 1024 / 1024).toFixed(1)} MB.`);
+    return { removed, freed_bytes: freed };
   }
 
   public resolveUnmanagedGameMod(modPath: string, action: 'import' | 'disable'): { imported: number } {

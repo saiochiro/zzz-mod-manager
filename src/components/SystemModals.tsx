@@ -1,6 +1,6 @@
-import React from 'react';
-import { ArrowRight, Split, X } from 'lucide-react';
-import type { MultiAgentCandidate } from '../shared/types';
+import React, { useEffect, useState } from 'react';
+import { ArrowRight, FileArchive, Split, X } from 'lucide-react';
+import type { GameBananaFile, MultiAgentCandidate } from '../shared/types';
 import { Modal } from '../ui';
 
 /**
@@ -58,6 +58,81 @@ export const MultiAgentSplitModal: React.FC<MultiAgentSplitModalProps> = ({ prom
         </button>
         <button className="btn btn--primary" onClick={() => onConfirmSplit(promptData.stagingId)}>
           Install {count} mods
+          <ArrowRight />
+        </button>
+      </div>
+    </Modal>
+  );
+};
+
+interface FilePickModalProps {
+  prompt: { title: string; files: GameBananaFile[]; isUpdate: boolean } | null;
+  onPick: (fileId: number) => void;
+  onCancel: () => void;
+}
+
+const sizeLabel = (bytes: number) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
+
+/** A GameBanana page with several files (variants, optional parts): pick the one to install. */
+export const FilePickModal: React.FC<FilePickModalProps> = ({ prompt, onPick, onCancel }) => {
+  const [picked, setPicked] = useState<number | null>(null);
+  useEffect(() => setPicked(prompt?.files[0]?.id ?? null), [prompt]);
+  if (!prompt) return null;
+  return (
+    <Modal open onClose={onCancel} labelledBy="filepick-title">
+      <div className="modal__header modal__header--hero">
+        <span className="card__icon">
+          <FileArchive />
+        </span>
+        <div style={{ flex: 1 }}>
+          <h2 id="filepick-title" className="h3">
+            Which file of “{prompt.title}”?
+          </h2>
+          <p className="small muted">
+            This mod has {prompt.files.length} downloads. {prompt.isUpdate ? 'Pick the one you use. ' : ''}ProxyLaunch remembers your choice for
+            updates and repairs.
+          </p>
+        </div>
+        <button className="icon-btn" onClick={onCancel} aria-label="Close">
+          <X />
+        </button>
+      </div>
+      <div className="modal__body">
+        <div className="stack" role="radiogroup" aria-labelledby="filepick-title">
+          {prompt.files.map((f) => (
+            <label
+              key={f.id}
+              className="row-3"
+              style={{
+                padding: '10px 12px',
+                borderRadius: 12,
+                background: 'var(--raised)',
+                cursor: 'pointer',
+                outline: picked === f.id ? '2px solid var(--primary)' : 'none',
+              }}
+            >
+              <input type="radio" name="gb-file" checked={picked === f.id} onChange={() => setPicked(f.id)} />
+              <span className="min-w-0" style={{ flex: 1 }}>
+                <span className="truncate" style={{ display: 'block', fontWeight: 650 }} title={f.name}>
+                  {f.name}
+                </span>
+                {f.description && (
+                  <span className="caption truncate" style={{ display: 'block' }} title={f.description}>
+                    {f.description}
+                  </span>
+                )}
+              </span>
+              <span className="caption">{f.size ? sizeLabel(f.size) : ''}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+      <div className="modal__footer">
+        <button className="btn btn--ghost" onClick={onCancel}>
+          Cancel
+        </button>
+        <button className="btn btn--primary" disabled={picked === null} onClick={() => picked !== null && onPick(picked)}>
+          {prompt.isUpdate ? 'Update with this file' : 'Install this file'}
           <ArrowRight />
         </button>
       </div>

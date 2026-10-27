@@ -7,6 +7,7 @@ import {
   HashDatabase,
   IngestionResult,
   ModManifest,
+  BackupEntry,
   ParsedIniDocument,
   SetupStatus,
   WorkshopBuildRequest,
@@ -392,6 +393,13 @@ export const fairyClient = {
 
   /** File Explorer opens with the mod's folder selected. */
   revealMod: (modUuid: string): Promise<boolean> => invokeBackend('zzz:revealMod', modUuid),
+  /** Backups (previous versions, deleted mods, Tidy keys copies, leftovers): list, size, restore, clean up. */
+  listBackups: (): Promise<{ backups: BackupEntry[]; summary: { total_bytes: number; count: number; by_kind: Record<string, { count: number; bytes: number }> } }> =>
+    invokeBackend('backups:list'),
+  restoreBackup: (id: string): Promise<{ restored: ModManifest | null; kind: string; state: FullAppState }> => invokeBackend('backups:restore', id),
+  deleteBackup: (id: string): Promise<{ freed_bytes: number }> => invokeBackend('backups:delete', id),
+  pruneBackups: (opts?: { olderThanDays?: number; keepPerMod?: number; maxTotalBytes?: number }): Promise<{ removed: number; freed_bytes: number }> =>
+    invokeBackend('backups:prune', opts),
   /** Re-downloads the mod from GameBanana and copies in only the files it's missing. */
   downloadMissingFiles: (modUuid: string): Promise<{ restored: string[]; stillMissing: string[]; state: FullAppState }> =>
     invokeBackend('zzz:downloadMissingFiles', modUuid),

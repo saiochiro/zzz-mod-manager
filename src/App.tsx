@@ -3,7 +3,7 @@ import { CloudOff, RefreshCw, UploadCloud } from 'lucide-react';
 import { CustomTitleBar } from './components/CustomTitleBar';
 import { GameBananaBrowserTab } from './components/GameBananaBrowserTab';
 import { InspectorDrawer } from './components/InspectorDrawer';
-import { MultiAgentSplitModal } from './components/SystemModals';
+import { FilePickModal, MultiAgentSplitModal } from './components/SystemModals';
 import { ImportExistingLauncherModal } from './components/ImportExistingLauncherModal';
 import { Sidebar, ScreenId, SyncHealth } from './layout/Sidebar';
 import { LibraryScreen } from './screens/LibraryScreen';
@@ -16,7 +16,9 @@ import {
   AgentHashEntry,
   AppConfig,
   DownloadQueueItem,
+  GameBananaFile,
   GameBananaModItem,
+  IngestionResult,
   ModManifest,
   MultiAgentCandidate,
   NsfwFilterState,
@@ -141,6 +143,10 @@ const AppInner: React.FC = () => {
   const [isLaunching, setIsLaunching] = useState(false);
   const [isDraggingOverWindow, setIsDraggingOverWindow] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  /** GameBanana pages with several files waiting for the user to pick one (first is shown). */
+  const [filePrompts, setFilePrompts] = useState<Array<{ title: string; files: GameBananaFile[]; isUpdate: boolean; retry: (fileId: number) => void }>>([]);
+  const askForFile = (p: NonNullable<IngestionResult['filePrompt']>, retry: (fileId: number) => void) =>
+    setFilePrompts((prev) => [...prev, { title: p.title, files: p.files, isUpdate: Boolean(p.replaceModUuid), retry }]);
   const [multiAgentPrompt, setMultiAgentPrompt] = useState<{
     stagingId: string;
     archiveName: string;
@@ -297,7 +303,7 @@ const AppInner: React.FC = () => {
     try {
       const res = await fairyClient.applyProfile(profileName);
       setAppState(res.state);
-      notify({ tone: 'success', title: `Switched to “${profileName}”`, message: `${res.enabledCount} mods on.` });
+      notify({ tone: 'success', title: `Switched to “${profileName}”`, message: `${res.message ?? ''} ${res.enabledCount} mods on.`.trim() });
     } catch (err) {
       notify({ tone: 'error', title: 'Couldn’t switch loadout', message: errMsg(err) });
     } finally {
@@ -713,7 +719,7 @@ const AppInner: React.FC = () => {
   /* ---------------------------------------------------------------- */
   /* Installing                                                       */
   /* ---------------------------------------------------------------- */
-  const handleInstallFromGameBanana = async (mod: GameBananaModItem) => {
+  const handleInstallFromGameBanana = async (mod: GameBananaModItem, fileId?: number) => {
     const queueId = `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     setDownloadQueue((prev) => [
       ...prev,
@@ -726,8 +732,13 @@ const AppInner: React.FC = () => {
         );
       }, 450);
 
-      const res = await fairyClient.ingestPackage(mod.download_url, { metadataOverride: mod });
+      const res = await fairyClient.ingestPackage(mod.download_url, { metadataOverride: mod, fileId });
       setAppState(res.state);
+      if (res.filePrompt) {
+        setDownloadQueue((prev) => prev.filter((q) => q.queue_id !== queueId));
+        askForFile(res.filePrompt, (id) => handleInstallFromGameBanana(mod, id));
+        return;
+      }
       if (res.multiAgentPrompt) setMultiAgentPrompt(res.multiAgentPrompt);
       // The backend reports failures in the result instead of throwing.
       if (!res.success) throw new Error(res.error || 'The install failed.');
@@ -753,11 +764,15 @@ const AppInner: React.FC = () => {
     }
   };
 
-  const handleIngestUrlOrPath = async (source: string) => {
+  const handleIngestUrlOrPath = async (source: string, fileId?: number) => {
     setIsBusy(true);
     try {
-      const res = await fairyClient.ingestPackage(source);
+      const res = await fairyClient.ingestPackage(source, fileId ? { fileId } : undefined);
       setAppState(res.state);
+      if (res.filePrompt) {
+        askForFile(res.filePrompt, (id) => handleIngestUrlOrPath(source, id));
+        return;
+      }
       if (res.multiAgentPrompt) setMultiAgentPrompt(res.multiAgentPrompt);
       if (!res.success) throw new Error(res.error || 'The install failed.');
       if (res.installedMods.length > 0) {
@@ -800,7 +815,7 @@ const AppInner: React.FC = () => {
   /* ---------------------------------------------------------------- */
   /* Mod updates                                                      */
   /* ---------------------------------------------------------------- */
-  const handleUpdateMod = async (uuid: string, opts: { quiet?: boolean } = {}): Promise<boolean> => {
+  const handleUpdateMod = async (uuid: string, opts: { quiet?: boolean; fileId?: number } = {}): Promise<boolean> => {
     const profile = modUpdates.updates[uuid];
     const old = appState?.mods.find((m) => m.mod_uuid === uuid);
     if (!profile || !old) return false;
@@ -811,9 +826,15 @@ const AppInner: React.FC = () => {
       const res = await fairyClient.ingestPackage(profile.id ? `gb:${profile.id}` : profile.download_url, {
         metadataOverride: profile,
         replaceModUuid: uuid,
+        fileId: opts.fileId,
       });
       const latest = res.state;
       setAppState(latest);
+      if (res.filePrompt) {
+        // A page with several files and no remembered choice: the current version stays until one is picked.
+        askForFile(res.filePrompt, (id) => handleUpdateMod(uuid, { ...opts, fileId: id }));
+        return false;
+      }
       if (res.multiAgentPrompt) {
         setMultiAgentPrompt(res.multiAgentPrompt);
         notify({
@@ -1365,6 +1386,15 @@ const AppInner: React.FC = () => {
         />
       )}
 
+      <FilePickModal
+        prompt={filePrompts[0] ?? null}
+        onPick={(id) => {
+          const p = filePrompts[0];
+          setFilePrompts((prev) => prev.slice(1));
+          p?.retry(id);
+        }}
+        onCancel={() => setFilePrompts((prev) => prev.slice(1))}
+      />
       <MultiAgentSplitModal promptData={multiAgentPrompt} onConfirmSplit={handleConfirmMultiAgentSplit} onCancel={() => setMultiAgentPrompt(null)} />
 
       <AppUpdatePrompt status={appUpdate.status} onDownload={appUpdate.download} onInstall={appUpdate.install} />

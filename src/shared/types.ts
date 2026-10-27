@@ -93,6 +93,14 @@ export interface ModManifest extends NsfwReviewInfo {
   installed_at: string;
   md5_checksum?: string;
   sanitized_warnings?: string[];
+  /** Name of that GameBanana file, to find it again when an update replaces it with a new upload. */
+  gamebanana_file_name?: string;
+  /** File name (in the mod's folder) of a cover the user picked; kept through updates. */
+  custom_cover?: string;
+  /** The GameBanana file this mod was installed from (a mod page can have several). */
+  gamebanana_file_id?: number;
+  /** When an update last replaced the files. */
+  updated_at?: string;
 }
 
 export interface AgentHashes {
@@ -160,6 +168,8 @@ export interface AppConfig {
   singleActivePerAgent?: boolean;
   activeProfile?: string;
   profiles?: Record<string, string[]>; // profileName -> list of enabled mod_uuids
+  /** The mods that were on before Stream Safe or Main Team; Default brings them back. */
+  lastUsualLoadout?: string[];
   defaultModHandler?: boolean;
   xxmiModsPath?: string;
   modStorageLibraryPath?: string;
@@ -190,6 +200,17 @@ export interface ParsedIniDocument {
   rawContent: string;
 }
 
+export interface GameBananaFile {
+  id: number;
+  name: string;
+  size: number;
+  description?: string;
+  download_url: string;
+  md5_checksum?: string;
+  downloads?: number;
+  added_at?: number;
+}
+
 export interface GameBananaModItem extends NsfwReviewInfo {
   id: number;
   title: string;
@@ -215,6 +236,10 @@ export interface GameBananaModItem extends NsfwReviewInfo {
   file_name: string;
   file_size: number;
   md5_checksum: string;
+  /** Which of the page's files download_url points at. */
+  file_id?: number;
+  /** Every file on the mod page (variants, optional parts). */
+  files?: GameBananaFile[];
   description: string;
   is_live_api?: boolean;
   /** Made up because GameBanana couldn't be reached (offline demo data); never install with it. */
@@ -273,6 +298,13 @@ export interface IngestionResult {
     stagingId: string;
     archiveName: string;
     candidates: MultiAgentCandidate[];
+  };
+  /** The mod page has several files and none was picked yet: ask which one to install. */
+  filePrompt?: {
+    modId: number;
+    title: string;
+    files: GameBananaFile[];
+    replaceModUuid?: string;
   };
   logs: string[];
   error?: string;
@@ -381,4 +413,20 @@ export interface WorkshopResolvedRecipe {
     /** The installed mod still has this part. */
     hasPart: boolean;
   }>;
+}
+
+/** Kinds of backup: what an update replaced, deleted mods, Tidy keys copies, leftover folders. */
+export type BackupKind = 'update' | 'deleted' | 'hotkeys' | 'leftover';
+
+export interface BackupEntry {
+  /** "<kind folder>/<backup folder>": pass to restoreBackup / deleteBackup. */
+  id: string;
+  kind: BackupKind;
+  /** The mod's title when known, else the folder name. */
+  title: string;
+  folder_name: string;
+  mod_uuid?: string;
+  gamebanana_id?: number | null;
+  created_at: string;
+  size_bytes: number;
 }

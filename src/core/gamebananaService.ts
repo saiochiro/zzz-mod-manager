@@ -2,7 +2,7 @@ import AdmZip from 'adm-zip';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { GameBananaModItem } from '../shared/types';
+import { GameBananaFile, GameBananaModItem } from '../shared/types';
 import { DEFAULT_HASH_DB } from '../shared/defaultHashDb';
 import { matchAgentByGbCategory, matchAgentByHintOrName } from './routerEngine';
 
@@ -768,6 +768,18 @@ export async function fetchGameBananaModProfile(modId: number): Promise<GameBana
           preview_images: allPreviews.length > 0 ? allPreviews : [resolvedThumb],
           profile_url: `https://gamebanana.com/mods/${modId}`,
           download_url: downloadUrl,
+          file_id: primaryFile._idRow ? Number(primaryFile._idRow) : undefined,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          files: files.filter((f: any) => f?._idRow).map((f: any) => ({
+            id: Number(f._idRow),
+            name: String(f._sFile || `file_${f._idRow}`),
+            size: Number(f._nFilesize || 0),
+            description: f._sDescription ? String(f._sDescription) : undefined,
+            download_url: f._sDownloadUrl || `https://gamebanana.com/dl/${f._idRow}`,
+            md5_checksum: f._sMd5Checksum || undefined,
+            downloads: f._nDownloadCount,
+            added_at: f._tsDateAdded,
+          })),
           file_name: primaryFile._sFile || `GB_Mod_${modId}.zip`,
           file_size: primaryFile._nFilesize || 18000000,
           md5_checksum: primaryFile._sMd5Checksum || crypto.randomBytes(16).toString('hex'),
@@ -1022,4 +1034,34 @@ filename = Blend.buf
   const md5 = crypto.createHash('md5').update(fileBuffer).digest('hex');
 
   return { md5, nestedFoldersCreated: 2 };
+}
+
+/** A file name without version numbers or extension, to recognise a re-upload of the same file. */
+function fileStem(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\.(zip|7z|rar)$/i, '')
+    .replace(/v?\d+([._-]\d+)*/g, '')
+    .replace(/[^a-z]+/g, '');
+}
+
+/**
+ * The file to download from a mod page: the one asked for by id, else one with the same name
+ * (authors often replace a file with a new upload), else the only file. Null = ask the user.
+ */
+export function pickGameBananaFile(
+  files: GameBananaFile[] | undefined,
+  want: { id?: number | null; name?: string | null } = {}
+): GameBananaFile | null {
+  const list = files || [];
+  if (want.id) {
+    const byId = list.find((f) => f.id === want.id);
+    if (byId) return byId;
+  }
+  if (want.name) {
+    const stem = fileStem(want.name);
+    const same = list.filter((f) => stem && fileStem(f.name) === stem);
+    if (same.length) return [...same].sort((a, b) => (b.added_at || 0) - (a.added_at || 0))[0];
+  }
+  return list.length === 1 ? list[0] : null;
 }

@@ -537,6 +537,22 @@ handleIpc('zzz:resolveUnmanagedMod', async (_e, modPath: string, action: 'import
   }
 });
 
+// Backups: previous versions, deleted mods, Tidy keys copies, leftover folders.
+handleIpc('backups:list', async () => ({ backups: modService.listBackups(), summary: modService.getBackupsSummary() }));
+handleIpc('backups:restore', async (_e, id: string) => {
+  const release = await modService.acquireInstallLock();
+  try {
+    const res = modService.restoreBackup(String(id));
+    return { ...res, state: modService.getFullState() };
+  } finally {
+    release();
+  }
+});
+handleIpc('backups:delete', async (_e, id: string) => ({ freed_bytes: modService.deleteBackup(String(id)) }));
+handleIpc('backups:prune', async (_e, opts?: { olderThanDays?: number; keepPerMod?: number; maxTotalBytes?: number }) =>
+  modService.pruneBackups(opts ?? {})
+);
+
 handleIpc('zzz:downloadMissingFiles', async (_e, modUuid: string) => {
   const res = await modService.downloadMissingFiles(String(modUuid));
   return { ...res, state: modService.getFullState() };
