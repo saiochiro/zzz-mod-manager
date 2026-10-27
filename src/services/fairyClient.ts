@@ -392,6 +392,9 @@ export const fairyClient = {
 
   /** File Explorer opens with the mod's folder selected. */
   revealMod: (modUuid: string): Promise<boolean> => invokeBackend('zzz:revealMod', modUuid),
+  /** Re-downloads the mod from GameBanana and copies in only the files it's missing. */
+  downloadMissingFiles: (modUuid: string): Promise<{ restored: string[]; stillMissing: string[]; state: FullAppState }> =>
+    invokeBackend('zzz:downloadMissingFiles', modUuid),
 
   openModFolder: async (relInstallPath: string): Promise<boolean> => {
     if (window.fairyBridge?.isElectron) {

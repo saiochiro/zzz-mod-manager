@@ -152,6 +152,7 @@ const AppInner: React.FC = () => {
   const appUpdate = useAppUpdate();
   const modUpdates = useModUpdates(appState?.mods ?? null);
   const [updatingIds, setUpdatingIds] = useState<Set<string>>(new Set());
+  const [fetchingIds, setFetchingIds] = useState<Set<string>>(new Set());
   const [setupOpen, setSetupOpen] = useState(false);
 
   /* ---------------------------------------------------------------- */
@@ -454,6 +455,66 @@ const AppInner: React.FC = () => {
     const mod = appState?.mods.find((m) => m.install_path === installPath);
     if (mod) handleRevealMod(mod.mod_uuid);
     else fairyClient.openModFolder(installPath);
+  };
+
+  /** Mods with missing files that came from GameBanana, so their files can be downloaded again. */
+  const canFetchMissing = (m: { health_status?: string; missing_resources?: string[]; gamebanana_id?: number | null }) =>
+    m.health_status === 'broken' && Boolean(m.gamebanana_id) && (m.missing_resources?.length ?? 0) > 0;
+
+  const handleDownloadMissing = async (modUuid: string, opts: { quiet?: boolean } = {}): Promise<number> => {
+    const mod = appState?.mods.find((m) => m.mod_uuid === modUuid);
+    setFetchingIds((prev) => new Set(prev).add(modUuid));
+    try {
+      const res = await fairyClient.downloadMissingFiles(modUuid);
+      setAppState(res.state);
+      if (!opts.quiet) {
+        const name = mod ? `“${mod.title}”` : 'the mod';
+        if (res.restored.length && !res.stillMissing.length) {
+          notify({ tone: 'success', title: `Fixed ${name}`, message: `Downloaded ${res.restored.length} missing file${res.restored.length === 1 ? '' : 's'}. Nothing else was changed.` });
+        } else if (res.restored.length) {
+          notify({
+            tone: 'warning',
+            title: `Partly fixed ${name}`,
+            message: `Downloaded ${res.restored.length} file${res.restored.length === 1 ? '' : 's'}. ${res.stillMissing.length} aren't in the GameBanana download either, so the mod's author would need to fix those.`,
+          });
+        } else {
+          notify({
+            tone: 'warning',
+            title: `Couldn’t fix ${name}`,
+            message: res.stillMissing.length
+              ? "The missing files aren't in the GameBanana download either, so the mod's author would need to fix them."
+              : 'No missing files were found.',
+          });
+        }
+      }
+      return res.restored.length;
+    } catch (err) {
+      if (!opts.quiet) notify({ tone: 'error', title: 'Couldn’t download the missing files', message: errMsg(err) });
+      return 0;
+    } finally {
+      setFetchingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(modUuid);
+        return next;
+      });
+    }
+  };
+
+  const handleDownloadAllMissing = async () => {
+    const targets = (appState?.mods ?? []).filter(canFetchMissing);
+    let fixed = 0;
+    let files = 0;
+    for (const m of targets) {
+      const n = await handleDownloadMissing(m.mod_uuid, { quiet: true });
+      if (n) (fixed++, (files += n));
+    }
+    notify({
+      tone: fixed === targets.length ? 'success' : 'warning',
+      title: fixed ? `Fixed ${fixed} of ${targets.length} mod${targets.length === 1 ? '' : 's'}` : 'Nothing could be fixed',
+      message: fixed
+        ? `Downloaded ${files} missing file${files === 1 ? '' : 's'}.${fixed < targets.length ? ' The rest are missing files in their GameBanana download too, or GameBanana could not be reached.' : ''}`
+        : "The missing files aren't in the GameBanana downloads either, or GameBanana could not be reached.",
+    });
   };
 
   const handleResolveUnmanaged = async (modPath: string, action: 'import' | 'disable') => {
@@ -1135,6 +1196,10 @@ const AppInner: React.FC = () => {
               onToggleEnabled={handleToggleEnabled}
               onRepair={handleRepairMod}
               onRepairAll={handleRepairAllBroken}
+              canFetchMissing={canFetchMissing}
+              fetchingIds={fetchingIds}
+              onDownloadMissing={(id) => handleDownloadMissing(id)}
+              onDownloadAllMissing={handleDownloadAllMissing}
               onSetCustomImage={handleSetCustomImageFile}
               onPasteThumbnail={handlePasteThumbnailFromClipboard}
               onDelete={handleDeleteMod}
@@ -1292,6 +1357,8 @@ const AppInner: React.FC = () => {
           onUndoRepair={handleUndoRepair}
           onToggleHCycle={handleToggleHCycle}
           onOpenFolder={handleRevealMod}
+          onDownloadMissing={canFetchMissing(selectedMod) ? (id) => handleDownloadMissing(id) : undefined}
+          isFetchingFiles={fetchingIds.has(selectedMod.mod_uuid)}
           onSetCustomImageFile={handleSetCustomImageFile}
           onPasteThumbnailFromClipboard={handlePasteThumbnailFromClipboard}
           onStateChange={setAppState}

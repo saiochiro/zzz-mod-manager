@@ -537,6 +537,11 @@ handleIpc('zzz:resolveUnmanagedMod', async (_e, modPath: string, action: 'import
   }
 });
 
+handleIpc('zzz:downloadMissingFiles', async (_e, modUuid: string) => {
+  const res = await modService.downloadMissingFiles(String(modUuid));
+  return { ...res, state: modService.getFullState() };
+});
+
 handleIpc('zzz:revealMod', async (_e, modUuid: string) => {
   const mod = modService.scanInstalledMods().find((m) => m.mod_uuid === modUuid);
   if (!mod) throw new Error('That mod is no longer installed.');

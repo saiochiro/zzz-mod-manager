@@ -2,7 +2,7 @@ import AdmZip from 'adm-zip';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { extractArchiveAsync } from '../src/core/archiveEngine';
 import { ModManagerService } from '../src/core/modManagerService';
 
@@ -147,6 +147,8 @@ describe('Undoing a mod mixed up with another one', () => {
         description: 'Hides your UID', // borrowed from HideUID; only the folder name gives it away
         detected_hashes: ['7bf57b2b'],
         previous_folder_name: 'Mindscape_Icons',
+        thumbnail_url: 'https://images.gamebanana.com/img/ss/mods/hideuid.jpg', // HideUID's picture too
+        preview_images: ['https://images.gamebanana.com/img/ss/mods/hideuid.jpg'],
         folder_name: 'Global_-_GameBanana_ZZZ_#1858613_(Head)',
         install_path: 'Mods/_Uncategorized_UI_Audio/Global_-_GameBanana_ZZZ_#1858613_(Head)',
         enabled: true,
@@ -156,6 +158,8 @@ describe('Undoing a mod mixed up with another one', () => {
     const icons = service.scanInstalledMods().find((m) => m.mod_uuid === 'icons-1')!;
     expect(icons).toMatchObject({ title: 'Mindscape Icons', gamebanana_id: null, enabled: true });
     expect(icons.install_path).toBe('Mods/_Uncategorized_UI_Audio/Mindscape_Icons');
+    expect(String(icons.thumbnail_url || '')).not.toContain('hideuid');
+    expect(icons.preview_images || []).toEqual([]);
     // HideUID itself is untouched, and running again changes nothing.
     expect(service.scanInstalledMods().find((m) => m.mod_uuid === hide.mod_uuid)?.title).toBe('HideUID');
     expect(service.restoreWronglyReplacedMods()).toBe(0);
@@ -186,5 +190,64 @@ describe('Mods the game loads from outside ProxyLaunch', () => {
     expect(service.scanInstalledMods().length).toBe(before + 1);
     expect(fs.existsSync(path.join(path.dirname(other), 'DISABLED_Alice'))).toBe(true);
     expect(service.findUnmanagedGameMods()).toEqual([]);
+  });
+});
+
+describe('Downloading missing files', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'missing-'));
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('copies in only the missing files from the GameBanana download and leaves the rest alone', async () => {
+    const service = new ModManagerService(dir);
+    const src = path.join(dir, 'src', 'Cool Skin');
+    fs.mkdirSync(path.join(src, 'Textures'), { recursive: true });
+    const ini = '[TextureOverrideBody]\nhash = 1a2b3c4d\n[ResourceA]\nfilename = Textures/a.dds\n[ResourceB]\nfilename = b.buf\n[ResourceC]\nfilename = gone.dds\n';
+    fs.writeFileSync(path.join(src, 'mod.ini'), ini);
+    fs.writeFileSync(path.join(src, 'Textures', 'a.dds'), 'a');
+    fs.writeFileSync(path.join(src, 'b.buf'), 'b');
+    const mod = (await service.ingestPackage(src)).installedMods[0];
+    const modDir = path.join(dir, 'ZZMI_Root', mod.install_path);
+    const manifest = path.join(modDir, 'mod_manifest.json');
+    fs.writeFileSync(manifest, JSON.stringify({ ...JSON.parse(fs.readFileSync(manifest, 'utf-8')), gamebanana_id: 424242 }));
+    // The user changed a key (must stay) and a texture went missing.
+    fs.writeFileSync(path.join(modDir, 'mod.ini'), ini + '; my edit\n');
+    fs.rmSync(path.join(modDir, 'Textures', 'a.dds'));
+    service.invalidateModCache();
+    expect(service.scanInstalledMods().find((m) => m.mod_uuid === mod.mod_uuid)?.health_status).toBe('broken');
+
+    // GameBanana's copy: the same mod one folder down, without gone.dds (the author's mistake).
+    const zip = new AdmZip();
+    zip.addFile('Cool Skin v2/Cool Skin/mod.ini', Buffer.from(ini));
+    zip.addFile('Cool Skin v2/Cool Skin/Textures/a.dds', Buffer.from('A'.repeat(2000)));
+    zip.addFile('Cool Skin v2/Cool Skin/b.buf', Buffer.from('new b'));
+    const zipBuf = zip.toBuffer();
+    vi.stubGlobal('fetch', async (url: string) => {
+      if (String(url).includes('/ProfilePage')) {
+        return new Response(JSON.stringify({ _idRow: 424242, _sName: 'Cool Skin', _aFiles: [{ _idRow: 9, _sFile: 'cool.zip', _sDownloadUrl: 'https://gamebanana.com/dl/9' }] }));
+      }
+      return new Response(zipBuf);
+    });
+
+    const res = await service.downloadMissingFiles(mod.mod_uuid);
+    expect(res.restored).toEqual(['Textures/a.dds']);
+    expect(res.stillMissing).toEqual(['gone.dds']);
+    expect(fs.readFileSync(path.join(modDir, 'Textures', 'a.dds'), 'utf-8')).toBe('A'.repeat(2000));
+    expect(fs.readFileSync(path.join(modDir, 'b.buf'), 'utf-8')).toBe('b'); // present files aren't touched
+    expect(fs.readFileSync(path.join(modDir, 'mod.ini'), 'utf-8')).toContain('; my edit');
+  });
+
+  it("refuses mods that didn't come from GameBanana", async () => {
+    const service = new ModManagerService(dir);
+    const src = path.join(dir, 'src', 'Local');
+    fs.mkdirSync(src, { recursive: true });
+    fs.writeFileSync(path.join(src, 'mod.ini'), '[TextureOverrideX]\nhash = 12345678\n[ResourceA]\nfilename = a.dds\n');
+    const mod = (await service.ingestPackage(src)).installedMods[0];
+    await expect(service.downloadMissingFiles(mod.mod_uuid)).rejects.toThrow(/GameBanana/);
   });
 });

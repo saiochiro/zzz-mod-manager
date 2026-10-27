@@ -33,7 +33,9 @@ import {
 import {
   copyDirRecursive,
   extractArchiveAsync,
+  extractToDir,
   LocalizedModRoot,
+  sweepNestedArchives,
   unpackAndLocalizeModArchive,
 } from './archiveEngine';
 import {
@@ -1430,6 +1432,9 @@ endif
         author: 'Unknown',
         gamebanana_id: null,
         description: '',
+        // The pictures came from the other mod too: let the mod's own cover (or a generated one) show.
+        thumbnail_url: undefined,
+        preview_images: [],
         folder_name: folder.replace(/^DISABLED_/i, ''),
         install_path: path.posix.join(parentRel, folder),
       };
@@ -3933,6 +3938,84 @@ endif
    * Handles an unmanaged mod found by findUnmanagedGameMods: "import" copies it into the Library and
    * then turns the original off; "disable" only turns the original off (renamed DISABLED_...).
    */
+  /**
+   * Downloads the mod again from GameBanana and copies in only the files the mod's .ini files point
+   * to but that aren't there. Everything else stays as it is: on/off state, keys, settings, edits.
+   */
+  public async downloadMissingFiles(modUuid: string): Promise<{ restored: string[]; stillMissing: string[] }> {
+    const mod = this.scanInstalledMods().find((m) => m.mod_uuid === modUuid);
+    if (!mod) throw new Error('That mod is no longer installed.');
+    if (!mod.gamebanana_id) throw new Error("This mod didn't come from GameBanana, so there's nowhere to download its files from.");
+    const modDir = path.join(this.getConfig().zzmiRootPath, mod.install_path);
+    // Missing paths relative to the mod's folder (the .ini lists them relative to itself).
+    const wanted = new Map<string, string>(); // rel (lowercase, "/") -> rel as written
+    for (const iniAbs of listModInis(modDir)) {
+      const parsed = parseIniContent(fs.readFileSync(iniAbs, 'utf-8'), path.relative(modDir, iniAbs));
+      for (const ref of parsed.referencedFiles) {
+        const abs = path.resolve(path.dirname(iniAbs), ref);
+        const rel = path.relative(modDir, abs);
+        if (!rel || rel.startsWith('..') || path.isAbsolute(rel) || fs.existsSync(abs)) continue;
+        const norm = rel.split(path.sep).join('/');
+        wanted.set(norm.toLowerCase(), norm);
+      }
+    }
+    if (!wanted.size) return { restored: [], stillMissing: [] };
+
+    const stagingDir = path.join(this.appDataPath, 'staging_temp', `repair_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
+    fs.mkdirSync(stagingDir, { recursive: true });
+    try {
+      const meta = await fetchGameBananaModProfile(mod.gamebanana_id);
+      if (meta.is_placeholder || !meta.download_url?.startsWith('http')) {
+        throw new Error(`Couldn't reach GameBanana for "${mod.title}". Check your connection and try again.`);
+      }
+      const archive = path.join(stagingDir, meta.file_name || `GB_${mod.gamebanana_id}.zip`);
+      const ok = await this.withDownloadSlot(() => downloadToFile(meta.download_url, archive));
+      if (!ok) throw new Error(`Couldn't download "${mod.title}" from GameBanana.`);
+      let extracted = await extractArchiveAsync(archive, path.join(stagingDir, 'raw'));
+      if (!extracted) {
+        extracted = path.join(stagingDir, 'raw', 'archive');
+        extractToDir(archive, extracted); // no 7-Zip: the built-in extractor
+      }
+      sweepNestedArchives(extracted);
+
+      // The folder in the download that holds the most of the missing files is this mod's folder.
+      let best: { dir: string; hits: number } = { dir: '', hits: 0 };
+      const walk = (dir: string, depth: number) => {
+        let hits = 0;
+        for (const rel of wanted.values()) if (fs.existsSync(path.join(dir, ...rel.split('/')))) hits++;
+        if (hits > best.hits) best = { dir, hits };
+        if (depth >= 6) return;
+        for (const e of fs.readdirSync(dir, { withFileTypes: true })) if (e.isDirectory()) walk(path.join(dir, e.name), depth + 1);
+      };
+      walk(extracted, 0);
+
+      const restored: string[] = [];
+      const stillMissing: string[] = [];
+      for (const rel of wanted.values()) {
+        const src = best.dir ? path.join(best.dir, ...rel.split('/')) : '';
+        if (src && fs.existsSync(src) && fs.statSync(src).isFile()) {
+          const dest = path.join(modDir, ...rel.split('/'));
+          fs.mkdirSync(path.dirname(dest), { recursive: true });
+          fs.copyFileSync(src, dest);
+          restored.push(rel);
+        } else {
+          stillMissing.push(rel);
+        }
+      }
+      this.invalidateModCache(modDir);
+      if (restored.length) this.scheduleXxmiSync([mod], Boolean(this.getConfig().autoSendF10OnToggle));
+      this.addLog(
+        restored.length ? 'success' : 'warning',
+        'REPAIR_ENG',
+        `Downloaded ${restored.length} missing file(s) for [${mod.title}]${stillMissing.length ? `; ${stillMissing.length} aren't in the GameBanana download either` : ''}.`,
+        mod.mod_uuid
+      );
+      return { restored, stillMissing };
+    } finally {
+      fs.rmSync(stagingDir, { recursive: true, force: true });
+    }
+  }
+
   public resolveUnmanagedGameMod(modPath: string, action: 'import' | 'disable'): { imported: number } {
     const known = this.findUnmanagedGameMods().find((m) => path.resolve(m.path).toLowerCase() === path.resolve(modPath).toLowerCase());
     if (!known) throw new Error('That mod is no longer in the game folder.');

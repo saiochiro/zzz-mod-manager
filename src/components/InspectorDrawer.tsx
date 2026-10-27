@@ -14,6 +14,7 @@ import {
   Sparkles,
   Wand2,
   X,
+  CloudDownload,
 } from 'lucide-react';
 import type { AgentHashEntry, GameBananaModItem, ModManifest, ParsedIniDocument } from '../shared/types';
 import type { MotifKind } from '../themes/types';
@@ -41,6 +42,9 @@ interface InspectorDrawerProps {
   onToggleHCycle: (modUuid: string) => void;
   /** File Explorer opens with this mod's folder selected. */
   onOpenFolder?: (modUuid: string) => void;
+  /** Set when the mod's missing files can be downloaded from GameBanana again. */
+  onDownloadMissing?: (modUuid: string) => void;
+  isFetchingFiles?: boolean;
   onSetCustomImageFile?: (modUuid: string) => void;
   onPasteThumbnailFromClipboard?: (modUuid: string) => void;
   /** After you change the mod's content label. */
@@ -68,6 +72,8 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
   onUndoRepair,
   onToggleHCycle,
   onOpenFolder,
+  onDownloadMissing,
+  isFetchingFiles,
   onSetCustomImageFile,
   onPasteThumbnailFromClipboard,
   onStateChange,
@@ -193,10 +199,22 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                     <div className="muted">{meta.description}</div>
                     {health === 'broken' && mod.missing_resources && mod.missing_resources.length > 0 && (
                       <div className="caption" style={{ marginTop: 6 }}>
-                        {mod.missing_resources.length} file{mod.missing_resources.length === 1 ? '' : 's'} missing — see Advanced for the list.
+                        {mod.missing_resources.length} file{mod.missing_resources.length === 1 ? '' : 's'} missing. See Advanced for the list.
                       </div>
                     )}
                   </div>
+                  {health === 'broken' && onDownloadMissing && (
+                    <button
+                      className="btn btn--sm"
+                      style={{ background: 'var(--warning-solid)', color: '#1a1205' }}
+                      disabled={isFetchingFiles}
+                      onClick={() => onDownloadMissing(mod.mod_uuid)}
+                      title="Downloads the mod from GameBanana and copies in only the missing files. Your keys and settings stay."
+                    >
+                      <CloudDownload />
+                      {isFetchingFiles ? 'Downloading…' : 'Get missing files'}
+                    </button>
+                  )}
                   {health === 'fixable' && (
                     <button className="btn btn--sm" style={{ background: 'var(--warning-solid)', color: '#1a1205' }} onClick={() => onRepairMod(mod.mod_uuid)}>
                       <Wand2 />

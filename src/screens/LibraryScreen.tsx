@@ -22,6 +22,7 @@ import {
   Users,
   Wand2,
   Wrench,
+  CloudDownload,
 } from 'lucide-react';
 import type { AgentHashEntry, GameBananaModItem, HashDatabase, ModManifest, NsfwFilterState } from '../shared/types';
 import type { ThemeDefinition } from '../themes/types';
@@ -52,6 +53,11 @@ interface LibraryScreenProps {
   onToggleEnabled: (uuid: string) => void;
   onRepair: (uuid: string) => void;
   onRepairAll: () => void;
+  /** Mods with missing files that came from GameBanana. */
+  canFetchMissing: (m: ModManifest) => boolean;
+  fetchingIds: Set<string>;
+  onDownloadMissing: (uuid: string) => void;
+  onDownloadAllMissing: () => void;
   onSetCustomImage: (uuid: string) => void;
   onPasteThumbnail: (uuid: string) => void;
   onDelete: (uuid: string) => void;
@@ -102,6 +108,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
   const onCount = scopedMods.filter((m) => m.enabled).length;
   const attentionCount = scopedMods.filter((m) => getModHealth(m) !== 'working').length;
   const fixableCount = scopedMods.filter((m) => getModHealth(m) === 'fixable').length;
+  const missingCount = visibleMods.filter(p.canFetchMissing).length;
 
   const categoryCounts = useMemo(() => {
     const c: Record<string, number> = {};
@@ -229,6 +236,17 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
                   <button className="btn btn--warning" onClick={p.onRepairAll}>
                     <Wand2 />
                     Fix {fixableCount} mod{fixableCount === 1 ? '' : 's'}
+                  </button>
+                )}
+                {missingCount > 0 && (
+                  <button
+                    className="btn btn--warning"
+                    onClick={p.onDownloadAllMissing}
+                    disabled={p.fetchingIds.size > 0}
+                    title="Download the missing files of every mod that has some, from GameBanana. Nothing else is changed."
+                  >
+                    <CloudDownload />
+                    {p.fetchingIds.size > 0 ? 'Downloading files…' : `Get missing files (${missingCount})`}
                   </button>
                 )}
                 {selectedAgent && outfitChoices.length >= 2 && (
@@ -492,6 +510,8 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
                     update={p.modUpdates[mod.mod_uuid] ?? null}
                     isUpdating={p.updatingIds.has(mod.mod_uuid)}
                     onUpdate={() => p.onUpdateMod(mod.mod_uuid)}
+                    onDownloadMissing={p.canFetchMissing(mod) ? () => p.onDownloadMissing(mod.mod_uuid) : undefined}
+                    isFetchingFiles={p.fetchingIds.has(mod.mod_uuid)}
                   />
                 ))}
               </div>

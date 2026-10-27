@@ -11,6 +11,7 @@ import {
   SlidersHorizontal,
   Trash2,
   Wrench,
+  CloudDownload,
 } from 'lucide-react';
 import type { AgentHashEntry, GameBananaModItem, ModManifest, NsfwFilterState } from '../shared/types';
 import { isBlurredByNsfwFilter } from '../shared/nsfw';
@@ -36,6 +37,9 @@ interface ModDeckCardProps {
   update?: GameBananaModItem | null;
   isUpdating?: boolean;
   onUpdate?: () => void;
+  /** Set when the mod has missing files that can be downloaded from GameBanana again. */
+  onDownloadMissing?: () => void;
+  isFetchingFiles?: boolean;
 }
 
 export const ModDeckCard: React.FC<ModDeckCardProps> = ({
@@ -56,6 +60,8 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
   update,
   isUpdating,
   onUpdate,
+  onDownloadMissing,
+  isFetchingFiles,
 }) => {
   const menu = usePopover();
   const [revealed, setRevealed] = useState(false);
@@ -131,6 +137,23 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
             </button>
           </div>
         )}
+        {health === 'broken' && onDownloadMissing && (
+          <div className="mod-card__fix">
+            <button
+              className="btn btn--sm"
+              style={{ background: 'var(--warning-solid)', color: '#1a1205' }}
+              disabled={isFetchingFiles}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDownloadMissing();
+              }}
+              title="Download this mod's missing files from GameBanana. Nothing else is changed."
+            >
+              <CloudDownload />
+              {isFetchingFiles ? 'Downloading…' : 'Get missing files'}
+            </button>
+          </div>
+        )}
         {health === 'fixable' && (
           <div className="mod-card__fix">
             <button
@@ -180,6 +203,12 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
                 <button className="menu-item" role="menuitem" onClick={() => (menu.setOpen(false), onUpdate())}>
                   <ArrowUpCircle />
                   Update to latest version
+                </button>
+              )}
+              {health === 'broken' && onDownloadMissing && (
+                <button className="menu-item" role="menuitem" disabled={isFetchingFiles} onClick={() => (menu.setOpen(false), onDownloadMissing())}>
+                  <CloudDownload />
+                  Download missing files
                 </button>
               )}
               {health === 'fixable' && (
