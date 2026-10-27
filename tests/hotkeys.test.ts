@@ -109,8 +109,11 @@ describe('Updating a mod keeps its on/off state', () => {
     const res = await service.ingestPackage(make('Cool Ellen v2'), { replaceModUuid: old.mod_uuid });
     expect(res.success).toBe(true);
     const mods = service.scanInstalledMods();
-    expect(mods.find((m) => m.mod_uuid === old.mod_uuid)).toBeUndefined(); // moved to backups
-    const fresh = mods.find((m) => m.mod_uuid === res.installedMods[0].mod_uuid)!;
+    // Same mod (same id), new files; the old files are in backups.
+    expect(res.installedMods[0].mod_uuid).toBe(old.mod_uuid);
+    const fresh = mods.find((m) => m.mod_uuid === old.mod_uuid)!;
+    expect(fresh.folder_name).toBe('Cool_Ellen_v2');
+    expect(mods.filter((m) => m.mod_uuid === old.mod_uuid)).toHaveLength(1);
     expect(fresh.enabled).toBe(false);
     expect(fs.readdirSync(path.join(dir, 'ZZZ_Mod_Manager_AppData', 'backups', 'mod-updates')).length).toBe(1);
   });

@@ -3794,7 +3794,8 @@ endif
     let message: string;
 
     // Remember the usual setup before switching to a built-in one, so Default can bring it back.
-    if (isBuiltIn && profileName !== 'Default' && !BUILT_IN_LOADOUTS.has(cfg.activeProfile || 'Default')) {
+    const onBuiltInSwitch = (n?: string) => n === 'Stream Safe' || n === 'Main Team';
+    if (isBuiltIn && onBuiltInSwitch(profileName) && !onBuiltInSwitch(cfg.activeProfile)) {
       this.updateConfig({ lastUsualLoadout: mods.filter((m) => m.enabled).map((m) => m.mod_uuid) });
     }
 
