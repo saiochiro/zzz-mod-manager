@@ -164,6 +164,28 @@ describe('Undoing a mod mixed up with another one', () => {
     expect(service.scanInstalledMods().find((m) => m.mod_uuid === hide.mod_uuid)?.title).toBe('HideUID');
     expect(service.restoreWronglyReplacedMods()).toBe(0);
   });
+
+  it('gives the put-back mod its own id when the installed mod has the same one', async () => {
+    const service = new ModManagerService(dir);
+    const src = path.join(dir, 'src', 'HideUID');
+    fs.mkdirSync(src, { recursive: true });
+    fs.writeFileSync(path.join(src, 'Config.ini'), '[TextureOverrideUID]\nhash = 11111111\n');
+    const hide = (await service.ingestPackage(src)).installedMods[0];
+    const hideManifest = path.join(dir, 'ZZMI_Root', hide.install_path, 'mod_manifest.json');
+    fs.writeFileSync(hideManifest, JSON.stringify({ ...JSON.parse(fs.readFileSync(hideManifest, 'utf-8')), gamebanana_id: 553291 }));
+    service.invalidateModCache();
+    const backup = path.join(dir, 'ZZZ_Mod_Manager_AppData', 'backups', 'mod-updates', 'Global_-_GameBanana_ZZZ_#1858613_(Head)__2026');
+    fs.mkdirSync(backup, { recursive: true });
+    fs.writeFileSync(path.join(backup, 'MindscapeIcons.ini'), '[TextureOverrideIcon]\nhash = 7bf57b2b\n');
+    fs.writeFileSync(
+      path.join(backup, 'mod_manifest.json'),
+      JSON.stringify({ ...hide, gamebanana_id: 553291, detected_hashes: ['7bf57b2b'], previous_folder_name: 'Mindscape_Icons', install_path: 'Mods/_Uncategorized_UI_Audio/x' })
+    );
+    expect(service.restoreWronglyReplacedMods()).toBe(1);
+    const ids = service.scanInstalledMods().map((m) => m.mod_uuid);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toContain(hide.mod_uuid);
+  });
 });
 
 describe('Mods the game loads from outside ProxyLaunch', () => {

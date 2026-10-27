@@ -1516,6 +1516,8 @@ endif
       const title = original.replace(/^DISABLED_/i, '').replace(/_/g, ' ');
       const fixed = {
         ...m,
+        // Updates keep the mod's id, so the mod installed now may have this one: never share it.
+        mod_uuid: installed.some((i) => i.mod_uuid === m.mod_uuid) ? crypto.randomUUID() : m.mod_uuid,
         title,
         author: 'Unknown',
         gamebanana_id: null,
