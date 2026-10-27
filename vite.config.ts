@@ -90,6 +90,25 @@ function fairyBackendMiddlewarePlugin(): Plugin {
               svc.deleteMod(args[0]);
               result = { state: svc.getFullState() };
               break;
+            // Backups, missing files and the bug report (same answers as electron/main.ts).
+            case 'backups:list':
+              result = { backups: svc.listBackups(), summary: svc.getBackupsSummary() };
+              break;
+            case 'backups:restore':
+              result = { ...svc.restoreBackup(String(args[0])), state: svc.getFullState() };
+              break;
+            case 'backups:delete':
+              result = { freed_bytes: svc.deleteBackup(String(args[0])) };
+              break;
+            case 'backups:prune':
+              result = svc.pruneBackups(args[0] ?? {});
+              break;
+            case 'zzz:downloadMissingFiles':
+              result = { ...(await svc.downloadMissingFiles(String(args[0]))), state: svc.getFullState() };
+              break;
+            case 'app:reportBug':
+              result = { saved: false }; // browser preview: there's no save dialog
+              break;
             case 'zzz:ingestPackage':
               result = {
                 ...(await svc.ingestPackage(args[0], args[1])),

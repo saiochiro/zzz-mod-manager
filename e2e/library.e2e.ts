@@ -176,3 +176,29 @@ test('offline: the Library still works and Browse says it is offline', async ({ 
   await page.locator('button[title="Browse"]').click();
   await expect(page.getByText('You’re offline').first()).toBeVisible();
 });
+
+test('a deleted mod goes to Recently deleted and can be put back', async ({ page }) => {
+  const JANE = 'Shadow Operative Tactical Suit Jane Doe';
+  const before = await installed(page);
+  await card(page, JANE).getByRole('button', { name: 'More actions' }).click();
+  await page.getByRole('menuitem', { name: 'Delete mod' }).click();
+  await page.getByRole('menuitem', { name: 'Click again to delete' }).click();
+  await expect(card(page, JANE)).toHaveCount(0);
+  await expect(statPill(page, 'installed').locator('strong')).toHaveText(String(before - 1));
+
+  await page.getByRole('button', { name: /Recently deleted \(1\)/ }).click();
+  const dialog = page.locator('.overlay [role="dialog"]').first();
+  await expectOnTop(dialog);
+  const row = dialog.locator('.backups__row', { hasText: JANE });
+  await row.getByRole('button', { name: 'Put back' }).click();
+  await expect(card(page, JANE)).toHaveCount(1);
+  await expect(statPill(page, 'installed').locator('strong')).toHaveText(String(before));
+});
+
+test('Settings shows the Backups section without errors', async ({ page }) => {
+  await page.locator('button[title="Settings"]').click();
+  const section = page.locator('#settings-backups');
+  await section.scrollIntoViewIfNeeded();
+  await expect(section.getByRole('heading', { name: 'Backups' })).toBeVisible();
+  await expect(page.locator('.toast--error')).toHaveCount(0);
+});
