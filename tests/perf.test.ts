@@ -129,8 +129,10 @@ describe('Undoing a mod mixed up with another one', () => {
     const src = path.join(dir, 'src', 'HideUID');
     fs.mkdirSync(src, { recursive: true });
     fs.writeFileSync(path.join(src, 'Config.ini'), '[TextureOverrideUID]\nhash = 11111111\n');
-    const hide = (await service.ingestPackage(src, { metadataOverride: { id: 553291, title: 'HideUID', author: 'Satan1c' } as any })).installedMods[0];
+    const hide = (await service.ingestPackage(src)).installedMods[0];
     expect(hide).toBeTruthy();
+    const hideManifest = path.join(dir, 'ZZMI_Root', hide.install_path, 'mod_manifest.json');
+    fs.writeFileSync(hideManifest, JSON.stringify({ ...JSON.parse(fs.readFileSync(hideManifest, 'utf-8')), title: 'HideUID', gamebanana_id: 553291 }));
     // The icon pack, wrongly named HideUID and moved to backups by that "update".
     const backup = path.join(dir, 'ZZZ_Mod_Manager_AppData', 'backups', 'mod-updates', 'Global_-_GameBanana_ZZZ_#1858613_(Head)__2026');
     fs.mkdirSync(backup, { recursive: true });
