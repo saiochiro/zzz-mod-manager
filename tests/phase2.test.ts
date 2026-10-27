@@ -112,15 +112,15 @@ describe('Characters ZZMI does not know yet', () => {
 
   function mockPage(category: string) {
     const zip = new AdmZip();
-    zip.addFile('Phoenix Skin/mod.ini', Buffer.from('[TextureOverrideBody]\nhash = 0badf00d\n'));
-    zip.addFile('Phoenix Skin/pad.bin', crypto.randomBytes(3000));
+    zip.addFile('Zephyrine Vaelko Skin/mod.ini', Buffer.from('[TextureOverrideBody]\nhash = 0badf00d\n'));
+    zip.addFile('Zephyrine Vaelko Skin/pad.bin', crypto.randomBytes(3000));
     const buf = zip.toBuffer();
     vi.stubGlobal('fetch', async (url: string) =>
       String(url).includes('/ProfilePage')
         ? new Response(
             JSON.stringify({
               _idRow: 777,
-              _sName: 'Phoenix Outfit',
+              _sName: 'Zephyrine Vaelko Outfit',
               _aCategory: { _idRow: 99999, _sName: category },
               _aRootCategory: { _sName: 'Skins' },
               _aFiles: [{ _idRow: 1, _sFile: 'phoenix.zip', _sDownloadUrl: 'https://files.test/1' }],
@@ -132,16 +132,16 @@ describe('Characters ZZMI does not know yet', () => {
 
   it('labels a new install for a character ZZMI does not know', async () => {
     const service = new ModManagerService(dir);
-    mockPage('Phoenix');
+    mockPage('Zephyrine Vaelko');
     const m = (await service.ingestPackage('gb:777')).installedMods[0];
     expect(m.agent_id).toBe('uncategorized');
-    expect(m.unsupported_character).toBe('Phoenix');
-    expect(service.scanInstalledMods().find((x) => x.mod_uuid === m.mod_uuid)?.unsupported_character).toBe('Phoenix');
+    expect(m.unsupported_character).toBe('Zephyrine Vaelko');
+    expect(service.scanInstalledMods().find((x) => x.mod_uuid === m.mod_uuid)?.unsupported_character).toBe('Zephyrine Vaelko');
   });
 
   it('labels older installs once, by asking GameBanana', async () => {
     const service = new ModManagerService(dir);
-    mockPage('Phoenix');
+    mockPage('Zephyrine Vaelko');
     const m = (await service.ingestPackage('gb:777')).installedMods[0];
     const file = path.join(dir, 'ZZMI_Root', m.install_path, 'mod_manifest.json');
     const raw = JSON.parse(fs.readFileSync(file, 'utf-8'));
@@ -151,7 +151,7 @@ describe('Characters ZZMI does not know yet', () => {
     service.invalidateModCache();
 
     expect(await service.backfillUnsupportedCharacters()).toBe(1);
-    expect(service.scanInstalledMods().find((x) => x.mod_uuid === m.mod_uuid)?.unsupported_character).toBe('Phoenix');
+    expect(service.scanInstalledMods().find((x) => x.mod_uuid === m.mod_uuid)?.unsupported_character).toBe('Zephyrine Vaelko');
     expect(await service.backfillUnsupportedCharacters()).toBe(0); // asked once
   });
 });

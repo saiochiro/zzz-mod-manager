@@ -1076,7 +1076,7 @@ const NOT_A_CHARACTER = /^(skins?|other|misc|miscellaneous|ui|hud|audio|sounds?|
  */
 export function gameBananaCharacterOf(meta: { category?: string | null; root_category?: string | null }): string | null {
   const name = (meta.category || '').trim();
-  if (!name || NOT_A_CHARACTER.test(name)) return null;
+  if (!name || name.split(/\s*[/&,+]\s*/).some((part) => NOT_A_CHARACTER.test(part))) return null;
   if (meta.root_category && !/skin|character/i.test(meta.root_category)) return null;
   return name;
 }
