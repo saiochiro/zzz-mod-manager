@@ -1,8 +1,9 @@
-What's new in 2.14.16
+What's new in 2.14.17
 
-- Get missing files is much faster. It downloads only the mod's own file (plus at most two others if something is still missing) and unpacks just the files it needs instead of the whole download.
-- The Get missing files button now shows how far the download is.
-- Updating a mod pack that covers several characters no longer turns its parts on. Each part keeps its on/off state, keys and cover, and the old versions go to backups instead of staying installed next to the new ones.
-- Mods split from a pack now stay linked to their GameBanana page, so updates and Get missing files work for them.
+- Changes you make to a mod's folder in File Explorer now reach the game. Delete a texture or a folder inside a mod and it's gone in game too, instead of the game keeping its old copy. Edited files inside subfolders are updated as well.
+- New Original keys button next to Tidy keys (and in a mod's Hotkeys tab). It puts back the keys the mods came with from GameBanana and removes the "only while on screen" lines Tidy keys added.
+- Tidy keys no longer keeps a copy of every file it changes, so it doesn't take up space any more. The old copies are cleaned up.
+
+Tip: use Find in File Explorer on a mod to open its folder. That's the copy to change; the game's copy follows it.
 
 Requires XXMI Launcher with ZZMI set up. Questions or bugs? Reach out on Discord: ghxty
