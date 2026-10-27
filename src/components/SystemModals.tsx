@@ -74,15 +74,22 @@ interface FilePickModalProps {
 const sizeLabel = (bytes: number) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
 const dayLabel = (ts?: number) => (ts ? new Date(ts * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '');
 
+/** The file with the highest value (the first one on a tie), or null when there are none. */
+function fileWithMost(files: GameBananaFile[] | undefined, value: (f: GameBananaFile) => number): GameBananaFile | null {
+  let best: GameBananaFile | null = null;
+  for (const f of files ?? []) if (!best || value(f) > value(best)) best = f;
+  return best;
+}
+
 /**
  * A GameBanana page with several downloads (variants, optional parts): pick the one to install.
  * The newest upload is picked to start with; each file shows what the author wrote about it.
  */
 export const FilePickModal: React.FC<FilePickModalProps> = ({ prompt, onPick, onCancel }) => {
   const [picked, setPicked] = useState<number | null>(null);
-  const newest = prompt?.files.reduce<GameBananaFile | null>((a, f) => (!a || (f.added_at || 0) > (a.added_at || 0) ? f : a), null) ?? null;
-  const mostUsed = prompt?.files.reduce<GameBananaFile | null>((a, f) => (!a || (f.downloads || 0) > (a.downloads || 0) ? f : a), null) ?? null;
-  useEffect(() => setPicked(newest?.id ?? prompt?.files[0]?.id ?? null), [prompt]); // eslint-disable-line react-hooks/exhaustive-deps
+  const newest = fileWithMost(prompt?.files, (f) => f.added_at || 0);
+  const mostUsed = fileWithMost(prompt?.files, (f) => f.downloads || 0);
+  useEffect(() => setPicked(newest?.id ?? null), [prompt]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!prompt) return null;
   return (
     <Modal open onClose={onCancel} labelledBy="filepick-title">
@@ -106,18 +113,18 @@ export const FilePickModal: React.FC<FilePickModalProps> = ({ prompt, onPick, on
       <div className="modal__body">
         <div className="file-pick__list" role="radiogroup" aria-labelledby="filepick-title">
           {prompt.files.map((f) => {
-            const tags = [
-              f === newest && prompt.files.length > 1 && f.added_at ? 'Newest' : null,
-              f === mostUsed && prompt.files.length > 1 && (f.downloads || 0) > 0 ? 'Most downloaded' : null,
-            ].filter(Boolean);
+            // Tags only mean something when there's more than one file.
+            const tags: string[] = [];
+            if (prompt.files.length > 1) {
+              if (f === newest && f.added_at) tags.push('Newest');
+              if (f === mostUsed && (f.downloads || 0) > 0) tags.push('Most downloaded');
+            }
             return (
               <label key={f.id} className={`file-pick__option ${picked === f.id ? 'is-picked' : ''}`}>
                 <input type="radio" name="gb-file" checked={picked === f.id} onChange={() => setPicked(f.id)} />
                 <span className="min-w-0" style={{ flex: 1 }}>
-                  <span className="file-pick__name" style={{ display: 'block' }}>
-                    {f.name}
-                  </span>
-                  {f.description && <span className="file-pick__desc" style={{ display: 'block' }}>{f.description}</span>}
+                  <span className="file-pick__name">{f.name}</span>
+                  {f.description && <span className="file-pick__desc">{f.description}</span>}
                   <span className="file-pick__facts">
                     {f.size ? <span>{sizeLabel(f.size)}</span> : null}
                     {f.added_at ? <span>Posted {dayLabel(f.added_at)}</span> : null}

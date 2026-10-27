@@ -2063,9 +2063,10 @@ endif
     // Backups the Library offers: the previous version of each updated mod, and deleted mods.
     const previousVersions: Record<string, string> = {};
     let deletedBackups = 0;
+    const installedIds = new Set(mods.map((m) => m.mod_uuid));
     try {
       for (const b of this.listBackups({ sizes: false })) {
-        if (b.kind === 'update' && b.mod_uuid && !previousVersions[b.mod_uuid] && mods.some((m) => m.mod_uuid === b.mod_uuid)) {
+        if (b.kind === 'update' && b.mod_uuid && !previousVersions[b.mod_uuid] && installedIds.has(b.mod_uuid)) {
           previousVersions[b.mod_uuid] = b.id; // newest first
         }
         if (b.kind === 'deleted') deletedBackups++;
@@ -4487,9 +4488,11 @@ endif
       const next: ModManifest = { ...mod, unsupported_checked: true, unsupported_character: character ?? undefined };
       if (character) labeled++;
       try {
-        for (const f of ['mod_manifest.json', 'mod.json']) {
-          if (f === 'mod_manifest.json' || fs.existsSync(path.join(dir, f))) fs.writeFileSync(path.join(dir, f), JSON.stringify(next, null, 2), 'utf-8');
-        }
+        const json = JSON.stringify(next, null, 2);
+        fs.writeFileSync(path.join(dir, 'mod_manifest.json'), json, 'utf-8');
+        // Keep mod.json the same where the folder has one.
+        const modJson = path.join(dir, 'mod.json');
+        if (fs.existsSync(modJson)) fs.writeFileSync(modJson, json, 'utf-8');
       } catch {
         // folder moved meanwhile: try again next time
       }

@@ -65,9 +65,7 @@ export interface BugReportInput {
 
 /** Builds the bug report: a zip with a short summary, the activity log, settings and the mod list. */
 export function buildBugReport(input: BugReportInput, user: ReportUser): Buffer {
-  const config = Object.fromEntries(
-    Object.entries(input.config).filter(([k]) => !SECRET_KEYS.test(k)).filter(([k]) => k !== 'profiles')
-  );
+  const config = Object.fromEntries(Object.entries(input.config).filter(([k]) => k !== 'profiles' && !SECRET_KEYS.test(k)));
   const mods = input.mods.map((m) => ({
     title: m.title,
     author: m.author,
@@ -92,8 +90,8 @@ export function buildBugReport(input: BugReportInput, user: ReportUser): Buffer 
     'Your Windows user name and home folder were removed from every file in this report.',
     '',
   ].join('\n');
-  const log = input.logs
-    .slice()
+  // Oldest first, like a log file.
+  const log = [...input.logs]
     .reverse()
     .map((l) => `${l.timestamp} [${l.level}] ${l.source}: ${l.message}`)
     .join('\n');

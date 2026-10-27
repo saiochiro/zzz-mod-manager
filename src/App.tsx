@@ -19,7 +19,6 @@ import {
   GameBananaFile,
   GameBananaModItem,
   IngestionResult,
-  ModManifest,
   MultiAgentCandidate,
   NsfwFilterState,
   ParsedIniDocument,
@@ -545,7 +544,9 @@ const AppInner: React.FC = () => {
     if (!changes.length) return;
     // What to put back on Undo: only the mods this actually changes.
     const before = new Map((appState?.mods ?? []).map((m) => [m.mod_uuid, m.enabled]));
-    const undo = changes.filter((c) => before.has(c.modUuid) && before.get(c.modUuid) !== c.enabled).map((c) => ({ modUuid: c.modUuid, enabled: !c.enabled }));
+    const undo = changes
+      .filter((c) => before.has(c.modUuid) && before.get(c.modUuid) !== c.enabled)
+      .map((c) => ({ modUuid: c.modUuid, enabled: !c.enabled }));
     const want = new Map(changes.map((c) => [c.modUuid, c.enabled]));
     setAppState((prev) =>
       prev ? { ...prev, mods: prev.mods.map((m) => (want.has(m.mod_uuid) ? { ...m, enabled: want.get(m.mod_uuid)! } : m)) } : prev
@@ -889,12 +890,12 @@ const AppInner: React.FC = () => {
     try {
       const res = await fairyClient.restoreBackup(backupId);
       setAppState(res.state);
-      const back = res.state.previousVersions?.[uuid];
+      const canSwitchBack = Boolean(res.state.previousVersions?.[uuid]);
       notify({
         tone: 'success',
         title: `Went back to the previous version of “${mod.title}”`,
         message: 'The newer version is in backups.',
-        action: back ? { label: 'Undo', onClick: () => void handleUndoUpdate(uuid) } : undefined,
+        action: canSwitchBack ?{ label: 'Undo', onClick: () => void handleUndoUpdate(uuid) } : undefined,
       });
     } catch (err) {
       notify({ tone: 'error', title: `Couldn’t go back to the previous version of “${mod.title}”`, message: errMsg(err) });

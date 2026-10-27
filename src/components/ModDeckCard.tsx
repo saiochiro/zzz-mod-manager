@@ -84,7 +84,10 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
   const target =
     agent?.display_name || unsupported || (mod.category_tag && mod.category_tag !== 'Skins' ? mod.category_tag : 'UI & effects');
   const clash = mod.enabled ? clashes?.[0] : undefined;
-  const clashText = clash ? (clashes!.length > 1 ? `Clashes with “${clash.title}” and ${clashes!.length - 1} more` : `Clashes with “${clash.title}”`) : '';
+  const moreClashes = (clashes?.length ?? 0) - 1;
+  let clashText = '';
+  if (clash) clashText = moreClashes > 0 ? `Clashes with “${clash.title}” and ${moreClashes} more` : `Clashes with “${clash.title}”`;
+  const turnOffClash = clash && onTurnOffMod ? () => onTurnOffMod(clash.modUuid, clash.title) : undefined;
   // Where the bottom of the cover is free, the clash gets a strip with Turn off; otherwise a badge.
   const showClashStrip = Boolean(clash) && health === 'working' && !update && !isUpdating;
 
@@ -169,10 +172,10 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
             <span className="truncate" style={{ flex: 1 }} title={`${clashText}. Both change the same parts, so only one shows in game.`}>
               {clashText}
             </span>
-            {onTurnOffMod && (
+            {turnOffClash && (
               <button
                 className="btn btn--sm btn--secondary"
-                onClick={() => onTurnOffMod(clash.modUuid, clash.title)}
+                onClick={turnOffClash}
                 title={`Turn off “${clash.title}” so this one shows`}
               >
                 <PowerOff />
@@ -267,8 +270,8 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
                   Go back to the previous version
                 </button>
               )}
-              {clash && onTurnOffMod && (
-                <button className="menu-item" role="menuitem" onClick={() => (menu.setOpen(false), onTurnOffMod(clash.modUuid, clash.title))}>
+              {clash && turnOffClash && (
+                <button className="menu-item" role="menuitem" onClick={() => (menu.setOpen(false), turnOffClash())}>
                   <PowerOff />
                   <span className="truncate">Turn off “{clash.title}”</span>
                 </button>

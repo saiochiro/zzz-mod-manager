@@ -182,13 +182,24 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
   const selectedAgent = agentId !== 'ALL' && agentId !== 'uncategorized' ? p.hashDb.agents[agentId] : null;
   // Mods that are on and change the same things: shown on each card, and summed up per character.
   const clashes = useMemo(() => findClashes(p.mods), [p.mods]);
-  const conflictNames = Array.from(
-    new Set(p.mods.filter((m) => clashes.has(m.mod_uuid)).map((m) => (m.agent_id === 'uncategorized' ? 'UI & effects' : p.hashDb.agents[m.agent_id]?.display_name || m.agent_id)))
-  );
+  const groupName = (m: ModManifest) => (m.agent_id === 'uncategorized' ? 'UI & effects' : p.hashDb.agents[m.agent_id]?.display_name || m.agent_id);
+  const conflictNames = Array.from(new Set(p.mods.filter((m) => clashes.has(m.mod_uuid)).map(groupName)));
   const [deletedOpen, setDeletedOpen] = useState(false);
   // "All off": the picked character's mods; with everything shown, every character's mods but not
   // UI & effects mods (UID hiders and the like usually stay on). Undo is one click on the toast.
   const allOffTargets = scopedMods.filter((m) => m.enabled && (agentId !== 'ALL' || m.agent_id !== 'uncategorized'));
+  let allOffDone: string;
+  let allOffHint: string;
+  if (selectedAgent) {
+    allOffDone = `Turned off all of ${selectedAgent.display_name}'s mods`;
+    allOffHint = `Turn off all of ${selectedAgent.display_name}'s mods`;
+  } else if (agentId === 'uncategorized') {
+    allOffDone = 'Turned off all UI & effects mods';
+    allOffHint = 'Turn off every UI & effects mod';
+  } else {
+    allOffDone = `Turned off ${allOffTargets.length} character mod${allOffTargets.length === 1 ? '' : 's'}`;
+    allOffHint = 'Turn off every character mod (UI & effects mods stay on)';
+  }
   const libraryEmpty = p.mods.length === 0;
 
   const heroTitle = selectedAgent ? selectedAgent.display_name : agentId === 'uncategorized' ? 'UI & effects' : 'Library';
@@ -282,21 +293,11 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
                     onClick={() =>
                       p.onSetModsEnabled(
                         allOffTargets.map((m) => ({ modUuid: m.mod_uuid, enabled: false })),
-                        selectedAgent
-                          ? `Turned off all of ${selectedAgent.display_name}'s mods`
-                          : agentId === 'uncategorized'
-                          ? 'Turned off all UI & effects mods'
-                          : `Turned off ${allOffTargets.length} character mod${allOffTargets.length === 1 ? '' : 's'}`,
+                        allOffDone,
                         true
                       )
                     }
-                    title={
-                      selectedAgent
-                        ? `Turn off all of ${selectedAgent.display_name}'s mods`
-                        : agentId === 'uncategorized'
-                        ? 'Turn off every UI & effects mod'
-                        : 'Turn off every character mod (UI & effects mods stay on)'
-                    }
+                    title={allOffHint}
                   >
                     <PowerOff />
                     All off

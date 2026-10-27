@@ -20,6 +20,18 @@ export function formatBytes(n: number): string {
   return `${n} B`;
 }
 
+/** The toast title after putting a backup back. */
+function restoredTitle(kind: BackupKind, name: string): string {
+  switch (kind) {
+    case 'update':
+      return `Went back to the previous version of “${name}”`;
+    case 'hotkeys':
+      return `Put back the keys of “${name}”`;
+    default:
+      return `Put back “${name}”`;
+  }
+}
+
 interface Summary {
   total_bytes: number;
   count: number;
@@ -72,7 +84,7 @@ export const BackupsPanel: React.FC<{
       const name = res.restored?.title ?? b.title;
       notify({
         tone: 'success',
-        title: b.kind === 'update' ? `Went back to the previous version of “${name}”` : b.kind === 'hotkeys' ? `Put back the keys of “${name}”` : `Put back “${name}”`,
+        title: restoredTitle(b.kind, name),
         message: b.kind === 'update' ? 'The version you had is in backups, so you can switch back.' : undefined,
       });
       await load();
@@ -127,6 +139,10 @@ export const BackupsPanel: React.FC<{
   }
 
   const total = kinds.reduce((n, k) => n + (summary?.by_kind[k]?.bytes ?? 0), 0);
+  // Kinds that have at least one backup, for the size strip and its legend.
+  const presentKinds = KIND_ORDER.filter((k) => (summary?.by_kind[k]?.count ?? 0) > 0);
+  const toggleFilter = (k: BackupKind) => setFilter(filter === k ? 'all' : k);
+  const deletedOnly = only?.includes('deleted');
 
   return (
     <div className="backups">
@@ -139,7 +155,7 @@ export const BackupsPanel: React.FC<{
             </span>
           </div>
           <div className="backups__strip" role="group" aria-label="Space used by each kind of backup">
-            {KIND_ORDER.filter((k) => (summary.by_kind[k]?.count ?? 0) > 0).map((k) => {
+            {presentKinds.map((k) => {
               const part = summary.by_kind[k];
               const meta = BACKUP_KIND_META[k];
               return (
@@ -148,7 +164,7 @@ export const BackupsPanel: React.FC<{
                   type="button"
                   className={`backups__seg ${filter === k ? 'is-active' : ''}`}
                   style={{ flexGrow: Math.max(part.bytes, total * 0.04), background: meta.tone }}
-                  onClick={() => setFilter(filter === k ? 'all' : k)}
+                  onClick={() => toggleFilter(k)}
                   aria-pressed={filter === k}
                   title={`${meta.label}: ${formatBytes(part.bytes)} in ${part.count}`}
                 />
@@ -156,12 +172,12 @@ export const BackupsPanel: React.FC<{
             })}
           </div>
           <div className="backups__legend">
-            {KIND_ORDER.filter((k) => (summary.by_kind[k]?.count ?? 0) > 0).map((k) => (
+            {presentKinds.map((k) => (
               <button
                 key={k}
                 type="button"
                 className={`backups__key ${filter === k ? 'is-active' : ''}`}
-                onClick={() => setFilter(filter === k ? 'all' : k)}
+                onClick={() => toggleFilter(k)}
                 aria-pressed={filter === k}
               >
                 <span className="backups__dot" style={{ background: BACKUP_KIND_META[k].tone }} />
@@ -179,8 +195,8 @@ export const BackupsPanel: React.FC<{
       )}
 
       {shown.length === 0 ? (
-        <EmptyState icon={only?.includes('deleted') ? <Trash2 /> : <Archive />} title={only?.includes('deleted') ? 'Nothing deleted lately' : 'No backups yet'} tone="muted" compact>
-          {only?.includes('deleted')
+        <EmptyState icon={deletedOnly ? <Trash2 /> : <Archive />} title={deletedOnly ? 'Nothing deleted lately' : 'No backups yet'} tone="muted" compact>
+          {deletedOnly
             ? 'Mods you delete from the Library show up here, so you can put them back.'
             : 'When an update replaces a mod, or you delete one, a copy is kept here.'}
         </EmptyState>

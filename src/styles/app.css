@@ -5186,10 +5186,12 @@ html[data-paused] .fx-glow {
   accent-color: var(--primary);
 }
 .file-pick__name {
+  display: block;
   font-weight: 650;
   overflow-wrap: anywhere;
 }
 .file-pick__desc {
+  display: block;
   margin-top: 2px;
   color: var(--text-muted);
   font-size: var(--fs-sm);
