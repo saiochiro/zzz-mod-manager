@@ -99,6 +99,9 @@ const isOverride = (s: Section, lines: string[]) =>
   /^textureoverride/i.test(s.name) && lines.slice(s.start + 1, s.end).some((l) => /^\s*hash\s*=/i.test(l));
 const hasLine = (s: Section, lines: string[], re: RegExp) => lines.slice(s.start + 1, s.end).some((l) => re.test(l));
 
+/** Marks the "only while the character is on screen" lines Tidy keys adds, so they can be taken out. */
+export const SCOPE_MARK = '; ProxyLaunch: only while the character is on screen';
+
 /**
  * Makes the keys in one .ini file work only while its character is on screen.
  * Uses the mod's own "$active"-style variable when it has one; otherwise adds `$pl_active`
@@ -129,7 +132,12 @@ export function scopeKeysToCharacter(text: string): { text: string; scoped: numb
 
   // Insert from the bottom up so earlier indexes stay valid.
   const inserts: Array<{ at: number; line: string }> = [];
-  for (const k of keys) inserts.push({ at: k.start + 1, line: `condition = $${variable ?? 'pl_active'} == 1` });
+  // The condition goes right under the section name; a note after it marks it as ProxyLaunch's,
+  // so "Original keys" can take it out again (iniParser restoreIniOriginalKeys).
+  for (const k of keys) {
+    inserts.push({ at: k.start + 1, line: SCOPE_MARK });
+    inserts.push({ at: k.start + 1, line: `condition = $${variable ?? 'pl_active'} == 1` });
+  }
 
   if (!variable) {
     variable = 'pl_active';

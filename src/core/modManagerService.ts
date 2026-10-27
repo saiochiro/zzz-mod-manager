@@ -60,7 +60,7 @@ import {
 } from './nsfwVisionService';
 import { applyNsfwReview, initNsfwReview, nsfwKey } from './nsfwReview';
 import { isSanitized, restoreMod } from './nsfwSanitizer';
-import { planModKeys, scopeKeysToCharacter, toggleId } from '../shared/hotkeys';
+import { planModKeys, SCOPE_MARK, scopeKeysToCharacter, toggleId } from '../shared/hotkeys';
 import { isOutfitMod } from '../shared/outfits';
 /**
  * Renames a mod folder, retrying for a few seconds when Windows briefly locks it (antivirus,
@@ -102,6 +102,7 @@ import {
   classifyMeshPartsFromTokens,
   formatReadableKey,
   parseIniContent,
+  restoreIniOriginalKeys,
   rewriteIniKeybind,
 } from './iniParser';
 import { repairModOnDisk, undoModRepairOnDisk } from './repairEngine';
@@ -294,6 +295,44 @@ function modFolderSig(dir: string): string {
  * updated (.ini/.json always, others when their size changed), on/off renames are done in place,
  * and mods that are gone are removed. Returns the number of mod folders.
  */
+/**
+ * Makes the game's copy of one mod folder match the app's copy exactly, at every depth: new and
+ * changed files are copied, files and folders deleted from the app's copy are deleted from the
+ * game's too (so removing a texture in File Explorer really removes it in game). The one thing
+ * kept: an .ini XXMI renamed to DISABLED_<name> (its duplicate-file fix) isn't copied back.
+ */
+export function mirrorModDir(src: string, dst: string): void {
+  fs.mkdirSync(dst, { recursive: true });
+  const dstNames = new Map(fs.readdirSync(dst).map((n) => [n.toLowerCase(), n] as const));
+  const keep = new Set<string>();
+  for (const e of fs.readdirSync(src, { withFileTypes: true })) {
+    const lower = e.name.toLowerCase();
+    const s = path.join(src, e.name);
+    const d = path.join(dst, e.name);
+    if (e.isDirectory()) {
+      keep.add(lower);
+      mirrorModDir(s, d);
+      continue;
+    }
+    if (!e.isFile()) continue;
+    if (lower.endsWith('.ini') && !dstNames.has(lower) && dstNames.has(`disabled_${lower}`)) {
+      keep.add(`disabled_${lower}`);
+      continue;
+    }
+    keep.add(lower);
+    let copy = !dstNames.has(lower) || /\.(ini|json)$/i.test(e.name);
+    if (!copy) {
+      const a = fs.statSync(s);
+      const b = fs.statSync(d);
+      copy = a.size !== b.size || a.mtimeMs > b.mtimeMs + 1000;
+    }
+    if (copy) fs.copyFileSync(s, d);
+  }
+  for (const [lower, name] of dstNames) {
+    if (!keep.has(lower)) fs.rmSync(path.join(dst, name), { recursive: true, force: true });
+  }
+}
+
 function syncModFolders(srcDir: string, dstDir: string): number {
   fs.mkdirSync(dstDir, { recursive: true });
   const srcChildren = fs.readdirSync(srcDir, { withFileTypes: true });
@@ -327,20 +366,7 @@ function syncModFolders(srcDir: string, dstDir: string): number {
       copyDirRecursive(srcChild, dstChild);
       continue;
     }
-    const dstFiles = new Set(fs.readdirSync(dstChild).map((n) => n.toLowerCase()));
-    for (const f of fs.readdirSync(srcChild, { withFileTypes: true })) {
-      const sFile = path.join(srcChild, f.name);
-      const dFile = path.join(dstChild, f.name);
-      const lower = f.name.toLowerCase();
-      // XXMI Launcher 2.4.6+ renames duplicate library / rogue d3dx inis to DISABLED_<name>.
-      // Respect that instead of copying the file back, which made XXMI warn on every launch.
-      if (f.isFile() && lower.endsWith('.ini') && !dstFiles.has(lower) && dstFiles.has(`disabled_${lower}`)) continue;
-      if (f.isDirectory()) {
-        if (!fs.existsSync(dFile)) copyDirRecursive(sFile, dFile);
-      } else if (!dstFiles.has(lower) || /\.(ini|json)$/i.test(f.name) || fs.statSync(sFile).size !== fs.statSync(dFile).size) {
-        fs.copyFileSync(sFile, dFile);
-      }
-    }
+    mirrorModDir(srcChild, dstChild);
   }
   for (const d of fs.readdirSync(dstDir)) {
     if (!keep.has(d.toLowerCase())) fs.rmSync(path.join(dstDir, d), { recursive: true, force: true });
@@ -595,6 +621,9 @@ export class ModManagerService {
   public ensureWorkspaceInitialized(): void {
     fs.mkdirSync(path.join(this.appDataPath, 'staging_temp'), { recursive: true });
     fs.mkdirSync(path.join(this.appDataPath, 'backups'), { recursive: true });
+    // Tidy keys used to keep full copies of every .ini it changed. "Original keys" works from the
+    // keys written into the files instead, so those copies are just taking up space.
+    fs.rmSync(path.join(this.appDataPath, 'backups', 'hotkeys'), { recursive: true, force: true });
     fs.mkdirSync(path.join(this.appDataPath, 'cache', 'thumbnails'), { recursive: true });
 
     initNsfwVisionCache(this.appDataPath);
@@ -2480,8 +2509,6 @@ endif
     let updatedModsCount = 0;
     let totalKeysRemapped = 0;
     let scopedKeys = 0;
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-
     for (const mod of mods) {
       if (mod.sub_toggles.length === 0) continue;
       const modAbsDir = path.join(this.zzmiRootPath, mod.install_path);
@@ -2506,9 +2533,8 @@ endif
         content = scoped.text;
         scopedKeys += scoped.scoped;
         if (content !== original) {
-          const backup = path.join(this.appDataPath, 'backups', 'hotkeys', `${mod.folder_name}__${stamp}`, path.relative(modAbsDir, iniPath));
-          fs.mkdirSync(path.dirname(backup), { recursive: true });
-          fs.copyFileSync(iniPath, backup);
+          // No copy is kept: each original key is written into the file the first time it changes,
+          // so "Original keys" can put them back (restoreOriginalHotkeys).
           fs.writeFileSync(iniPath, content, 'utf-8');
           modChanged = true;
         }
@@ -2670,7 +2696,7 @@ endif
     const dir = path.join(this.zzmiRootPath, pick.install_path);
 
     if (backupDir && fs.existsSync(backupDir)) {
-      const tidied = this.wasHotkeyTidied(old);
+      const tidied = this.wasHotkeyTidied(backupDir);
       reapplyHotkeys(backupDir, dir, tidied);
       if (old.custom_cover && fs.existsSync(path.join(backupDir, old.custom_cover))) {
         fs.copyFileSync(path.join(backupDir, old.custom_cover), path.join(dir, old.custom_cover));
@@ -2698,14 +2724,55 @@ endif
     return installed.map((m) => (m === pick ? next : m));
   }
 
-  /** Tidy keys ran on this mod (it keeps a copy of the files it changed). */
-  private wasHotkeyTidied(mod: ModManifest): boolean {
-    const root = path.join(this.appDataPath, 'backups', 'hotkeys');
+  /** Tidy keys ran on these files: they have its "only while on screen" lines. */
+  private wasHotkeyTidied(dir: string): boolean {
     try {
-      return fs.readdirSync(root).some((d) => d.startsWith(`${mod.folder_name}__`));
+      return listModInis(dir).some((f) => {
+        const t = fs.readFileSync(f, 'utf-8');
+        return t.includes(SCOPE_MARK) || /\$pl_active\b/.test(t);
+      });
     } catch {
       return false;
     }
+  }
+
+  /**
+   * "Original keys": the keys every mod (or one character's mods) came with from GameBanana go
+   * back, and the "only while on screen" lines Tidy keys added come out. Works from the original
+   * keys written into each file, so nothing is downloaded and no copies are kept.
+   */
+  public restoreOriginalHotkeys(scope: { agentId?: string; modUuid?: string } = {}): { updatedModsCount: number; keysRestored: number } {
+    const mods = this.scanInstalledMods().filter(
+      (m) => (!scope.agentId || m.agent_id === scope.agentId) && (!scope.modUuid || m.mod_uuid === scope.modUuid)
+    );
+    let updatedModsCount = 0;
+    let keysRestored = 0;
+    const changed: ModManifest[] = [];
+    for (const mod of mods) {
+      const dir = path.join(this.zzmiRootPath, mod.install_path);
+      let modChanged = false;
+      for (const ini of listModInis(dir)) {
+        const before = fs.readFileSync(ini, 'utf-8');
+        const res = restoreIniOriginalKeys(before);
+        if (res.text !== before) {
+          fs.writeFileSync(ini, res.text, 'utf-8');
+          keysRestored += res.restored;
+          modChanged = true;
+        }
+      }
+      if (modChanged) {
+        updatedModsCount++;
+        changed.push(mod);
+        this.invalidateModCache(dir);
+      }
+    }
+    if (changed.length) this.scheduleXxmiSync(changed, Boolean(this.getConfig().autoSendF10OnToggle));
+    this.addLog(
+      'success',
+      'FAIRY_CORE',
+      `Put back the original keys in ${updatedModsCount} mod${updatedModsCount === 1 ? '' : 's'} (${keysRestored} key${keysRestored === 1 ? '' : 's'}).`
+    );
+    return { updatedModsCount, keysRestored };
   }
 
   /* One install at a time: unpacking and filing mods never overlap. */
@@ -3491,6 +3558,18 @@ endif
   }
 
   /** Syncs to XXMI (and reloads mods in the running game) shortly after, without blocking the caller. */
+  /**
+   * A file in the Mods folder was changed outside the app (deleted, added or edited in File
+   * Explorer): copy that mod to the game again, so the game matches what you see in the folder.
+   * `relToMods` is the changed path relative to the Mods folder.
+   */
+  public syncAfterOutsideChange(relToMods: string): void {
+    const parts = relToMods.split(/[\\/]/).filter(Boolean);
+    const depth = parts[0]?.toLowerCase() === '_zzzmm_managed' ? 3 : 2; // Managed/<character>/<mod>, <folder>/<mod>
+    if (parts.length < depth) return this.scheduleXxmiSync('all', Boolean(this.getConfig().autoSendF10OnToggle));
+    this.scheduleXxmiSync([{ install_path: path.posix.join('Mods', ...parts.slice(0, depth)) }], Boolean(this.getConfig().autoSendF10OnToggle));
+  }
+
   public scheduleXxmiSync(mods: Array<Pick<ModManifest, 'install_path'>> | 'all', reload = false): void {
     const prev = this.pendingSync;
     if (prev) clearTimeout(prev.timer);

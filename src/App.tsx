@@ -619,11 +619,31 @@ const AppInner: React.FC = () => {
         tone: 'success',
         title: res.updatedModsCount ? 'Hotkeys tidied' : 'Hotkeys were already tidy',
         message: res.updatedModsCount
-          ? `${res.totalKeysRemapped} key${res.totalKeysRemapped === 1 ? '' : 's'} moved in ${res.updatedModsCount} mod${res.updatedModsCount === 1 ? '' : 's'}. Each mod's keys now only work while its character is on screen. The old files are kept in backups.`
+          ? `${res.totalKeysRemapped} key${res.totalKeysRemapped === 1 ? '' : 's'} moved in ${res.updatedModsCount} mod${res.updatedModsCount === 1 ? '' : 's'}. Each mod's keys now only work while its character is on screen. Original keys puts the mods' own keys back.`
           : undefined,
       });
     } catch (err) {
       notify({ tone: 'error', title: 'Couldn’t tidy hotkeys', message: errMsg(err) });
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleRestoreOriginalKeys = async (scope: { agentId?: string; modUuid?: string } = {}) => {
+    setIsBusy(true);
+    try {
+      const res = await fairyClient.restoreOriginalHotkeys(scope);
+      setAppState(res.state);
+      if (selectedModUuid && inspectorOpen) await handleOpenInspector(selectedModUuid);
+      notify({
+        tone: 'success',
+        title: res.updatedModsCount ? 'Original keys are back' : 'Keys were already the original ones',
+        message: res.updatedModsCount
+          ? `${res.updatedModsCount} mod${res.updatedModsCount === 1 ? '' : 's'} use the keys they came with from GameBanana again.`
+          : undefined,
+      });
+    } catch (err) {
+      notify({ tone: 'error', title: 'Couldn’t put the original keys back', message: errMsg(err) });
     } finally {
       setIsBusy(false);
     }
@@ -1310,6 +1330,7 @@ const AppInner: React.FC = () => {
               canUndoOrganize={canUndoOrganize}
               onSetModsEnabled={handleSetModsEnabled}
               onTidyHotkeys={handleStandardizeAll}
+              onRestoreOriginalKeys={(agentId) => handleRestoreOriginalKeys({ agentId })}
               unmanagedGameMods={appState?.unmanagedGameMods ?? []}
               onResolveUnmanaged={handleResolveUnmanaged}
             />
@@ -1451,6 +1472,7 @@ const AppInner: React.FC = () => {
           onToggleEnabled={handleToggleEnabled}
           onRemapKey={handleRemapKey}
           onStandardizeAll={handleStandardizeAll}
+          onRestoreOriginalKeys={(modUuid) => handleRestoreOriginalKeys({ modUuid })}
           onRepairMod={handleRepairMod}
           onUndoRepair={handleUndoRepair}
           onToggleHCycle={handleToggleHCycle}

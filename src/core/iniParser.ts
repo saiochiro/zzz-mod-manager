@@ -1,4 +1,5 @@
 import { ParsedIniDocument, ParsedIniSection, SubToggle } from '../shared/types';
+import { SCOPE_MARK } from '../shared/hotkeys';
 
 const VK_KEY_MAP: Record<string, string> = {
   VK_OEM_4: '[',
@@ -271,7 +272,8 @@ export function rewriteIniKeybind(
       }
       const keyMatch = lines[i].match(/^(\s*key\s*=\s*)(.+)$/i);
       if (keyMatch) {
-        const prevKey = formatReadableKey(keyMatch[2].trim());
+        // The author's key exactly as written, so "Original keys" can put it back as it was.
+        const prevKey = keyMatch[2].trim();
         if (!hasOrigKeyCommentInSection) {
           out.push(`; zzzmgr_orig_key = ${prevKey}`);
         }
@@ -288,6 +290,88 @@ export function rewriteIniKeybind(
 }
 
 export const remapKeyInIniContent = rewriteIniKeybind;
+
+/** Notes Tidy keys writes above the Present/Constants sections it adds (shared/hotkeys.ts). */
+const TIDY_SECTION_NOTES = ['; ProxyLaunch: clears the "character on screen" flag', "; ProxyLaunch: this mod's keys only work while its character is on screen"];
+
+/** Older versions saved the original key in its readable form ("NUM 1"); turn it back into a key name. */
+function rawKeyName(saved: string): string {
+  const v = saved.trim();
+  const upper = v.toUpperCase();
+  const num = upper.match(/^NUM\s*(\d)$/);
+  if (num) return `VK_NUMPAD${num[1]}`;
+  const symbol = Object.entries(VK_KEY_MAP).find(([, shown]) => shown === upper);
+  if (symbol && !/^[A-Z0-9]$/.test(upper)) return symbol[0];
+  if (/^F\d{1,2}$/.test(upper)) return `VK_${upper}`;
+  return v;
+}
+
+
+/**
+ * "Original keys": puts back the keys the mod's author shipped (as recorded the first time
+ * ProxyLaunch changed each one) and takes out the "only while on screen" lines Tidy keys added.
+ * Nothing else in the file changes. Returns the new text and how many keys went back.
+ */
+export function restoreIniOriginalKeys(rawContent: string): { text: string; restored: number } {
+  const eol = rawContent.includes('\r\n') ? '\r\n' : '\n';
+  const lines = rawContent.split(/\r?\n/);
+  const out: string[] = [];
+  let pendingOriginal: string | null = null;
+  let restored = 0;
+  let oursNext = false; // the next section header was added by ProxyLaunch
+  const ourHeaders = new Set<number>(); // indexes in `out`
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const t = line.trim();
+    const orig = t.match(/^;\s*zzzmgr_orig_key\s*=\s*(.+)$/i);
+    if (orig) {
+      pendingOriginal = orig[1];
+      continue;
+    }
+    if (/^\[[^\]]+\]/.test(t)) {
+      pendingOriginal = null;
+      if (oursNext && /^\[(present|constants)\]$/i.test(t)) ourHeaders.add(out.length);
+      oursNext = false;
+      out.push(line);
+      continue;
+    }
+    if (t === SCOPE_MARK) continue;
+    if (TIDY_SECTION_NOTES.some((n) => t.startsWith(n))) {
+      // The Present/Constants section right after this note was added by Tidy keys.
+      oursNext = true;
+      continue;
+    }
+    if (/^condition\s*=\s*\$pl_active\s*==\s*1$/i.test(t)) continue;
+    if (/^condition\s*=\s*\$[A-Za-z_][A-Za-z0-9_]*\s*==\s*1$/i.test(t) && lines[i + 1]?.trim() === SCOPE_MARK) continue;
+    if (/^(global\s+|post\s+)?\$pl_active\s*=\s*[01]$/i.test(t)) continue;
+    const key = line.match(/^(\s*key\s*=\s*)(.+)$/i);
+    if (key && pendingOriginal !== null) {
+      const back = rawKeyName(pendingOriginal);
+      if (back.toUpperCase() !== key[2].trim().toUpperCase()) restored++;
+      out.push(`${key[1]}${back}`);
+      pendingOriginal = null;
+      continue;
+    }
+    out.push(line);
+  }
+  // Present/Constants sections ProxyLaunch added that are empty now go, with the blank line
+  // ProxyLaunch put next to them.
+  const drop = new Set<number>();
+  for (const idx of ourHeaders) {
+    let end = idx + 1;
+    let empty = true;
+    for (; end < out.length; end++) {
+      const t = out[end].trim();
+      if (/^\[[^\]]+\]/.test(t)) break;
+      if (t && !t.startsWith(';')) empty = false;
+    }
+    if (!empty) continue;
+    for (let j = idx; j < end; j++) if (j === idx || !out[j].trim()) drop.add(j);
+    if (idx > 0 && !out[idx - 1].trim()) drop.add(idx - 1);
+  }
+  const cleaned = out.filter((_, idx) => !drop.has(idx));
+  return { text: cleaned.join(eol), restored };
+}
 
 /**
  * Standardizes all `[Key*]` sub-toggles in an .ini file onto the `J`, `K`, `L` keys

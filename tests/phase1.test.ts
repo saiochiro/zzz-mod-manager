@@ -311,15 +311,16 @@ describe('Backups', () => {
     expect(service.listBackups().some((b) => b.kind === 'update' && b.mod_uuid === v1.mod_uuid)).toBe(true);
   });
 
-  it('puts Tidy keys copies back into their mod', async () => {
+  it('Tidy keys keeps no copies, and Original keys puts the file back exactly', async () => {
     const service = new ModManagerService(dir);
     const mod = (await service.ingestPackage(writeMod('Keys', SKIN_V1))).installedMods[0];
     service.standardizeAllModHotkeys();
-    const tidied = read(path.join(modDir(byId(service, mod.mod_uuid)), 'mod.ini'));
-    expect(tidied).not.toBe(SKIN_V1);
-    const copy = service.listBackups().find((b) => b.kind === 'hotkeys')!;
-    service.restoreBackup(copy.id);
-    expect(read(path.join(modDir(byId(service, mod.mod_uuid)), 'mod.ini'))).toBe(SKIN_V1);
+    const file = path.join(modDir(byId(service, mod.mod_uuid)), 'mod.ini');
+    expect(read(file)).not.toBe(SKIN_V1);
+    expect(service.listBackups().filter((b) => b.kind === 'hotkeys')).toEqual([]);
+    const res = service.restoreOriginalHotkeys();
+    expect(res.updatedModsCount).toBe(1);
+    expect(read(file)).toBe(SKIN_V1);
   });
 
   it('prunes old backups but keeps the newest of each mod', () => {

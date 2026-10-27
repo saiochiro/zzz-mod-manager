@@ -163,6 +163,8 @@ function setupModsDirectoryWatcher() {
         modService.invalidateModCache(path.join(modsDir, String(filename)));
         if (ownChangesInFlight > 0 || Date.now() < ownChangesQuietUntil) return;
 
+        // Your own change in File Explorer reaches the game too (deleted files really go).
+        modService.syncAfterOutsideChange(String(filename));
         if (watcherDebounceTimer) clearTimeout(watcherDebounceTimer);
         watcherDebounceTimer = setTimeout(() => {
           writeBootLog(`[FS Watcher] Detected external change in Mods directory (${filename}). Refreshing state...`);
@@ -271,6 +273,14 @@ handleIpc(
 
 handleIpc('zzz:standardizeHotkeys', async (_e, agentId?: string) => {
   const res = modService.standardizeAllModHotkeys(typeof agentId === 'string' ? agentId : undefined);
+  return { ...res, state: modService.getFullState() };
+});
+
+handleIpc('zzz:restoreOriginalHotkeys', async (_e, scope?: { agentId?: string; modUuid?: string }) => {
+  const res = modService.restoreOriginalHotkeys({
+    agentId: typeof scope?.agentId === 'string' ? scope.agentId : undefined,
+    modUuid: typeof scope?.modUuid === 'string' ? scope.modUuid : undefined,
+  });
   return { ...res, state: modService.getFullState() };
 });
 

@@ -66,6 +66,9 @@ function fairyBackendMiddlewarePlugin(): Plugin {
               };
               break;
             }
+            case 'zzz:restoreOriginalHotkeys':
+              result = { ...svc.restoreOriginalHotkeys(args[0] ?? {}), state: svc.getFullState() };
+              break;
             case 'zzz:standardizeHotkeys':
               result = { ...svc.standardizeAllModHotkeys(args[0]), state: svc.getFullState() };
               break;

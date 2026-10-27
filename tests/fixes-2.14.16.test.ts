@@ -144,3 +144,48 @@ describe('Get missing files is quick', () => {
     expect(progress.length).toBeGreaterThan(0);
   });
 });
+
+describe('The game copy matches the mod folder', () => {
+  it('removes files you deleted and updates files in subfolders', async () => {
+    const { mirrorModDir } = await import('../src/core/modManagerService');
+    const src = path.join(dir, 'app', 'Nangong');
+    const dst = path.join(dir, 'game', 'Nangong');
+    fs.mkdirSync(path.join(src, 'Icons'), { recursive: true });
+    fs.writeFileSync(path.join(src, 'mod.ini'), 'v1');
+    fs.writeFileSync(path.join(src, 'Icons', 'icon.dds'), 'icon');
+    fs.writeFileSync(path.join(src, 'Icons', 'keep.dds'), 'old');
+    mirrorModDir(src, dst);
+    expect(fs.existsSync(path.join(dst, 'Icons', 'icon.dds'))).toBe(true);
+
+    // In File Explorer: delete the icon, change a texture in a subfolder, remove the makeup folder.
+    fs.rmSync(path.join(src, 'Icons', 'icon.dds'));
+    fs.writeFileSync(path.join(src, 'Icons', 'keep.dds'), 'new and longer');
+    fs.mkdirSync(path.join(dst, 'Makeup'), { recursive: true }); // only in the game's copy
+    mirrorModDir(src, dst);
+    expect(fs.existsSync(path.join(dst, 'Icons', 'icon.dds'))).toBe(false);
+    expect(fs.readFileSync(path.join(dst, 'Icons', 'keep.dds'), 'utf-8')).toBe('new and longer');
+    expect(fs.existsSync(path.join(dst, 'Makeup'))).toBe(false);
+  });
+
+  it('keeps an .ini XXMI switched off itself', async () => {
+    const { mirrorModDir } = await import('../src/core/modManagerService');
+    const src = path.join(dir, 'app2', 'M');
+    const dst = path.join(dir, 'game2', 'M');
+    fs.mkdirSync(src, { recursive: true });
+    fs.mkdirSync(dst, { recursive: true });
+    fs.writeFileSync(path.join(src, 'lib.ini'), 'x');
+    fs.writeFileSync(path.join(dst, 'DISABLED_lib.ini'), 'x');
+    mirrorModDir(src, dst);
+    expect(fs.readdirSync(dst)).toEqual(['DISABLED_lib.ini']);
+  });
+});
+
+describe('Original keys', () => {
+  it('reads original keys saved by older versions in their readable form', async () => {
+    const { restoreIniOriginalKeys } = await import('../src/core/iniParser');
+    const text = '[KeyHair]\ncondition = $pl_active == 1\n; zzzmgr_orig_key = NUM 1\nkey = J\n$hair = 0,1\n[KeyTail]\n; zzzmgr_orig_key = O\nkey = K\n$tail = 0,1\n';
+    const res = restoreIniOriginalKeys(text);
+    expect(res.text).toBe('[KeyHair]\nkey = VK_NUMPAD1\n$hair = 0,1\n[KeyTail]\nkey = O\n$tail = 0,1\n');
+    expect(res.restored).toBe(2);
+  });
+});

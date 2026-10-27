@@ -95,6 +95,8 @@ interface LibraryScreenProps {
   onSetModsEnabled: (changes: Array<{ modUuid: string; enabled: boolean }>, message: string, undoable?: boolean) => void;
   /** Tidy hotkeys for one character (or every mod when no character is picked). */
   onTidyHotkeys: (agentId?: string) => void;
+  /** Puts back the keys the mods came with (one character's, or every mod's). */
+  onRestoreOriginalKeys: (agentId?: string) => void;
   /** Mods the game loads from outside ProxyLaunch, and what to do with one. */
   unmanagedGameMods: Array<{ name: string; path: string }>;
   onResolveUnmanaged: (modPath: string, action: 'import' | 'disable') => void;
@@ -377,6 +379,20 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
                   >
                     <Keyboard />
                     Tidy keys
+                  </button>
+                )}
+                {scopedMods.some((m) => m.sub_toggles.length > 0) && (
+                  <button
+                    className="btn btn--ghost"
+                    onClick={() => p.onRestoreOriginalKeys(selectedAgent ? selectedAgent.agent_id : undefined)}
+                    title={
+                      selectedAgent
+                        ? `Put back the keys ${selectedAgent.display_name}'s mods came with from GameBanana`
+                        : 'Put back the keys every mod came with from GameBanana'
+                    }
+                  >
+                    <RotateCcw />
+                    Original keys
                   </button>
                 )}
                 {p.deletedBackups > 0 && (

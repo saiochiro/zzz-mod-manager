@@ -38,6 +38,8 @@ interface InspectorDrawerProps {
   onToggleEnabled: (modUuid: string) => void;
   onRemapKey: (modUuid: string, sectionName: string, newKey: string) => void;
   onStandardizeAll: () => void;
+  /** Puts back the keys this mod came with. */
+  onRestoreOriginalKeys?: (modUuid: string) => void;
   onRepairMod: (modUuid: string) => void;
   onUndoRepair: (modUuid: string) => void;
   onToggleHCycle: (modUuid: string) => void;
@@ -70,6 +72,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
   onToggleEnabled,
   onRemapKey,
   onStandardizeAll,
+  onRestoreOriginalKeys,
   onRepairMod,
   onUndoRepair,
   onToggleHCycle,
@@ -331,6 +334,12 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                   <button className="btn btn--soft btn--sm" onClick={onStandardizeAll} title="Give every mod the same simple J / K / L layout">
                     <Keyboard />
                     Tidy all hotkeys
+                  </button>
+                )}
+                {mod.sub_toggles.length > 0 && onRestoreOriginalKeys && (
+                  <button className="btn btn--ghost btn--sm" onClick={() => onRestoreOriginalKeys(mod.mod_uuid)} title="Put back the keys this mod came with from GameBanana">
+                    <RotateCcw />
+                    Original keys
                   </button>
                 )}
               </div>
