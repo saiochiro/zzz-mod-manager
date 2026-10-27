@@ -1,5 +1,5 @@
 import { HeroDecor } from '../ui/HeroDecor';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowUpCircle,
   Loader2,
@@ -25,6 +25,7 @@ import {
   CloudDownload,
   Trash2,
   X,
+  CheckSquare,
 } from 'lucide-react';
 import type { AgentHashEntry, GameBananaModItem, HashDatabase, ModManifest, NsfwFilterState } from '../shared/types';
 import { findClashes } from '../shared/clashes';
@@ -40,7 +41,7 @@ import { getModHealth } from '../ui/modStatus';
 
 type StatusFilter = 'ALL' | 'ON' | 'OFF' | 'ATTENTION';
 type CategoryFilter = 'ALL' | 'Skins' | 'Weapons' | 'UI' | 'Audio';
-type SortBy = 'alphabetical' | 'newest' | 'status';
+type SortBy = 'alphabetical' | 'newest' | 'updated' | 'size' | 'status';
 
 interface LibraryScreenProps {
   modUpdates: Record<string, GameBananaModItem>;
@@ -72,6 +73,8 @@ interface LibraryScreenProps {
   onSetCustomImage: (uuid: string) => void;
   onPasteThumbnail: (uuid: string) => void;
   onDelete: (uuid: string) => void;
+  /** Deletes several mods at once (bulk select); one message for all of them. */
+  onDeleteMods: (uuids: string[]) => void;
   onOpenFolder: (installPath: string) => void;
   onInstallArchive: () => void;
   onOpenImport: () => void;
@@ -152,6 +155,8 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
       })
       .sort((a, b) => {
         if (sortBy === 'newest') return (b.installed_at || '').localeCompare(a.installed_at || '');
+        if (sortBy === 'updated') return (b.updated_at || b.installed_at || '').localeCompare(a.updated_at || a.installed_at || '');
+        if (sortBy === 'size') return (b.file_size_bytes || 0) - (a.file_size_bytes || 0) || a.title.localeCompare(b.title);
         if (sortBy === 'status') return Number(b.enabled) - Number(a.enabled) || a.title.localeCompare(b.title);
         return a.title.localeCompare(b.title);
       });
@@ -170,6 +175,47 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
       `Wearing “${pick.title}”`
     );
   };
+
+  // Bulk select: pick cards, then act on all of them at once.
+  const [selecting, setSelecting] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const pickedMods = visibleMods.filter((m) => picked.has(m.mod_uuid));
+  const pickedWithUpdates = pickedMods.filter((m) => p.modUpdates[m.mod_uuid]);
+  const stopSelecting = () => {
+    setSelecting(false);
+    setPicked(new Set());
+    setConfirmBulkDelete(false);
+  };
+  const togglePick = (id: string) => {
+    setConfirmBulkDelete(false);
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const pickAllShown = () => setPicked((prev) => new Set([...prev, ...filtered.map((m) => m.mod_uuid)]));
+  const bulkSwitch = (enabled: boolean) => {
+    const changes = pickedMods.filter((m) => m.enabled !== enabled).map((m) => ({ modUuid: m.mod_uuid, enabled }));
+    p.onSetModsEnabled(changes, `Turned ${enabled ? 'on' : 'off'} ${changes.length} mod${changes.length === 1 ? '' : 's'}`, true);
+  };
+  const bulkUpdate = () => {
+    for (const m of pickedWithUpdates) p.onUpdateMod(m.mod_uuid);
+  };
+  const bulkDelete = () => {
+    p.onDeleteMods(pickedMods.map((m) => m.mod_uuid));
+    stopSelecting();
+  };
+  useEffect(() => {
+    if (!selecting) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') stopSelecting();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selecting]);
 
   const hasFilters = agentId !== 'ALL' || category !== 'ALL' || status !== 'ALL' || query.trim() !== '';
   const clearFilters = () => {
@@ -358,10 +404,21 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
                 <span className="sr-only">Sort</span>
                 <select className="select" style={{ height: 32, width: 170 }} value={sortBy} onChange={(e) => setSortBy(e.target.value as SortBy)}>
                   <option value="alphabetical">Name (A–Z)</option>
-                  <option value="newest">Recently added</option>
+                  <option value="newest">Date added</option>
+                  <option value="updated">Last updated</option>
+                  <option value="size">Size (largest first)</option>
                   <option value="status">On first</option>
                 </select>
               </label>
+              <button
+                className={`btn btn--sm ${selecting ? 'btn--primary' : 'btn--secondary'}`}
+                onClick={() => (selecting ? stopSelecting() : setSelecting(true))}
+                aria-pressed={selecting}
+                title="Pick several mods to turn on, turn off, update or delete together"
+              >
+                <CheckSquare />
+                {selecting ? 'Done' : 'Select'}
+              </button>
               <div ref={more.ref} style={{ position: 'relative' }}>
                 <button className="icon-btn icon-btn--solid" aria-label="Library tools" title="Library tools" onClick={() => more.setOpen(!more.open)}>
                   <MoreHorizontal />
@@ -553,8 +610,61 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
                     onUpdate={() => p.onUpdateMod(mod.mod_uuid)}
                     onDownloadMissing={p.canFetchMissing(mod) ? () => p.onDownloadMissing(mod.mod_uuid) : undefined}
                     isFetchingFiles={p.fetchingIds.has(mod.mod_uuid)}
+                    selectMode={selecting}
+                    picked={picked.has(mod.mod_uuid)}
+                    onPick={() => togglePick(mod.mod_uuid)}
                   />
                 ))}
+              </div>
+            )}
+
+            {selecting && (
+              <div className="select-bar" role="toolbar" aria-label="Selected mods">
+                <span className="select-bar__count">
+                  <strong>{pickedMods.length}</strong> selected
+                </span>
+                <button className="btn btn--ghost btn--sm" onClick={pickAllShown} disabled={filtered.every((m) => picked.has(m.mod_uuid))}>
+                  Select all {filtered.length} shown
+                </button>
+                {pickedMods.length > 0 && (
+                  <button className="btn btn--ghost btn--sm" onClick={() => setPicked(new Set())}>
+                    Clear
+                  </button>
+                )}
+                <div className="spacer" />
+                {confirmBulkDelete ? (
+                  <>
+                    <span className="small">
+                      Delete {pickedMods.length} mod{pickedMods.length === 1 ? '' : 's'}? They go to Recently deleted.
+                    </span>
+                    <button className="btn btn--ghost btn--sm" onClick={() => setConfirmBulkDelete(false)}>
+                      Keep them
+                    </button>
+                    <button className="btn btn--danger btn--sm" onClick={bulkDelete}>
+                      <Trash2 />
+                      Delete
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button className="btn btn--secondary btn--sm" disabled={!pickedMods.some((m) => !m.enabled)} onClick={() => bulkSwitch(true)}>
+                      <Power />
+                      Turn on
+                    </button>
+                    <button className="btn btn--secondary btn--sm" disabled={!pickedMods.some((m) => m.enabled)} onClick={() => bulkSwitch(false)}>
+                      <PowerOff />
+                      Turn off
+                    </button>
+                    <button className="btn btn--secondary btn--sm" disabled={!pickedWithUpdates.length} onClick={bulkUpdate}>
+                      <ArrowUpCircle />
+                      Update{pickedWithUpdates.length ? ` (${pickedWithUpdates.length})` : ''}
+                    </button>
+                    <button className="btn btn--secondary btn--sm select-bar__danger" disabled={!pickedMods.length} onClick={() => setConfirmBulkDelete(true)}>
+                      <Trash2 />
+                      Delete
+                    </button>
+                  </>
+                )}
               </div>
             )}
 

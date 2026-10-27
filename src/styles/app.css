@@ -5209,3 +5209,47 @@ html[data-paused] .fx-glow {
   color: var(--primary-text);
   font-weight: 650;
 }
+
+/* ---------- Library bulk select ---------- */
+.mod-card.is-selecting { cursor: pointer; }
+.mod-card.is-selecting .mod-card__body .switch,
+.mod-card.is-selecting .mod-card__body .icon-btn,
+.mod-card.is-selecting .mod-card__fix,
+.mod-card.is-selecting .mod-card__update { pointer-events: none; opacity: 0.45; }
+.mod-card__pick {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 3;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  border: 2px solid var(--border-strong, var(--border));
+  color: var(--on-primary, #fff);
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.mod-card__pick svg { width: 16px; height: 16px; }
+.mod-card.is-picked { outline: 2px solid var(--primary); outline-offset: 2px; }
+.mod-card.is-picked .mod-card__pick { background: var(--primary); border-color: var(--primary); }
+.select-bar {
+  position: sticky;
+  bottom: 16px;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: linear-gradient(var(--surface), var(--surface)), var(--bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+}
+.select-bar__count { padding: 0 6px; }
+.select-bar__danger:not(:disabled) { color: var(--error); }
+@media (prefers-reduced-motion: reduce) {
+  .mod-card__pick { transition: none; }
+}

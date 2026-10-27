@@ -709,6 +709,25 @@ const AppInner: React.FC = () => {
     }
   };
 
+  const handleDeleteMods = async (modUuids: string[]) => {
+    let done = 0;
+    let latest: FullAppState | null = null;
+    for (const id of modUuids) {
+      try {
+        latest = (await fairyClient.deleteMod(id)).state;
+        done++;
+      } catch (err) {
+        notify({ tone: 'error', title: 'Couldn’t delete a mod', message: errMsg(err) });
+      }
+    }
+    if (latest) setAppState(latest);
+    if (selectedModUuid && modUuids.includes(selectedModUuid)) {
+      setSelectedModUuid(null);
+      setInspectorOpen(false);
+    }
+    if (done) notify({ tone: 'success', title: `Deleted ${done} mod${done === 1 ? '' : 's'}`, message: 'They can be put back from Recently deleted.' });
+  };
+
   const handleDeleteMod = async (modUuid: string) => {
     const title = appState?.mods.find((m) => m.mod_uuid === modUuid)?.title ?? 'Mod';
     try {
@@ -921,6 +940,10 @@ const AppInner: React.FC = () => {
 
   const handleCheckModUpdates = async () => {
     const r = await modUpdates.check();
+    if (r.offline) {
+      notify({ tone: 'info', title: 'You’re offline', message: 'Mod updates are checked on GameBanana, which needs the internet. Your mods work as usual.' });
+      return;
+    }
     notify({
       tone: r.found ? 'info' : 'success',
       title: r.found ? `${r.found} mod update${r.found === 1 ? '' : 's'} available` : 'All mods are up to date',
@@ -1245,6 +1268,7 @@ const AppInner: React.FC = () => {
               onSetCustomImage={handleSetCustomImageFile}
               onPasteThumbnail={handlePasteThumbnailFromClipboard}
               onDelete={handleDeleteMod}
+              onDeleteMods={handleDeleteMods}
               onOpenFolder={handleRevealModByPath}
               onInstallArchive={handleImportArchiveDialog}
               onOpenImport={() => setImportOpen(true)}

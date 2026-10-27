@@ -390,6 +390,59 @@ function isUnlabeledSkin(m: ModManifest): boolean {
   return !m.gamebanana_id && m.agent_id !== 'uncategorized' && (m.category_tag || 'Skins') === 'Skins';
 }
 
+/* ------------------------------ disk space ------------------------------ */
+
+/** Free bytes on the drive holding `dir` (null when it can't be told). Swappable for tests. */
+let freeSpaceProbe: (dir: string) => number | null = (dir) => {
+  try {
+    let at = dir;
+    while (!fs.existsSync(at) && path.dirname(at) !== at) at = path.dirname(at);
+    const st = fs.statfsSync(at);
+    return Number(st.bavail) * Number(st.bsize);
+  } catch {
+    return null;
+  }
+};
+
+const realFreeSpaceProbe = freeSpaceProbe;
+export function setFreeSpaceProbeForTest(probe: ((dir: string) => number | null) | null): void {
+  freeSpaceProbe = probe ?? realFreeSpaceProbe;
+}
+
+/** Size of a file (a folder counts as 0: it's copied, not unpacked). */
+function fileSizeOf(p: string): number {
+  try {
+    const st = fs.statSync(p);
+    return st.isFile() ? st.size : 0;
+  } catch {
+    return 0;
+  }
+}
+
+const SPACE_MARGIN = 200 * 1024 * 1024; // keep some room so Windows and the game don't run dry
+
+function formatBytes(n: number): string {
+  if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GB`;
+  if (n >= 1024 ** 2) return `${Math.round(n / 1024 ** 2)} MB`;
+  return `${Math.max(1, Math.round(n / 1024))} KB`;
+}
+
+/**
+ * Stops before a download or unpack that wouldn't fit, with a plain message, instead of failing
+ * halfway with a broken mod. `what` says what needs the space ("download", "unpack").
+ */
+export function ensureFreeSpace(dir: string, neededBytes: number, what: string): void {
+  if (!neededBytes || neededBytes <= 0) return;
+  const free = freeSpaceProbe(dir);
+  if (free === null) return; // unknown: don't block
+  if (free < neededBytes + SPACE_MARGIN) {
+    const drive = path.parse(path.resolve(dir)).root || dir;
+    throw new Error(
+      `Not enough free space on ${drive} to ${what} this mod: about ${formatBytes(neededBytes)} is needed and ${formatBytes(free)} is free. Free up some space and try again.`
+    );
+  }
+}
+
 /** What an update replaced: the old record and where its files went. */
 interface ReplacedMod {
   old: ModManifest;
@@ -2739,6 +2792,8 @@ endif
 
         const dlArchivePath = path.join(stagingDir, gbMeta.file_name || `GB_${modId}.zip`);
         let downloadedRealArchive = false;
+        // The download, what it unpacks to and the installed copy all need room.
+        ensureFreeSpace(stagingDir, (gbMeta.file_size || 0) * 4, 'download and install');
         if (gbMeta.download_url && gbMeta.download_url.startsWith('http')) {
           try {
             this.addLog('info', 'GB_INGEST', `Downloading mod archive from GameBanana: ${gbMeta.download_url}`);
@@ -2768,6 +2823,7 @@ endif
 
         // One install at a time (downloads still run side by side), unpacked outside the main process.
         release = await this.acquireInstallLock();
+        ensureFreeSpace(stagingDir, fileSizeOf(dlArchivePath) * 3, 'unpack');
         const preExtracted = await extractArchiveAsync(dlArchivePath, path.join(stagingDir, 'raw'));
         const unpackRes = unpackAndLocalizeModArchive(preExtracted ?? dlArchivePath, archivePathToUnpack, hashDb);
 
@@ -2817,6 +2873,7 @@ endif
       }
 
       const unpackTarget = path.join(stagingDir, 'extracted');
+      ensureFreeSpace(stagingDir, fileSizeOf(sourceInput) * 3, 'unpack and install');
       release = await this.acquireInstallLock();
       const preExtracted = await extractArchiveAsync(sourceInput, path.join(stagingDir, 'raw'));
       const unpackRes = unpackAndLocalizeModArchive(preExtracted ?? sourceInput, unpackTarget, hashDb);
@@ -4199,6 +4256,7 @@ endif
         const work = path.join(stagingDir, String(i));
         fs.mkdirSync(work, { recursive: true });
         const archive = path.join(work, path.basename(file.name) || 'mod.zip');
+        ensureFreeSpace(work, (file.size || 0) * 3, 'download');
         const ok = await this.withDownloadSlot(() => downloadToFile(file.download_url, archive)).catch(() => false);
         if (!ok) continue;
         downloaded++;

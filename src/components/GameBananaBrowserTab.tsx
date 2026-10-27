@@ -34,6 +34,7 @@ import {
 import { fairyClient, type FullAppState } from '../services/fairyClient';
 import { isBlurredByNsfwFilter, isHiddenByNsfwFilter, nsfwLevelOf } from '../shared/nsfw';
 import { NsfwBadge } from './NsfwLabel';
+import { isOfflineError, useOnline } from '../ui/online';
 import type { MotifKind } from '../themes/types';
 import { Motif } from '../themes/Motif';
 import { Avatar, CardSkeletonGrid, EmptyState, formatCount, Modal, SearchInput, Segmented, ThumbImage } from '../ui';
@@ -89,6 +90,7 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
   const [page, setPage] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [feedError, setFeedError] = useState<string | null>(null);
+  const online = useOnline();
   const [reloadTick, setReloadTick] = useState(0);
   const [liveModInput, setLiveModInput] = useState('');
 
@@ -316,6 +318,7 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
     page,
     nsfwFilterState,
     reloadTick,
+    online, // back online: load again
   ]);
 
   const handleQuickTabSwitch = (tab: 'featured' | 'popular' | 'updated' | 'character') => {
@@ -506,6 +509,9 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
       }),
     []
   );
+
+  // No internet: say so plainly instead of showing a network error.
+  const offline = !online || (feedError !== null && isOfflineError(feedError));
 
   const displayedMods = useMemo(() => modsList.filter((item) => isShownInGrid(item)), [modsList, nsfwFilterState, categoryFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -841,7 +847,29 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
                   <h2>More to explore</h2>
                 </div>
               )}
-              {feedError && displayedMods.length === 0 ? (
+              {offline && displayedMods.length > 0 && (
+                <div className="banner" role="status" data-testid="browse-offline-banner">
+                  <CloudOff />
+                  <span style={{ flex: 1 }}>
+                    <strong>You’re offline.</strong> These are the mods loaded earlier. Installing and Show more need the internet.
+                  </span>
+                </div>
+              )}
+              {offline && displayedMods.length === 0 && !isLoading ? (
+                <EmptyState
+                  icon={<CloudOff />}
+                  title="You’re offline"
+                  tone="muted"
+                  actions={
+                    <button className="btn btn--secondary" onClick={() => setReloadTick((t) => t + 1)}>
+                      <RefreshCw />
+                      Try again
+                    </button>
+                  }
+                >
+                  Browse needs the internet to show mods from GameBanana. Your Library and on/off switches work as usual.
+                </EmptyState>
+              ) : feedError && displayedMods.length === 0 ? (
                 <EmptyState
                   icon={<CloudOff />}
                   title="Couldn’t reach the mod site"
@@ -969,7 +997,9 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
 
               {displayedMods.length > 0 && (
                 <div className="stack" style={{ alignItems: 'center', paddingTop: 32 }}>
-                  {moreState === 'end' && !isLoading ? (
+                  {offline && !isLoading ? (
+                    <span className="caption">More mods show up when you’re back online.</span>
+                  ) : moreState === 'end' && !isLoading ? (
                     <span className="caption">That’s everything for this view.</span>
                   ) : (
                     <button
@@ -982,7 +1012,7 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
                       {isLoading ? 'Loading…' : moreState === 'error' ? 'Try again' : 'Show more'}
                     </button>
                   )}
-                  {moreState === 'error' && !isLoading && (
+                  {moreState === 'error' && !isLoading && !offline && (
                     <span className="caption" style={{ color: 'var(--error)' }}>GameBanana didn’t answer. Try again in a moment.</span>
                   )}
                 </div>

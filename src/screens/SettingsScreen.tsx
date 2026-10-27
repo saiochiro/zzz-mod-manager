@@ -29,6 +29,7 @@ import { ThemeIcon } from '../components/ThemeIcon';
 import { fairyClient, AppUpdateStatus, type FullAppState } from '../services/fairyClient';
 import { BackupsPanel } from '../components/BackupsPanel';
 import { Segmented, Switch, shortVersion, useToast } from '../ui';
+import { isOfflineError } from '../ui/online';
 
 interface SettingsScreenProps {
   appUpdate: AppUpdateStatus;
@@ -403,6 +404,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = (p) => {
                         ? 'Checking for updates…'
                         : p.appUpdate.state === 'none'
                         ? 'You’re on the latest version'
+                        : p.appUpdate.state === 'error' && isOfflineError(p.appUpdate.message)
+                        ? 'You’re offline'
                         : p.appUpdate.state === 'error'
                         ? 'Couldn’t check for updates'
                         : p.appUpdate.state === 'unsupported'
@@ -412,6 +415,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = (p) => {
                     <div className="small muted">
                       {p.appUpdate.state === 'unsupported'
                         ? 'Works in the installed version of the app (from the Setup file).'
+                        : p.appUpdate.state === 'error' && isOfflineError(p.appUpdate.message)
+                        ? 'Updates are checked when you’re back online.'
                         : p.appUpdate.state === 'error'
                         ? p.appUpdate.message
                         : 'Click Update now and ProxyLaunch downloads the new version and restarts to install it.'}

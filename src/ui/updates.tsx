@@ -144,7 +144,9 @@ export function useModUpdates(mods: ModManifest[] | null) {
   const check = useCallback(async () => {
     // Workshop mixes aren't GameBanana mods; they get "rebuild" in the Workshop when a source updates.
     const list = (modsRef.current ?? []).filter((m) => m.gamebanana_id && !(m.tags || []).includes('Workshop'));
-    if (runningRef.current) return { found: 0, checked: 0 };
+    if (runningRef.current) return { found: 0, checked: 0, offline: false };
+    // No internet: nothing to ask GameBanana; checked again when the connection is back.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return { found: 0, checked: 0, offline: true };
     runningRef.current = true;
     setChecking(true);
     const found: Record<string, GameBananaModItem> = {};
@@ -173,7 +175,7 @@ export function useModUpdates(mods: ModManifest[] | null) {
     setUpdates(found);
     setChecking(false);
     runningRef.current = false;
-    return { found: Object.keys(found).length, checked };
+    return { found: Object.keys(found).length, checked, offline: false };
   }, []);
 
   // Automatic check shortly after launch, at most every 6 hours.
@@ -186,6 +188,16 @@ export function useModUpdates(mods: ModManifest[] | null) {
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasMods]);
+
+  // Back online after a skipped check: check now if one is due.
+  useEffect(() => {
+    const onOnline = () => {
+      const last = lastChecked ? Date.parse(lastChecked) : 0;
+      if (hasMods && Date.now() - last > AUTO_INTERVAL_MS) check();
+    };
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [hasMods, lastChecked, check]);
 
   const ignore = useCallback((uuid: string, profile: GameBananaModItem) => {
     setIgnored((prev) => {

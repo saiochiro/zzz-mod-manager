@@ -8,7 +8,8 @@ function fairyBackendMiddlewarePlugin(): Plugin {
   let modService: ModManagerService | null = null;
   const getService = () => {
     if (!modService) {
-      modService = new ModManagerService(process.cwd());
+      // E2E tests point this at a throwaway folder with sample mods (e2e/serve.mjs).
+      modService = new ModManagerService(process.env.PROXYLAUNCH_WORKSPACE || process.cwd());
     }
     return modService;
   };

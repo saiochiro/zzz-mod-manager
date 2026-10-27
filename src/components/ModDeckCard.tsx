@@ -14,6 +14,7 @@ import {
   CloudDownload,
   History,
   PowerOff,
+  Check,
 } from 'lucide-react';
 import type { AgentHashEntry, GameBananaModItem, ModManifest, NsfwFilterState } from '../shared/types';
 import { isBlurredByNsfwFilter } from '../shared/nsfw';
@@ -44,6 +45,10 @@ interface ModDeckCardProps {
   update?: GameBananaModItem | null;
   isUpdating?: boolean;
   onUpdate?: () => void;
+  /** Library bulk select: clicking the card picks it instead of opening it. */
+  selectMode?: boolean;
+  picked?: boolean;
+  onPick?: () => void;
   /** Set when the mod has missing files that can be downloaded from GameBanana again. */
   onDownloadMissing?: () => void;
   isFetchingFiles?: boolean;
@@ -69,6 +74,9 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
   update,
   isUpdating,
   onUpdate,
+  selectMode,
+  picked,
+  onPick,
   onDownloadMissing,
   isFetchingFiles,
 }) => {
@@ -94,19 +102,31 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
   return (
     <article
       data-tilt
-      className={`mod-card ${isSelected ? 'is-selected' : ''} ${mod.enabled ? '' : 'is-off'}`}
+      className={`mod-card ${isSelected ? 'is-selected' : ''} ${mod.enabled ? '' : 'is-off'} ${selectMode ? 'is-selecting' : ''} ${picked ? 'is-picked' : ''}`}
       style={{ animationDelay: `${Math.min(index, 12) * 30}ms` }}
-      onClick={onOpenInspector}
+      onClick={selectMode ? onPick : onOpenInspector}
       onContextMenu={(e) => {
+        if (selectMode) return;
         e.preventDefault();
         menu.setOpen(true);
       }}
       tabIndex={0}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') onOpenInspector();
+        if (e.key === 'Enter' || (selectMode && e.key === ' ')) {
+          e.preventDefault();
+          if (selectMode) onPick?.();
+          else onOpenInspector();
+        }
       }}
       aria-label={`${mod.title}, ${mod.enabled ? 'on' : 'off'}, ${meta.label}`}
+      aria-pressed={selectMode ? picked : undefined}
+      data-mod-uuid={mod.mod_uuid}
     >
+      {selectMode && (
+        <span className="mod-card__pick" aria-hidden="true">
+          {picked && <Check />}
+        </span>
+      )}
       <div className="mod-card__thumb">
         <ThumbImage src={mod.thumbnail_url} fallbacks={mod.preview_images} alt={mod.title} motif={motif} />
         {blurred && (

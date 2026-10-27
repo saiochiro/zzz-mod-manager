@@ -70,3 +70,7 @@ electron_out.txt
 
 # Claude session loop state
 .claude/*.local.md
+
+# Playwright
+test-results/
+playwright-report/
