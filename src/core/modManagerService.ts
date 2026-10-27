@@ -1391,7 +1391,19 @@ endif
       } catch {
         continue;
       }
-      if (m.description !== 'Captured via GameBanana 1-Click stream.' || !m.gamebanana_id) continue;
+      if (!m.gamebanana_id) continue;
+      // Proof it went through the made-up-name bug: the placeholder description (in either info
+      // file) or the made-up name in its folder name.
+      let meta: { description?: string } = {};
+      try {
+        meta = JSON.parse(fs.readFileSync(path.join(dir, 'mod.json'), 'utf-8'));
+      } catch {
+        // no mod.json
+      }
+      const placeholder = 'Captured via GameBanana 1-Click stream.';
+      const marked =
+        m.description === placeholder || meta.description === placeholder || /GameBanana[ _-]+ZZZ[ _-]+(Mod[ _-]+)?#\d+/i.test(`${m.folder_name} ${name}`);
+      if (!marked) continue;
       const replacement = installed.find((i) => i.gamebanana_id === m.gamebanana_id);
       if (!replacement || sharesHashes(replacement, m) || !(m.detected_hashes || []).length) continue;
       if (installed.some((i) => sharesHashes(i, m) && i.mod_uuid !== replacement.mod_uuid)) continue; // already back

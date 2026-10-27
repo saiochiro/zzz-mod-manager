@@ -144,7 +144,7 @@ describe('Undoing a mod mixed up with another one', () => {
         mod_uuid: 'icons-1',
         title: 'HideUID',
         gamebanana_id: 553291,
-        description: 'Captured via GameBanana 1-Click stream.',
+        description: 'Hides your UID', // borrowed from HideUID; only the folder name gives it away
         detected_hashes: ['7bf57b2b'],
         previous_folder_name: 'Mindscape_Icons',
         folder_name: 'Global_-_GameBanana_ZZZ_#1858613_(Head)',
