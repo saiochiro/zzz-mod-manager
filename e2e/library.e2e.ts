@@ -199,6 +199,6 @@ test('Settings shows the Backups section without errors', async ({ page }) => {
   await page.locator('button[title="Settings"]').click();
   const section = page.locator('#settings-backups');
   await section.scrollIntoViewIfNeeded();
-  await expect(section.getByRole('heading', { name: 'Backups' })).toBeVisible();
+  await expect(section.getByRole('heading', { name: 'Backups', exact: true })).toBeVisible();
   await expect(page.locator('.toast--error')).toHaveCount(0);
 });

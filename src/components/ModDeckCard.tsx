@@ -98,20 +98,22 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
       setMenuPos(null);
       return;
     }
+    // The side (above or below) is picked once when it opens; after that the menu just follows
+    // its button when the page scrolls or the window resizes.
+    let fitsAbove: boolean | null = null;
     const place = () => {
       const r = menuBtnRef.current?.getBoundingClientRect();
       if (!r) return;
+      if (fitsAbove === null) fitsAbove = r.top > MENU_ROOM_ABOVE;
       const right = Math.max(MENU_EDGE_GAP, window.innerWidth - r.right);
-      const fitsAbove = r.top > MENU_ROOM_ABOVE;
       setMenuPos(fitsAbove ? { right, bottom: window.innerHeight - r.top + MENU_OFFSET } : { right, top: r.bottom + MENU_OFFSET });
     };
     place();
-    const close = () => menu.setOpen(false);
     window.addEventListener('resize', place);
-    window.addEventListener('scroll', close, true);
+    window.addEventListener('scroll', place, true);
     return () => {
       window.removeEventListener('resize', place);
-      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('scroll', place, true);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [menu.open]);
@@ -296,7 +298,7 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
             <MoreHorizontal />
           </button>
           {menu.open && menuPos && createPortal(
-            <div className="popover popover--floating" data-popover-portal style={{ position: 'fixed', ...menuPos, width: 240 }} role="menu">
+            <div className="popover popover--floating" data-popover-portal style={{ position: 'fixed', ...menuPos, width: 240, maxHeight: 'calc(100vh - 16px)', overflowY: 'auto' }} role="menu">
               <button className="menu-item" role="menuitem" onClick={() => (menu.setOpen(false), onOpenInspector())}>
                 <SlidersHorizontal />
                 Details &amp; hotkeys
