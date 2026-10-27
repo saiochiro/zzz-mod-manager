@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { defineConfig, devices } from '@playwright/test';
 
 const port = Number(process.env.E2E_PORT || 5174);
+const viewport = { width: 1440, height: 900 };
 
 export default defineConfig({
   testDir: '.',
@@ -17,12 +18,12 @@ export default defineConfig({
   reporter: process.env.CI ? [['list'], ['github']] : 'list',
   use: {
     baseURL: `http://127.0.0.1:${port}`,
-    viewport: { width: 1440, height: 900 },
+    viewport,
     reducedMotion: 'reduce',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } }],
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], viewport } }],
   webServer: {
     command: 'node e2e/serve.mjs',
     cwd: fileURLToPath(new URL('..', import.meta.url)),

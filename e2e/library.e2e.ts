@@ -6,6 +6,18 @@ const ELLEN_ON = 'Casual Shark Hoodie Ellen';
 const ELLEN_OFF = 'Victoria Gothic Combat Maid Ellen';
 const MIYABI = 'Void Hunter Ceremonial Haori Miyabi';
 
+const cards = (page: Page) => page.locator('article.mod-card');
+const card = (page: Page, title: string) => cards(page).filter({ hasText: title });
+const cardSwitch = (page: Page, title: string) => card(page, title).getByRole('switch');
+const statPill = (page: Page, text: string | RegExp) => page.locator('.stat-pill', { hasText: text });
+const searchBox = (page: Page) => page.getByPlaceholder('Search mods, creators, characters');
+const statusTab = (page: Page, label: string) => page.getByRole('tablist', { name: 'Filter by status' }).getByText(label, { exact: true });
+const sortSelect = (page: Page) => page.locator('select').filter({ has: page.locator('option[value="size"]') });
+/** How many mods are installed, as the "installed" pill says. */
+const installed = async (page: Page) => Number(await statPill(page, 'installed').locator('strong').innerText());
+const expectAll = async (page: Page) => expect(cards(page)).toHaveCount(await installed(page));
+const cardTitles = async (page: Page) => (await cards(page).locator('.mod-card__title').allInnerTexts()).map((t) => t.trim());
+
 test.beforeEach(async ({ page }) => {
   // Skip the first-run tour and always start on the Library.
   await page.addInitScript(() => {
@@ -16,13 +28,6 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await expect(cards(page).first()).toBeVisible();
 });
-
-const cards = (page: Page) => page.locator('article.mod-card');
-const card = (page: Page, title: string) => cards(page).filter({ hasText: title });
-/** How many mods are installed, as the "installed" pill says. */
-const installed = async (page: Page) => Number(await page.locator('.stat-pill', { hasText: 'installed' }).locator('strong').innerText());
-const expectAll = async (page: Page) => expect(cards(page)).toHaveCount(await installed(page));
-const cardTitles = async (page: Page) => (await page.locator('article.mod-card .mod-card__title').allInnerTexts()).map((t) => t.trim());
 
 /** The element is what you'd click at its centre: nothing else is drawn over it. */
 async function expectOnTop(el: Locator) {
@@ -42,21 +47,21 @@ test('the Library shows every sample mod', async ({ page }) => {
 });
 
 test('search and the status filter narrow the grid, and clearing brings everything back', async ({ page }) => {
-  await page.getByPlaceholder('Search mods, creators, characters').fill('Miyabi');
+  await searchBox(page).fill('Miyabi');
   await expect(cards(page)).toHaveCount(1);
   await expect(card(page, MIYABI)).toBeVisible();
-  await page.getByPlaceholder('Search mods, creators, characters').fill('');
+  await searchBox(page).fill('');
   await expectAll(page);
 
-  await page.getByRole('tablist', { name: 'Filter by status' }).getByText('Off', { exact: true }).click();
+  await statusTab(page, 'Off').click();
   await expect(cards(page)).toHaveCount(1);
   await expect(card(page, ELLEN_OFF)).toBeVisible();
-  await page.getByRole('tablist', { name: 'Filter by status' }).getByText('All', { exact: true }).click();
+  await statusTab(page, 'All').click();
   await expectAll(page);
 });
 
 test('the status pills filter and toggle back', async ({ page }) => {
-  const attention = page.locator('.stat-pill', { hasText: 'need attention' });
+  const attention = statPill(page, 'need attention');
   await attention.click();
   const shown = await cards(page).count();
   expect(shown).toBeGreaterThan(0);
@@ -65,7 +70,7 @@ test('the status pills filter and toggle back', async ({ page }) => {
   await attention.click(); // again: back to everything
   await expectAll(page);
 
-  const onPill = page.locator('.stat-pill', { hasText: / on$/ });
+  const onPill = statPill(page, / on$/);
   await onPill.click();
   await expect(card(page, ELLEN_OFF)).toHaveCount(0);
   await onPill.click();
@@ -73,23 +78,23 @@ test('the status pills filter and toggle back', async ({ page }) => {
 });
 
 test('picking a character after Needs attention shows all of that character', async ({ page }) => {
-  await page.locator('.stat-pill', { hasText: 'need attention' }).click();
-  await page.getByPlaceholder('Search mods, creators, characters').fill('Ellen');
-  await page.getByPlaceholder('Search mods, creators, characters').fill('');
-  await page.locator('.stat-pill', { hasText: 'installed' }).click();
+  await statPill(page, 'need attention').click();
+  await searchBox(page).fill('Ellen');
+  await searchBox(page).fill('');
+  await statPill(page, 'installed').click();
   await expectAll(page);
 });
 
 test('the card switch turns a mod off and on, and it sticks after a reload', async ({ page }) => {
-  const sw = card(page, ELLEN_ON).getByRole('switch');
+  const sw = cardSwitch(page, ELLEN_ON);
   await expect(sw).toHaveAttribute('aria-checked', 'true');
   await sw.click();
   await expect(sw).toHaveAttribute('aria-checked', 'false');
   await expect(card(page, ELLEN_ON)).toHaveClass(/is-off/);
   await page.reload();
-  await expect(card(page, ELLEN_ON).getByRole('switch')).toHaveAttribute('aria-checked', 'false');
-  await card(page, ELLEN_ON).getByRole('switch').click();
-  await expect(card(page, ELLEN_ON).getByRole('switch')).toHaveAttribute('aria-checked', 'true');
+  await expect(cardSwitch(page, ELLEN_ON)).toHaveAttribute('aria-checked', 'false');
+  await cardSwitch(page, ELLEN_ON).click();
+  await expect(cardSwitch(page, ELLEN_ON)).toHaveAttribute('aria-checked', 'true');
 });
 
 test('the details drawer opens on its tabs and closes with Escape', async ({ page }) => {
@@ -115,15 +120,16 @@ test('menus, the activity panel and dialogs sit on top of everything', async ({ 
   await page.mouse.click(5, 5);
 
   // The activity panel over the Library.
-  await page.getByRole('button', { name: /^Activity/ }).click();
-  const activity = page.getByLabel('Recent activity');
-  await expectOnTop(activity);
-  await page.getByRole('button', { name: /^Activity/ }).click();
+  const activityBtn = page.getByRole('button', { name: /^Activity/ });
+  await activityBtn.click();
+  await expectOnTop(page.getByLabel('Recent activity'));
+  await activityBtn.click();
 
   // A dialog over the page and its toolbar.
   await page.getByRole('button', { name: 'Library tools' }).click();
-  await expectOnTop(page.getByRole('menu').getByText('Import from another launcher'));
-  await page.getByRole('menu').getByText('Import from another launcher').click();
+  const importItem = page.getByRole('menu').getByText('Import from another launcher');
+  await expectOnTop(importItem);
+  await importItem.click();
   const dialog = page.locator('.overlay [role="dialog"]').first();
   await expectOnTop(dialog);
   await page.keyboard.press('Escape');
@@ -131,10 +137,10 @@ test('menus, the activity panel and dialogs sit on top of everything', async ({ 
 });
 
 test('sorting by name lists the mods A to Z', async ({ page }) => {
-  await page.locator('select').filter({ has: page.locator('option[value="size"]') }).selectOption('alphabetical');
+  await sortSelect(page).selectOption('alphabetical');
   const titles = await cardTitles(page);
   expect(titles).toEqual([...titles].sort((a, b) => a.localeCompare(b)));
-  await page.locator('select').filter({ has: page.locator('option[value="size"]') }).selectOption('size');
+  await sortSelect(page).selectOption('size');
   await expectAll(page);
 });
 
@@ -145,11 +151,11 @@ test('bulk select turns several mods off and back on together', async ({ page })
   const bar = page.getByRole('toolbar', { name: 'Selected mods' });
   await expect(bar).toContainText('2 selected');
   await bar.getByRole('button', { name: 'Turn off' }).click();
-  await expect(card(page, ELLEN_ON).getByRole('switch')).toHaveAttribute('aria-checked', 'false');
-  await expect(card(page, MIYABI).getByRole('switch')).toHaveAttribute('aria-checked', 'false');
+  await expect(cardSwitch(page, ELLEN_ON)).toHaveAttribute('aria-checked', 'false');
+  await expect(cardSwitch(page, MIYABI)).toHaveAttribute('aria-checked', 'false');
   await bar.getByRole('button', { name: 'Turn on' }).click();
-  await expect(card(page, ELLEN_ON).getByRole('switch')).toHaveAttribute('aria-checked', 'true');
-  await expect(card(page, MIYABI).getByRole('switch')).toHaveAttribute('aria-checked', 'true');
+  await expect(cardSwitch(page, ELLEN_ON)).toHaveAttribute('aria-checked', 'true');
+  await expect(cardSwitch(page, MIYABI)).toHaveAttribute('aria-checked', 'true');
   await page.keyboard.press('Escape');
   await expect(bar).toBeHidden();
 });
@@ -157,13 +163,11 @@ test('bulk select turns several mods off and back on together', async ({ page })
 test('offline: the Library still works and Browse says it is offline', async ({ page }) => {
   // The web build talks to its backend over HTTP, so the network can't really be cut here; the app
   // is told it's offline the way Windows tells it (navigator.onLine and the "offline" event).
-  const goOffline = () =>
-    page.evaluate(() => {
-      Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false });
-      window.dispatchEvent(new Event('offline'));
-    });
-  await goOffline();
-  const sw = card(page, ELLEN_ON).getByRole('switch');
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false });
+    window.dispatchEvent(new Event('offline'));
+  });
+  const sw = cardSwitch(page, ELLEN_ON);
   await sw.click();
   await expect(sw).toHaveAttribute('aria-checked', 'false');
   await sw.click();

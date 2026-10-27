@@ -3,6 +3,7 @@ import { ArrowDownToLine, Loader2, RefreshCw, Rocket, X } from 'lucide-react';
 import { fairyClient, AppUpdateStatus } from '../services/fairyClient';
 import type { GameBananaModItem, ModManifest } from '../shared/types';
 import { Modal } from './index';
+import { isBrowserOffline } from './online';
 
 /* ------------------------------------------------------------------ */
 /* App self-update                                                     */
@@ -146,7 +147,7 @@ export function useModUpdates(mods: ModManifest[] | null) {
     const list = (modsRef.current ?? []).filter((m) => m.gamebanana_id && !(m.tags || []).includes('Workshop'));
     if (runningRef.current) return { found: 0, checked: 0, offline: false };
     // No internet: nothing to ask GameBanana; checked again when the connection is back.
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) return { found: 0, checked: 0, offline: true };
+    if (isBrowserOffline()) return { found: 0, checked: 0, offline: true };
     runningRef.current = true;
     setChecking(true);
     const found: Record<string, GameBananaModItem> = {};

@@ -43,6 +43,11 @@ type StatusFilter = 'ALL' | 'ON' | 'OFF' | 'ATTENTION';
 type CategoryFilter = 'ALL' | 'Skins' | 'Weapons' | 'UI' | 'Audio';
 type SortBy = 'alphabetical' | 'newest' | 'updated' | 'size' | 'status';
 
+/** "1 mod", "3 mods". */
+function modCount(n: number): string {
+  return `${n} mod${n === 1 ? '' : 's'}`;
+}
+
 interface LibraryScreenProps {
   modUpdates: Record<string, GameBananaModItem>;
   updatingIds: Set<string>;
@@ -154,11 +159,19 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
         return true;
       })
       .sort((a, b) => {
-        if (sortBy === 'newest') return (b.installed_at || '').localeCompare(a.installed_at || '');
-        if (sortBy === 'updated') return (b.updated_at || b.installed_at || '').localeCompare(a.updated_at || a.installed_at || '');
-        if (sortBy === 'size') return (b.file_size_bytes || 0) - (a.file_size_bytes || 0) || a.title.localeCompare(b.title);
-        if (sortBy === 'status') return Number(b.enabled) - Number(a.enabled) || a.title.localeCompare(b.title);
-        return a.title.localeCompare(b.title);
+        const byName = () => a.title.localeCompare(b.title);
+        switch (sortBy) {
+          case 'newest':
+            return (b.installed_at || '').localeCompare(a.installed_at || '');
+          case 'updated':
+            return (b.updated_at || b.installed_at || '').localeCompare(a.updated_at || a.installed_at || '');
+          case 'size':
+            return (b.file_size_bytes || 0) - (a.file_size_bytes || 0) || byName();
+          case 'status':
+            return Number(b.enabled) - Number(a.enabled) || byName();
+          default:
+            return byName();
+        }
       });
   }, [visibleMods, agentId, category, status, query, sortBy, p]);
 
@@ -182,6 +195,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const pickedMods = visibleMods.filter((m) => picked.has(m.mod_uuid));
   const pickedWithUpdates = pickedMods.filter((m) => p.modUpdates[m.mod_uuid]);
+  const allShownPicked = filtered.every((m) => picked.has(m.mod_uuid));
   const stopSelecting = () => {
     setSelecting(false);
     setPicked(new Set());
@@ -199,7 +213,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
   const pickAllShown = () => setPicked((prev) => new Set([...prev, ...filtered.map((m) => m.mod_uuid)]));
   const bulkSwitch = (enabled: boolean) => {
     const changes = pickedMods.filter((m) => m.enabled !== enabled).map((m) => ({ modUuid: m.mod_uuid, enabled }));
-    p.onSetModsEnabled(changes, `Turned ${enabled ? 'on' : 'off'} ${changes.length} mod${changes.length === 1 ? '' : 's'}`, true);
+    p.onSetModsEnabled(changes, `Turned ${enabled ? 'on' : 'off'} ${modCount(changes.length)}`, true);
   };
   const bulkUpdate = () => {
     for (const m of pickedWithUpdates) p.onUpdateMod(m.mod_uuid);
@@ -623,7 +637,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
                 <span className="select-bar__count">
                   <strong>{pickedMods.length}</strong> selected
                 </span>
-                <button className="btn btn--ghost btn--sm" onClick={pickAllShown} disabled={filtered.every((m) => picked.has(m.mod_uuid))}>
+                <button className="btn btn--ghost btn--sm" onClick={pickAllShown} disabled={allShownPicked}>
                   Select all {filtered.length} shown
                 </button>
                 {pickedMods.length > 0 && (
@@ -634,9 +648,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
                 <div className="spacer" />
                 {confirmBulkDelete ? (
                   <>
-                    <span className="small">
-                      Delete {pickedMods.length} mod{pickedMods.length === 1 ? '' : 's'}? They go to Recently deleted.
-                    </span>
+                    <span className="small">Delete {modCount(pickedMods.length)}? They go to Recently deleted.</span>
                     <button className="btn btn--ghost btn--sm" onClick={() => setConfirmBulkDelete(false)}>
                       Keep them
                     </button>

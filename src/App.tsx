@@ -710,12 +710,12 @@ const AppInner: React.FC = () => {
   };
 
   const handleDeleteMods = async (modUuids: string[]) => {
-    let done = 0;
+    let deleted = 0;
     let latest: FullAppState | null = null;
     for (const id of modUuids) {
       try {
         latest = (await fairyClient.deleteMod(id)).state;
-        done++;
+        deleted++;
       } catch (err) {
         notify({ tone: 'error', title: 'Couldn’t delete a mod', message: errMsg(err) });
       }
@@ -725,7 +725,7 @@ const AppInner: React.FC = () => {
       setSelectedModUuid(null);
       setInspectorOpen(false);
     }
-    if (done) notify({ tone: 'success', title: `Deleted ${done} mod${done === 1 ? '' : 's'}`, message: 'They can be put back from Recently deleted.' });
+    if (deleted) notify({ tone: 'success', title: `Deleted ${deleted} mod${deleted === 1 ? '' : 's'}`, message: 'They can be put back from Recently deleted.' });
   };
 
   const handleDeleteMod = async (modUuid: string) => {

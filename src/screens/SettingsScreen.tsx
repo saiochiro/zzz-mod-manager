@@ -151,6 +151,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = (p) => {
     return () => obs.disconnect();
   }, []);
 
+  const updateCheckOffline = p.appUpdate.state === 'error' && isOfflineError(p.appUpdate.message);
+
   return (
     <div className="screen">
       <div className="scroll" ref={scrollRef}>
@@ -404,7 +406,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = (p) => {
                         ? 'Checking for updates…'
                         : p.appUpdate.state === 'none'
                         ? 'You’re on the latest version'
-                        : p.appUpdate.state === 'error' && isOfflineError(p.appUpdate.message)
+                        : updateCheckOffline
                         ? 'You’re offline'
                         : p.appUpdate.state === 'error'
                         ? 'Couldn’t check for updates'
@@ -415,7 +417,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = (p) => {
                     <div className="small muted">
                       {p.appUpdate.state === 'unsupported'
                         ? 'Works in the installed version of the app (from the Setup file).'
-                        : p.appUpdate.state === 'error' && isOfflineError(p.appUpdate.message)
+                        : updateCheckOffline
                         ? 'Updates are checked when you’re back online.'
                         : p.appUpdate.state === 'error'
                         ? p.appUpdate.message

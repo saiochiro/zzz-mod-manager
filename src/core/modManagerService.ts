@@ -392,8 +392,10 @@ function isUnlabeledSkin(m: ModManifest): boolean {
 
 /* ------------------------------ disk space ------------------------------ */
 
-/** Free bytes on the drive holding `dir` (null when it can't be told). Swappable for tests. */
-let freeSpaceProbe: (dir: string) => number | null = (dir) => {
+type FreeSpaceProbe = (dir: string) => number | null;
+
+/** Free bytes on the drive holding `dir` (null when it can't be told). */
+function probeFreeSpace(dir: string): number | null {
   try {
     let at = dir;
     while (!fs.existsSync(at) && path.dirname(at) !== at) at = path.dirname(at);
@@ -402,11 +404,13 @@ let freeSpaceProbe: (dir: string) => number | null = (dir) => {
   } catch {
     return null;
   }
-};
+}
 
-const realFreeSpaceProbe = freeSpaceProbe;
-export function setFreeSpaceProbeForTest(probe: ((dir: string) => number | null) | null): void {
-  freeSpaceProbe = probe ?? realFreeSpaceProbe;
+let freeSpaceProbe: FreeSpaceProbe = probeFreeSpace;
+
+/** Swaps the free-space check for tests; null puts the real one back. */
+export function setFreeSpaceProbeForTest(probe: FreeSpaceProbe | null): void {
+  freeSpaceProbe = probe ?? probeFreeSpace;
 }
 
 /** Size of a file (a folder counts as 0: it's copied, not unpacked). */

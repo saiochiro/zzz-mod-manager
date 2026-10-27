@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ArrowUpCircle,
@@ -23,6 +23,13 @@ import type { ModClash } from '../shared/clashes';
 import type { MotifKind } from '../themes/types';
 import { Switch, ThumbImage, usePopover } from '../ui';
 import { getModHealth, HEALTH_META } from '../ui/modStatus';
+
+/** The card menu opens above its button when at least this much room (px) is above it. */
+const MENU_ROOM_ABOVE = 380;
+/** Gap (px) between the menu and its button. */
+const MENU_OFFSET = 6;
+/** Smallest gap (px) between the menu and the right edge of the window. */
+const MENU_EDGE_GAP = 8;
 
 interface ModDeckCardProps {
   mod: ModManifest;
@@ -84,15 +91,19 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
   const menu = usePopover();
   // The menu is drawn at the top level (not inside the card), so the sticky toolbar and the cards
   // around it can't cover it. Opens above the button when there's room, else below.
-  const menuBtnRef = React.useRef<HTMLButtonElement>(null);
+  const menuBtnRef = useRef<HTMLButtonElement>(null);
   const [menuPos, setMenuPos] = useState<React.CSSProperties | null>(null);
   useEffect(() => {
-    if (!menu.open) return setMenuPos(null);
+    if (!menu.open) {
+      setMenuPos(null);
+      return;
+    }
     const place = () => {
       const r = menuBtnRef.current?.getBoundingClientRect();
       if (!r) return;
-      const right = Math.max(8, window.innerWidth - r.right);
-      setMenuPos(r.top > 380 ? { right, bottom: window.innerHeight - r.top + 6 } : { right, top: r.bottom + 6 });
+      const right = Math.max(MENU_EDGE_GAP, window.innerWidth - r.right);
+      const fitsAbove = r.top > MENU_ROOM_ABOVE;
+      setMenuPos(fitsAbove ? { right, bottom: window.innerHeight - r.top + MENU_OFFSET } : { right, top: r.bottom + MENU_OFFSET });
     };
     place();
     const close = () => menu.setOpen(false);
