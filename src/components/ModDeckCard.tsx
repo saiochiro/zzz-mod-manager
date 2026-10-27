@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ArrowUpCircle,
   Loader2,
@@ -81,6 +82,28 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
   isFetchingFiles,
 }) => {
   const menu = usePopover();
+  // The menu is drawn at the top level (not inside the card), so the sticky toolbar and the cards
+  // around it can't cover it. Opens above the button when there's room, else below.
+  const menuBtnRef = React.useRef<HTMLButtonElement>(null);
+  const [menuPos, setMenuPos] = useState<React.CSSProperties | null>(null);
+  useEffect(() => {
+    if (!menu.open) return setMenuPos(null);
+    const place = () => {
+      const r = menuBtnRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const right = Math.max(8, window.innerWidth - r.right);
+      setMenuPos(r.top > 380 ? { right, bottom: window.innerHeight - r.top + 6 } : { right, top: r.bottom + 6 });
+    };
+    place();
+    const close = () => menu.setOpen(false);
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', close, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', close, true);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [menu.open]);
   const [revealed, setRevealed] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const health = getModHealth(mod);
@@ -249,6 +272,7 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
         <Switch checked={mod.enabled} onChange={onToggleEnabled} label={mod.enabled ? `Turn off ${mod.title}` : `Turn on ${mod.title}`} />
         <div ref={menu.ref} style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
           <button
+            ref={menuBtnRef}
             className="icon-btn icon-btn--sm"
             aria-label="More actions"
             aria-haspopup="menu"
@@ -260,8 +284,8 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
           >
             <MoreHorizontal />
           </button>
-          {menu.open && (
-            <div className="popover" style={{ right: 0, bottom: 'calc(100% + 6px)', width: 240, transformOrigin: 'bottom right' }} role="menu">
+          {menu.open && menuPos && createPortal(
+            <div className="popover popover--floating" data-popover-portal style={{ position: 'fixed', ...menuPos, width: 240 }} role="menu">
               <button className="menu-item" role="menuitem" onClick={() => (menu.setOpen(false), onOpenInspector())}>
                 <SlidersHorizontal />
                 Details &amp; hotkeys
@@ -329,6 +353,8 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
                 </button>
               )}
             </div>
+            ,
+            document.body
           )}
         </div>
       </div>

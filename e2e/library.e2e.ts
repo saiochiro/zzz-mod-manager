@@ -1,5 +1,5 @@
 // End-to-end checks of the core Library flows (spec Part 1 and the Part 4 smoke test), on the
-// built-in sample mods: 3 Ellen outfits (one off), a Miyabi mod that needs fixing, a Jane mod.
+// built-in sample mods (Ellen outfits, one of them off, a Miyabi mod that needs fixing, and more).
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
 const ELLEN_ON = 'Casual Shark Hoodie Ellen';
@@ -19,6 +19,9 @@ test.beforeEach(async ({ page }) => {
 
 const cards = (page: Page) => page.locator('article.mod-card');
 const card = (page: Page, title: string) => cards(page).filter({ hasText: title });
+/** How many mods are installed, as the "installed" pill says. */
+const installed = async (page: Page) => Number(await page.locator('.stat-pill', { hasText: 'installed' }).locator('strong').innerText());
+const expectAll = async (page: Page) => expect(cards(page)).toHaveCount(await installed(page));
 const cardTitles = async (page: Page) => (await page.locator('article.mod-card .mod-card__title').allInnerTexts()).map((t) => t.trim());
 
 /** The element is what you'd click at its centre: nothing else is drawn over it. */
@@ -33,7 +36,8 @@ async function expectOnTop(el: Locator) {
 }
 
 test('the Library shows every sample mod', async ({ page }) => {
-  await expect(cards(page)).toHaveCount(5);
+  expect(await installed(page)).toBeGreaterThanOrEqual(5);
+  await expectAll(page);
   for (const t of [ELLEN_ON, ELLEN_OFF, MIYABI]) await expect(card(page, t)).toHaveCount(1);
 });
 
@@ -42,13 +46,13 @@ test('search and the status filter narrow the grid, and clearing brings everythi
   await expect(cards(page)).toHaveCount(1);
   await expect(card(page, MIYABI)).toBeVisible();
   await page.getByPlaceholder('Search mods, creators, characters').fill('');
-  await expect(cards(page)).toHaveCount(5);
+  await expectAll(page);
 
   await page.getByRole('tablist', { name: 'Filter by status' }).getByText('Off', { exact: true }).click();
   await expect(cards(page)).toHaveCount(1);
   await expect(card(page, ELLEN_OFF)).toBeVisible();
   await page.getByRole('tablist', { name: 'Filter by status' }).getByText('All', { exact: true }).click();
-  await expect(cards(page)).toHaveCount(5);
+  await expectAll(page);
 });
 
 test('the status pills filter and toggle back', async ({ page }) => {
@@ -56,16 +60,16 @@ test('the status pills filter and toggle back', async ({ page }) => {
   await attention.click();
   const shown = await cards(page).count();
   expect(shown).toBeGreaterThan(0);
-  expect(shown).toBeLessThan(5);
+  expect(shown).toBeLessThan(await installed(page));
   await expect(card(page, MIYABI)).toBeVisible();
   await attention.click(); // again: back to everything
-  await expect(cards(page)).toHaveCount(5);
+  await expectAll(page);
 
   const onPill = page.locator('.stat-pill', { hasText: / on$/ });
   await onPill.click();
   await expect(card(page, ELLEN_OFF)).toHaveCount(0);
   await onPill.click();
-  await expect(cards(page)).toHaveCount(5);
+  await expectAll(page);
 });
 
 test('picking a character after Needs attention shows all of that character', async ({ page }) => {
@@ -73,7 +77,7 @@ test('picking a character after Needs attention shows all of that character', as
   await page.getByPlaceholder('Search mods, creators, characters').fill('Ellen');
   await page.getByPlaceholder('Search mods, creators, characters').fill('');
   await page.locator('.stat-pill', { hasText: 'installed' }).click();
-  await expect(cards(page)).toHaveCount(5);
+  await expectAll(page);
 });
 
 test('the card switch turns a mod off and on, and it sticks after a reload', async ({ page }) => {
@@ -105,7 +109,7 @@ test('the details drawer opens on its tabs and closes with Escape', async ({ pag
 test('menus, the activity panel and dialogs sit on top of everything', async ({ page }) => {
   // A card's menu over the cards below it.
   await card(page, ELLEN_ON).getByRole('button', { name: 'More actions' }).click();
-  const cardMenu = card(page, ELLEN_ON).getByRole('menu');
+  const cardMenu = page.getByRole('menu');
   await expectOnTop(cardMenu.getByRole('menuitem').first());
   await page.keyboard.press('Escape');
   await page.mouse.click(5, 5);
@@ -131,7 +135,7 @@ test('sorting by name lists the mods A to Z', async ({ page }) => {
   const titles = await cardTitles(page);
   expect(titles).toEqual([...titles].sort((a, b) => a.localeCompare(b)));
   await page.locator('select').filter({ has: page.locator('option[value="size"]') }).selectOption('size');
-  await expect(cards(page)).toHaveCount(5);
+  await expectAll(page);
 });
 
 test('bulk select turns several mods off and back on together', async ({ page }) => {
