@@ -768,6 +768,7 @@ export async function fetchGameBananaModProfile(modId: number): Promise<GameBana
           preview_images: allPreviews.length > 0 ? allPreviews : [resolvedThumb],
           profile_url: `https://gamebanana.com/mods/${modId}`,
           download_url: downloadUrl,
+          root_category: data._aRootCategory?._sName || undefined,
           file_id: primaryFile._idRow ? Number(primaryFile._idRow) : undefined,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           files: files.filter((f: any) => f?._idRow).map((f: any) => ({
@@ -1064,4 +1065,18 @@ export function pickGameBananaFile(
     if (same.length) return [...same].sort((a, b) => (b.added_at || 0) - (a.added_at || 0))[0];
   }
   return list.length === 1 ? list[0] : null;
+}
+
+/** GameBanana categories that are kinds of mod, not characters. */
+const NOT_A_CHARACTER = /^(skins?|other|misc|miscellaneous|ui|hud|audio|sounds?|music|voice|weapons?|w-?engines?|effects?|shaders?|bangboos?|npcs?|enemies|maps?|tools?|textures?|characters?|character skins)$/i;
+
+/**
+ * The character a GameBanana mod is for, when its page files it under a character's category
+ * (in the Skins section). Null for mods that aren't about one character.
+ */
+export function gameBananaCharacterOf(meta: { category?: string | null; root_category?: string | null }): string | null {
+  const name = (meta.category || '').trim();
+  if (!name || NOT_A_CHARACTER.test(name)) return null;
+  if (meta.root_category && !/skin|character/i.test(meta.root_category)) return null;
+  return name;
 }

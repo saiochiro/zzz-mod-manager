@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CloudOff, RefreshCw, UploadCloud } from 'lucide-react';
 import { CustomTitleBar } from './components/CustomTitleBar';
 import { GameBananaBrowserTab } from './components/GameBananaBrowserTab';
@@ -541,8 +541,11 @@ const AppInner: React.FC = () => {
   };
 
   /** Several mods on/off at once ("All off", "Surprise me"): instant on screen, one sync behind it. */
-  const handleSetModsEnabled = async (changes: Array<{ modUuid: string; enabled: boolean }>, message: string) => {
+  const handleSetModsEnabled = async (changes: Array<{ modUuid: string; enabled: boolean }>, message: string, undoable = false) => {
     if (!changes.length) return;
+    // What to put back on Undo: only the mods this actually changes.
+    const before = new Map((appState?.mods ?? []).map((m) => [m.mod_uuid, m.enabled]));
+    const undo = changes.filter((c) => before.has(c.modUuid) && before.get(c.modUuid) !== c.enabled).map((c) => ({ modUuid: c.modUuid, enabled: !c.enabled }));
     const want = new Map(changes.map((c) => [c.modUuid, c.enabled]));
     setAppState((prev) =>
       prev ? { ...prev, mods: prev.mods.map((m) => (want.has(m.mod_uuid) ? { ...m, enabled: want.get(m.mod_uuid)! } : m)) } : prev
@@ -551,7 +554,11 @@ const AppInner: React.FC = () => {
     try {
       const res = await fairyClient.setModsEnabled(changes);
       if (seq === toggleSeqRef.current) setAppState(res.state);
-      notify({ tone: 'success', title: message });
+      notify({
+        tone: 'success',
+        title: message,
+        action: undoable && undo.length ? { label: 'Undo', onClick: () => void handleSetModsEnabled(undo, 'Put back as it was') } : undefined,
+      });
     } catch (err) {
       fairyClient.getState().then(setAppState).catch(() => {});
       notify({ tone: 'error', title: 'Couldn’t switch those mods', message: errMsg(err) });
@@ -873,6 +880,33 @@ const AppInner: React.FC = () => {
     }
   };
 
+  /** Puts back the version an update replaced (the newer one goes to backups, so this can be undone too). */
+  const handleUndoUpdate = async (uuid: string) => {
+    const backupId = appState?.previousVersions?.[uuid];
+    const mod = appState?.mods.find((m) => m.mod_uuid === uuid);
+    if (!backupId || !mod) return;
+    setUpdatingIds((prev) => new Set(prev).add(uuid));
+    try {
+      const res = await fairyClient.restoreBackup(backupId);
+      setAppState(res.state);
+      const back = res.state.previousVersions?.[uuid];
+      notify({
+        tone: 'success',
+        title: `Went back to the previous version of “${mod.title}”`,
+        message: 'The newer version is in backups.',
+        action: back ? { label: 'Undo', onClick: () => void handleUndoUpdate(uuid) } : undefined,
+      });
+    } catch (err) {
+      notify({ tone: 'error', title: `Couldn’t go back to the previous version of “${mod.title}”`, message: errMsg(err) });
+    } finally {
+      setUpdatingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(uuid);
+        return next;
+      });
+    }
+  };
+
   const handleUpdateAllMods = async () => {
     const ids = Object.keys(modUpdates.updates);
     let ok = 0;
@@ -968,23 +1002,6 @@ const AppInner: React.FC = () => {
   /* ---------------------------------------------------------------- */
   /* Derived                                                          */
   /* ---------------------------------------------------------------- */
-  const conflictingAgentIds = useMemo(() => {
-    if (!appState) return new Set<string>();
-    const byAgent = new Map<string, ModManifest[]>();
-    for (const m of appState.mods) {
-      if (m.enabled && m.agent_id !== 'uncategorized') {
-        const list = byAgent.get(m.agent_id) || [];
-        list.push(m);
-        byAgent.set(m.agent_id, list);
-      }
-    }
-    const ids = new Set<string>();
-    for (const [agentId, list] of byAgent) {
-      if (list.length >= 2 && list.some((m) => !m.in_h_swap_cycle)) ids.add(agentId);
-    }
-    return ids;
-  }, [appState]);
-
   const resolveAgent = useCallback(
     (agentId: string, title?: string): AgentHashEntry | null => {
       if (!appState) return null;
@@ -1212,7 +1229,10 @@ const AppInner: React.FC = () => {
               singleActivePerAgent={Boolean(config.singleActivePerAgent)}
               selectedModUuid={inspectorOpen ? selectedModUuid : null}
               resolveAgent={resolveAgent}
-              conflictingAgentIds={conflictingAgentIds}
+              previousVersions={appState?.previousVersions ?? {}}
+              onUndoUpdate={handleUndoUpdate}
+              deletedBackups={appState?.deletedBackups ?? 0}
+              onStateChange={setAppState}
               onOpenMod={handleOpenInspector}
               onToggleEnabled={handleToggleEnabled}
               onRepair={handleRepairMod}
@@ -1349,6 +1369,7 @@ const AppInner: React.FC = () => {
               canUndoOrganize={canUndoOrganize}
               onOpenImport={() => setImportOpen(true)}
               onOpenThemes={() => setScreen('themes')}
+              onStateChange={setAppState}
               onRunSetup={() => setSetupOpen(true)}
             />
           )}

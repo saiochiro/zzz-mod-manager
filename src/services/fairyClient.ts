@@ -48,6 +48,10 @@ export interface FullAppState {
   fairyState: FairyState;
   /** Mods the game loads from outside ProxyLaunch (e.g. left by another mod manager). */
   unmanagedGameMods?: Array<{ name: string; path: string }>;
+  /** mod id -> id of the backup of its previous version (newest). */
+  previousVersions?: Record<string, string>;
+  /** How many deleted mods can be put back. */
+  deletedBackups?: number;
 }
 
 async function invokeBackend<T = any>(channel: string, ...args: any[]): Promise<T> {
@@ -393,6 +397,8 @@ export const fairyClient = {
 
   /** File Explorer opens with the mod's folder selected. */
   revealMod: (modUuid: string): Promise<boolean> => invokeBackend('zzz:revealMod', modUuid),
+  /** Saves a bug report zip (the user picks where). */
+  reportBug: (note?: string): Promise<{ saved: boolean; fileName?: string }> => invokeBackend('app:reportBug', note),
   /** Backups (previous versions, deleted mods, Tidy keys copies, leftovers): list, size, restore, clean up. */
   listBackups: (): Promise<{ backups: BackupEntry[]; summary: { total_bytes: number; count: number; by_kind: Record<string, { count: number; bytes: number }> } }> =>
     invokeBackend('backups:list'),

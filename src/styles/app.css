@@ -5001,3 +5001,209 @@ html[data-paused] *::after {
 html[data-paused] .fx-glow {
   opacity: 0 !important;
 }
+
+/* ------------------------------------------------------------------ */
+/* Backups (Settings, Recently deleted)                                */
+/* ------------------------------------------------------------------ */
+.backups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+.backups__usage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.backups__total {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+}
+.backups__total-num {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+/* The one bold thing here: space used, split by kind; a part filters the list. */
+.backups__strip {
+  display: flex;
+  gap: 3px;
+  height: 14px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--raised);
+}
+.backups__seg {
+  flex-basis: 0;
+  min-width: 8px;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-out);
+}
+.backups__seg:hover,
+.backups__seg.is-active {
+  opacity: 1;
+}
+.backups__strip:has(.is-active) .backups__seg:not(.is-active) {
+  opacity: 0.3;
+}
+.backups__seg:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: -2px;
+}
+.backups__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-1) var(--s-3);
+}
+.backups__key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  margin-left: -6px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.backups__key:hover {
+  background: var(--hover);
+}
+.backups__key.is-active {
+  background: var(--primary-soft);
+}
+.backups__key:focus-visible {
+  outline: 2px solid var(--primary);
+}
+.backups__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.backups__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 420px;
+  overflow-y: auto;
+}
+.backups__row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--border);
+}
+.backups__row:last-child {
+  border-bottom: 0;
+}
+.backups__title {
+  font-weight: 600;
+}
+.backups__cleanup {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--border);
+}
+@media (prefers-reduced-motion: reduce) {
+  .backups__seg {
+    transition: none;
+  }
+}
+
+/* Clash strip on a Library card: what it clashes with, and turning that one off. */
+.mod-card__clash {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 6px 6px 10px;
+  border-radius: var(--r-md);
+  background: rgba(20, 14, 2, 0.82);
+  backdrop-filter: blur(6px);
+  color: #fde68a;
+  font-size: var(--fs-cap);
+  line-height: 1.25;
+}
+.mod-card__clash svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.mod-card__clash .btn {
+  flex: none;
+  height: 26px;
+  padding: 0 8px;
+  font-size: var(--fs-cap);
+}
+
+/* GameBanana file picker */
+.file-pick__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.file-pick__option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--raised);
+  cursor: pointer;
+  transition: border-color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
+}
+.file-pick__option:hover {
+  border-color: var(--border-strong);
+}
+.file-pick__option.is-picked {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.file-pick__option:focus-within {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.file-pick__option input {
+  margin-top: 3px;
+  accent-color: var(--primary);
+}
+.file-pick__name {
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.file-pick__desc {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.file-pick__facts {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--text-muted);
+  font-size: var(--fs-cap);
+  font-variant-numeric: tabular-nums;
+}
+.file-pick__tag {
+  color: var(--primary-text);
+  font-weight: 650;
+}

@@ -1,7 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, net, protocol, safeStorage, session, shell } from 'electron';
 import { pathToFileURL } from 'url';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
+import { buildBugReport } from '../src/core/bugReport';
 import { fetchGameBananaModProfile } from '../src/core/gamebananaService';
 import { applyNsfwReview, onNsfwVerdictsUpdated, refreshNsfwVerdicts } from '../src/core/nsfwReview';
 import { ModManagerService } from '../src/core/modManagerService';
@@ -553,6 +555,33 @@ handleIpc('backups:prune', async (_e, opts?: { olderThanDays?: number; keepPerMo
   modService.pruneBackups(opts ?? {})
 );
 
+// Report a bug: a zip with the activity log, version, settings and mod list, with the user's
+// Windows name and home folder removed. The user picks where it goes.
+handleIpc('app:reportBug', async (_e, note?: string) => {
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+  const res = await dialog.showSaveDialog({
+    title: 'Save bug report',
+    defaultPath: path.join(app.getPath('desktop'), `ProxyLaunch-bug-report-${stamp}.zip`),
+    filters: [{ name: 'Zip', extensions: ['zip'] }],
+  });
+  if (res.canceled || !res.filePath) return { saved: false };
+  const state = modService.getFullState();
+  const zip = buildBugReport(
+    {
+      appVersion: app.getVersion(),
+      platform: `${process.platform} ${os.release()} (${process.arch}), Electron ${process.versions.electron}`,
+      config: state.config as unknown as Record<string, unknown>,
+      logs: state.logs,
+      mods: state.mods,
+      note: typeof note === 'string' ? note.slice(0, 4000) : undefined,
+    },
+    { homeDir: os.homedir(), username: os.userInfo().username }
+  );
+  fs.writeFileSync(res.filePath, zip);
+  shell.showItemInFolder(res.filePath);
+  return { saved: true, fileName: path.basename(res.filePath) };
+});
+
 handleIpc('zzz:downloadMissingFiles', async (_e, modUuid: string) => {
   const res = await modService.downloadMissingFiles(String(modUuid));
   return { ...res, state: modService.getFullState() };
@@ -624,6 +653,11 @@ app.whenReady().then(() => {
     } catch (err) {
       writeBootLog(`repair mislabeled updates: ${(err as Error).message}`);
     }
+    // Label older mods for characters ZZMI doesn't know yet (asks GameBanana, a few per start).
+    modService
+      .backfillUnsupportedCharacters()
+      .then((n) => n && mainWindow?.webContents.send('zzz:stateUpdated', modService.getFullState()))
+      .catch((err) => writeBootLog(`unsupported characters: ${(err as Error).message}`));
   }, 3000);
   setupUpdater(() => mainWindow, writeBootLog, () => {
     // Everything that could keep the process alive while the installer runs.

@@ -23,13 +23,19 @@ import {
   Wand2,
   Wrench,
   CloudDownload,
+  Trash2,
+  X,
 } from 'lucide-react';
 import type { AgentHashEntry, GameBananaModItem, HashDatabase, ModManifest, NsfwFilterState } from '../shared/types';
+import { findClashes } from '../shared/clashes';
+import { isOutfitMod } from '../shared/outfits';
+import type { FullAppState } from '../services/fairyClient';
+import { BackupsPanel } from '../components/BackupsPanel';
 import type { ThemeDefinition } from '../themes/types';
 import { Motif } from '../themes/Motif';
 import { AgentRosterSidebar } from '../components/AgentRosterSidebar';
 import { ModDeckCard } from '../components/ModDeckCard';
-import { EmptyState, SearchInput, Segmented, Switch, usePopover } from '../ui';
+import { EmptyState, Modal, SearchInput, Segmented, Switch, usePopover } from '../ui';
 import { getModHealth } from '../ui/modStatus';
 
 type StatusFilter = 'ALL' | 'ON' | 'OFF' | 'ATTENTION';
@@ -48,7 +54,12 @@ interface LibraryScreenProps {
   singleActivePerAgent: boolean;
   selectedModUuid: string | null;
   resolveAgent: (agentId: string, title?: string) => AgentHashEntry | null;
-  conflictingAgentIds: Set<string>;
+  /** mod id -> backup of its previous version. */
+  previousVersions: Record<string, string>;
+  onUndoUpdate: (uuid: string) => void;
+  /** Deleted mods that can be put back. */
+  deletedBackups: number;
+  onStateChange: (s: FullAppState) => void;
   onOpenMod: (uuid: string) => void;
   onToggleEnabled: (uuid: string) => void;
   onRepair: (uuid: string) => void;
@@ -70,7 +81,8 @@ interface LibraryScreenProps {
   onUndoOrganize: () => void;
   canUndoOrganize: boolean;
   /** Turns several mods on/off at once; `message` is shown when it's done. */
-  onSetModsEnabled: (changes: Array<{ modUuid: string; enabled: boolean }>, message: string) => void;
+  /** `undoable`: the toast offers Undo. */
+  onSetModsEnabled: (changes: Array<{ modUuid: string; enabled: boolean }>, message: string, undoable?: boolean) => void;
   /** Tidy hotkeys for one character (or every mod when no character is picked). */
   onTidyHotkeys: (agentId?: string) => void;
   /** Mods the game loads from outside ProxyLaunch, and what to do with one. */
@@ -145,8 +157,9 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
       });
   }, [visibleMods, agentId, category, status, query, sortBy, p]);
 
-  // "Surprise me": a random outfit (skin) for the picked character; its other outfits go off.
-  const outfitChoices = scopedMods.filter((m) => (m.category_tag || 'Skins') === 'Skins' && getModHealth(m) !== 'broken');
+  // "Surprise me": a random outfit for the picked character (any mod that changes how they look,
+  // whatever it's tagged); its other outfits go off.
+  const outfitChoices = scopedMods.filter((m) => isOutfitMod(m) && getModHealth(m) !== 'broken');
   const surpriseOutfit = () => {
     const current = outfitChoices.filter((m) => m.enabled).map((m) => m.mod_uuid);
     const pool = outfitChoices.filter((m) => !(current.length === 1 && current[0] === m.mod_uuid));
@@ -167,7 +180,15 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
   };
 
   const selectedAgent = agentId !== 'ALL' && agentId !== 'uncategorized' ? p.hashDb.agents[agentId] : null;
-  const conflictNames = Array.from(p.conflictingAgentIds).map((id) => p.hashDb.agents[id]?.display_name || id);
+  // Mods that are on and change the same things: shown on each card, and summed up per character.
+  const clashes = useMemo(() => findClashes(p.mods), [p.mods]);
+  const conflictNames = Array.from(
+    new Set(p.mods.filter((m) => clashes.has(m.mod_uuid)).map((m) => (m.agent_id === 'uncategorized' ? 'UI & effects' : p.hashDb.agents[m.agent_id]?.display_name || m.agent_id)))
+  );
+  const [deletedOpen, setDeletedOpen] = useState(false);
+  // "All off": the picked character's mods; with everything shown, every character's mods but not
+  // UI & effects mods (UID hiders and the like usually stay on). Undo is one click on the toast.
+  const allOffTargets = scopedMods.filter((m) => m.enabled && (agentId !== 'ALL' || m.agent_id !== 'uncategorized'));
   const libraryEmpty = p.mods.length === 0;
 
   const heroTitle = selectedAgent ? selectedAgent.display_name : agentId === 'uncategorized' ? 'UI & effects' : 'Library';
@@ -255,16 +276,27 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
                     Surprise me
                   </button>
                 )}
-                {onCount > 0 && (
+                {allOffTargets.length > 0 && (
                   <button
                     className="btn btn--secondary"
                     onClick={() =>
                       p.onSetModsEnabled(
-                        scopedMods.filter((m) => m.enabled).map((m) => ({ modUuid: m.mod_uuid, enabled: false })),
-                        selectedAgent ? `Turned off all of ${selectedAgent.display_name}'s mods` : 'Turned off all mods'
+                        allOffTargets.map((m) => ({ modUuid: m.mod_uuid, enabled: false })),
+                        selectedAgent
+                          ? `Turned off all of ${selectedAgent.display_name}'s mods`
+                          : agentId === 'uncategorized'
+                          ? 'Turned off all UI & effects mods'
+                          : `Turned off ${allOffTargets.length} character mod${allOffTargets.length === 1 ? '' : 's'}`,
+                        true
                       )
                     }
-                    title={selectedAgent ? `Turn off all of ${selectedAgent.display_name}'s mods` : 'Turn off every mod'}
+                    title={
+                      selectedAgent
+                        ? `Turn off all of ${selectedAgent.display_name}'s mods`
+                        : agentId === 'uncategorized'
+                        ? 'Turn off every UI & effects mod'
+                        : 'Turn off every character mod (UI & effects mods stay on)'
+                    }
                   >
                     <PowerOff />
                     All off
@@ -282,6 +314,12 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
                   >
                     <Keyboard />
                     Tidy keys
+                  </button>
+                )}
+                {p.deletedBackups > 0 && (
+                  <button className="btn btn--ghost" onClick={() => setDeletedOpen(true)} title="Put back mods you deleted">
+                    <Trash2 />
+                    Recently deleted ({p.deletedBackups})
                   </button>
                 )}
                 <button className="btn btn--primary" onClick={p.onInstallArchive}>
@@ -499,7 +537,9 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
                     motif={p.theme.motif}
                     agent={p.resolveAgent(mod.agent_id, mod.title)}
                     isSelected={p.selectedModUuid === mod.mod_uuid}
-                    isConflicting={p.conflictingAgentIds.has(mod.agent_id)}
+                    clashes={clashes.get(mod.mod_uuid)}
+                    onTurnOffMod={(id, title) => p.onSetModsEnabled([{ modUuid: id, enabled: false }], `Turned off “${title}”`, true)}
+                    onUndoUpdate={p.previousVersions[mod.mod_uuid] ? () => p.onUndoUpdate(mod.mod_uuid) : undefined}
                     onOpenInspector={() => p.onOpenMod(mod.mod_uuid)}
                     onToggleEnabled={() => p.onToggleEnabled(mod.mod_uuid)}
                     onRepair={() => p.onRepair(mod.mod_uuid)}
@@ -531,6 +571,22 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = (p) => {
           </div>
         </div>
       </div>
+      <Modal open={deletedOpen} onClose={() => setDeletedOpen(false)} labelledBy="deleted-title">
+        <div className="modal__header">
+          <div style={{ flex: 1 }}>
+            <h2 id="deleted-title" className="h3">
+              Recently deleted
+            </h2>
+            <p className="small muted">Put a mod back with its keys, cover and settings as they were. Older ones can be cleaned up in Settings.</p>
+          </div>
+          <button className="icon-btn" onClick={() => setDeletedOpen(false)} aria-label="Close">
+            <X />
+          </button>
+        </div>
+        <div className="modal__body">
+          <BackupsPanel only={['deleted']} compact onStateChange={p.onStateChange} />
+        </div>
+      </Modal>
     </div>
   );
 };

@@ -45,6 +45,7 @@ import {
   classifyModCategoryTag,
   CURATED_GAMEBANANA_MODS,
   fetchGameBananaModProfile,
+  gameBananaCharacterOf,
   pickGameBananaFile,
   fetchLiveGameBananaFeed,
   isModRecordNsfw,
@@ -61,6 +62,7 @@ import {
 import { applyNsfwReview, initNsfwReview, nsfwKey } from './nsfwReview';
 import { isSanitized, restoreMod } from './nsfwSanitizer';
 import { planModKeys, scopeKeysToCharacter, toggleId } from '../shared/hotkeys';
+import { isOutfitMod } from '../shared/outfits';
 /**
  * Renames a mod folder, retrying for a few seconds when Windows briefly locks it (antivirus,
  * search indexing, Explorer previews, the game reading files). Throws a clear message if it stays locked.
@@ -2058,11 +2060,26 @@ endif
     } catch {
       // game folder not reachable
     }
+    // Backups the Library offers: the previous version of each updated mod, and deleted mods.
+    const previousVersions: Record<string, string> = {};
+    let deletedBackups = 0;
+    try {
+      for (const b of this.listBackups({ sizes: false })) {
+        if (b.kind === 'update' && b.mod_uuid && !previousVersions[b.mod_uuid] && mods.some((m) => m.mod_uuid === b.mod_uuid)) {
+          previousVersions[b.mod_uuid] = b.id; // newest first
+        }
+        if (b.kind === 'deleted') deletedBackups++;
+      }
+    } catch {
+      // no backups folder yet
+    }
     return {
       config: this.getConfig(),
       hashDb: this.getHashDb(),
       mods,
       unmanagedGameMods,
+      previousVersions,
+      deletedBackups,
       logs: this.logs,
       fairyState: this.computeFairyState(mods),
     };
@@ -3014,6 +3031,9 @@ endif
         sanitized_warnings: root.sanitizedWarnings,
         gamebanana_file_id: gbMeta?.file_id,
         gamebanana_file_name: gbMeta?.file_id ? gbMeta.file_name : undefined,
+        // GameBanana says it's for a character ZZMI doesn't know yet (its hashes match nobody).
+        unsupported_character: !agent && gbMeta ? gameBananaCharacterOf(gbMeta) ?? undefined : undefined,
+        unsupported_checked: gbMeta ? true : undefined,
       };
 
       fs.writeFileSync(
@@ -3824,7 +3844,7 @@ endif
       // (then the newest). Characters with nothing on, UI mods and other kinds stay as they are.
       const byAgent = new Map<string, ModManifest[]>();
       for (const m of mods) {
-        if (!m.enabled || m.agent_id === 'uncategorized' || (m.category_tag || 'Skins') !== 'Skins') continue;
+        if (!m.enabled || !isOutfitMod(m)) continue;
         byAgent.set(m.agent_id, [...(byAgent.get(m.agent_id) || []), m]);
       }
       for (const list of byAgent.values()) {
@@ -4239,7 +4259,7 @@ endif
   }
 
   /** Every backup, newest first. */
-  public listBackups(): BackupEntry[] {
+  public listBackups(opts: { sizes?: boolean } = {}): BackupEntry[] {
     const out: BackupEntry[] = [];
     for (const [kind, dirName] of Object.entries(BACKUP_KINDS) as Array<[BackupKind, string]>) {
       const root = path.join(this.backupsRoot(), dirName);
@@ -4277,7 +4297,7 @@ endif
           mod_uuid: manifest?.mod_uuid,
           gamebanana_id: manifest?.gamebanana_id ?? null,
           created_at: created.toISOString(),
-          size_bytes: computeDirectorySizeBytes(abs),
+          size_bytes: opts.sizes === false ? 0 : computeDirectorySizeBytes(abs),
         });
       }
     }
@@ -4442,6 +4462,41 @@ endif
     }
     if (removed) this.addLog('info', 'FAIRY_CORE', `Cleaned up ${removed} old backup(s), freeing ${(freed / 1024 / 1024).toFixed(1)} MB.`);
     return { removed, freed_bytes: freed };
+  }
+
+  /**
+   * Mods installed before ProxyLaunch could tell, with no character: asks GameBanana whether the
+   * page files them under a character ZZMI doesn't know yet, so they're labeled that way instead
+   * of as UI mods. A few per run, each page asked once. Returns how many got a label.
+   */
+  public async backfillUnsupportedCharacters(limit = 12): Promise<number> {
+    const todo = this.scanInstalledMods()
+      .filter((m) => m.agent_id === 'uncategorized' && m.gamebanana_id && !m.unsupported_checked)
+      .slice(0, limit);
+    let labeled = 0;
+    for (const mod of todo) {
+      let meta: GameBananaModItem;
+      try {
+        meta = await fetchGameBananaModProfile(mod.gamebanana_id!);
+      } catch {
+        continue;
+      }
+      if (meta.is_placeholder) continue; // GameBanana didn't answer: try again next time
+      const character = gameBananaCharacterOf(meta);
+      const dir = path.join(this.zzmiRootPath, mod.install_path);
+      const next: ModManifest = { ...mod, unsupported_checked: true, unsupported_character: character ?? undefined };
+      if (character) labeled++;
+      try {
+        for (const f of ['mod_manifest.json', 'mod.json']) {
+          if (f === 'mod_manifest.json' || fs.existsSync(path.join(dir, f))) fs.writeFileSync(path.join(dir, f), JSON.stringify(next, null, 2), 'utf-8');
+        }
+      } catch {
+        // folder moved meanwhile: try again next time
+      }
+      this.invalidateModCache(dir);
+    }
+    if (labeled) this.addLog('info', 'ROUTER', `${labeled} mod(s) are for characters ZZMI doesn't support yet.`);
+    return labeled;
   }
 
   public resolveUnmanagedGameMod(modPath: string, action: 'import' | 'disable'): { imported: number } {

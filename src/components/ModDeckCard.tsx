@@ -12,9 +12,12 @@ import {
   Trash2,
   Wrench,
   CloudDownload,
+  History,
+  PowerOff,
 } from 'lucide-react';
 import type { AgentHashEntry, GameBananaModItem, ModManifest, NsfwFilterState } from '../shared/types';
 import { isBlurredByNsfwFilter } from '../shared/nsfw';
+import type { ModClash } from '../shared/clashes';
 import type { MotifKind } from '../themes/types';
 import { Switch, ThumbImage, usePopover } from '../ui';
 import { getModHealth, HEALTH_META } from '../ui/modStatus';
@@ -24,7 +27,11 @@ interface ModDeckCardProps {
   agent: AgentHashEntry | null;
   motif: MotifKind;
   isSelected: boolean;
-  isConflicting?: boolean;
+  /** Mods that are on and change the same things as this one. */
+  clashes?: ModClash[];
+  onTurnOffMod?: (modUuid: string, title: string) => void;
+  /** Set when the version an update replaced can be put back. */
+  onUndoUpdate?: () => void;
   nsfwFilterState?: NsfwFilterState;
   index?: number;
   onOpenInspector: () => void;
@@ -47,7 +54,9 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
   agent,
   motif,
   isSelected,
-  isConflicting,
+  clashes,
+  onTurnOffMod,
+  onUndoUpdate,
   nsfwFilterState = 'show', // Library cards are never filtered or blurred
   index = 0,
   onOpenInspector,
@@ -70,7 +79,14 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
   const meta = HEALTH_META[health];
   const HealthIcon = meta.icon;
   const blurred = isBlurredByNsfwFilter(mod, nsfwFilterState) && !revealed;
-  const target = agent?.display_name || (mod.category_tag && mod.category_tag !== 'Skins' ? mod.category_tag : 'UI & effects');
+  // A character ZZMI doesn't know yet (named by GameBanana) isn't a UI mod.
+  const unsupported = !agent && mod.agent_id === 'uncategorized' ? mod.unsupported_character : undefined;
+  const target =
+    agent?.display_name || unsupported || (mod.category_tag && mod.category_tag !== 'Skins' ? mod.category_tag : 'UI & effects');
+  const clash = mod.enabled ? clashes?.[0] : undefined;
+  const clashText = clash ? (clashes!.length > 1 ? `Clashes with “${clash.title}” and ${clashes!.length - 1} more` : `Clashes with “${clash.title}”`) : '';
+  // Where the bottom of the cover is free, the clash gets a strip with Turn off; otherwise a badge.
+  const showClashStrip = Boolean(clash) && health === 'working' && !update && !isUpdating;
 
   return (
     <article
@@ -106,18 +122,28 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
           </button>
         )}
         <div className="mod-card__tl">
-          <span className="badge badge--glass truncate" style={{ maxWidth: '60%' }}>
+          <span
+            className={`badge badge--glass truncate ${unsupported ? 'badge--warning' : ''}`}
+            style={{ maxWidth: '60%' }}
+            title={unsupported ? 'Character not supported by ZZMI yet: this mod does nothing in game until ZZMI adds them.' : undefined}
+          >
             {target}
           </span>
+          {unsupported && health === 'working' && (
+            <span className="badge badge--glass badge--warning" title="Character not supported by ZZMI yet">
+              <AlertTriangle />
+              Not in ZZMI yet
+            </span>
+          )}
           {health !== 'working' ? (
             <span className={`badge badge--glass badge--${meta.tone}`} title={meta.description}>
               <HealthIcon />
               {meta.label}
             </span>
-          ) : isConflicting && mod.enabled ? (
-            <span className="badge badge--glass badge--warning" title="Another skin for this character is also on">
+          ) : clash && !showClashStrip ? (
+            <span className="badge badge--glass badge--warning" title={clashText}>
               <AlertTriangle />
-              Overlaps
+              Clashes
             </span>
           ) : null}
         </div>
@@ -135,6 +161,24 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
               {isUpdating ? <Loader2 className="spin" /> : <ArrowUpCircle />}
               {isUpdating ? 'Updating…' : 'Update'}
             </button>
+          </div>
+        )}
+        {showClashStrip && clash && (
+          <div className="mod-card__clash" role="status" onClick={(e) => e.stopPropagation()}>
+            <AlertTriangle />
+            <span className="truncate" style={{ flex: 1 }} title={`${clashText}. Both change the same parts, so only one shows in game.`}>
+              {clashText}
+            </span>
+            {onTurnOffMod && (
+              <button
+                className="btn btn--sm btn--secondary"
+                onClick={() => onTurnOffMod(clash.modUuid, clash.title)}
+                title={`Turn off “${clash.title}” so this one shows`}
+              >
+                <PowerOff />
+                Turn that off
+              </button>
+            )}
           </div>
         )}
         {health === 'broken' && onDownloadMissing && (
@@ -215,6 +259,18 @@ export const ModDeckCard: React.FC<ModDeckCardProps> = ({
                 <button className="menu-item" role="menuitem" onClick={() => (menu.setOpen(false), onRepair())}>
                   <Wrench />
                   Fix for current version
+                </button>
+              )}
+              {onUndoUpdate && (
+                <button className="menu-item" role="menuitem" onClick={() => (menu.setOpen(false), onUndoUpdate())}>
+                  <History />
+                  Go back to the previous version
+                </button>
+              )}
+              {clash && onTurnOffMod && (
+                <button className="menu-item" role="menuitem" onClick={() => (menu.setOpen(false), onTurnOffMod(clash.modUuid, clash.title))}>
+                  <PowerOff />
+                  <span className="truncate">Turn off “{clash.title}”</span>
                 </button>
               )}
               <button className="menu-item" role="menuitem" onClick={() => (menu.setOpen(false), onSetCustomImageFile())}>

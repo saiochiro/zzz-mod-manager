@@ -72,11 +72,17 @@ interface FilePickModalProps {
 }
 
 const sizeLabel = (bytes: number) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
+const dayLabel = (ts?: number) => (ts ? new Date(ts * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '');
 
-/** A GameBanana page with several files (variants, optional parts): pick the one to install. */
+/**
+ * A GameBanana page with several downloads (variants, optional parts): pick the one to install.
+ * The newest upload is picked to start with; each file shows what the author wrote about it.
+ */
 export const FilePickModal: React.FC<FilePickModalProps> = ({ prompt, onPick, onCancel }) => {
   const [picked, setPicked] = useState<number | null>(null);
-  useEffect(() => setPicked(prompt?.files[0]?.id ?? null), [prompt]);
+  const newest = prompt?.files.reduce<GameBananaFile | null>((a, f) => (!a || (f.added_at || 0) > (a.added_at || 0) ? f : a), null) ?? null;
+  const mostUsed = prompt?.files.reduce<GameBananaFile | null>((a, f) => (!a || (f.downloads || 0) > (a.downloads || 0) ? f : a), null) ?? null;
+  useEffect(() => setPicked(newest?.id ?? prompt?.files[0]?.id ?? null), [prompt]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!prompt) return null;
   return (
     <Modal open onClose={onCancel} labelledBy="filepick-title">
@@ -86,11 +92,11 @@ export const FilePickModal: React.FC<FilePickModalProps> = ({ prompt, onPick, on
         </span>
         <div style={{ flex: 1 }}>
           <h2 id="filepick-title" className="h3">
-            Which file of “{prompt.title}”?
+            {prompt.isUpdate ? `Which file do you use for “${prompt.title}”?` : `Which version of “${prompt.title}”?`}
           </h2>
           <p className="small muted">
-            This mod has {prompt.files.length} downloads. {prompt.isUpdate ? 'Pick the one you use. ' : ''}ProxyLaunch remembers your choice for
-            updates and repairs.
+            The author posted {prompt.files.length} downloads. ProxyLaunch remembers the one you pick for updates and for getting missing
+            files.
           </p>
         </div>
         <button className="icon-btn" onClick={onCancel} aria-label="Close">
@@ -98,33 +104,34 @@ export const FilePickModal: React.FC<FilePickModalProps> = ({ prompt, onPick, on
         </button>
       </div>
       <div className="modal__body">
-        <div className="stack" role="radiogroup" aria-labelledby="filepick-title">
-          {prompt.files.map((f) => (
-            <label
-              key={f.id}
-              className="row-3"
-              style={{
-                padding: '10px 12px',
-                borderRadius: 12,
-                background: 'var(--raised)',
-                cursor: 'pointer',
-                outline: picked === f.id ? '2px solid var(--primary)' : 'none',
-              }}
-            >
-              <input type="radio" name="gb-file" checked={picked === f.id} onChange={() => setPicked(f.id)} />
-              <span className="min-w-0" style={{ flex: 1 }}>
-                <span className="truncate" style={{ display: 'block', fontWeight: 650 }} title={f.name}>
-                  {f.name}
-                </span>
-                {f.description && (
-                  <span className="caption truncate" style={{ display: 'block' }} title={f.description}>
-                    {f.description}
+        <div className="file-pick__list" role="radiogroup" aria-labelledby="filepick-title">
+          {prompt.files.map((f) => {
+            const tags = [
+              f === newest && prompt.files.length > 1 && f.added_at ? 'Newest' : null,
+              f === mostUsed && prompt.files.length > 1 && (f.downloads || 0) > 0 ? 'Most downloaded' : null,
+            ].filter(Boolean);
+            return (
+              <label key={f.id} className={`file-pick__option ${picked === f.id ? 'is-picked' : ''}`}>
+                <input type="radio" name="gb-file" checked={picked === f.id} onChange={() => setPicked(f.id)} />
+                <span className="min-w-0" style={{ flex: 1 }}>
+                  <span className="file-pick__name" style={{ display: 'block' }}>
+                    {f.name}
                   </span>
-                )}
-              </span>
-              <span className="caption">{f.size ? sizeLabel(f.size) : ''}</span>
-            </label>
-          ))}
+                  {f.description && <span className="file-pick__desc" style={{ display: 'block' }}>{f.description}</span>}
+                  <span className="file-pick__facts">
+                    {f.size ? <span>{sizeLabel(f.size)}</span> : null}
+                    {f.added_at ? <span>Posted {dayLabel(f.added_at)}</span> : null}
+                    {f.downloads ? <span>{f.downloads.toLocaleString()} downloads</span> : null}
+                    {tags.map((t) => (
+                      <span key={t} className="file-pick__tag">
+                        {t}
+                      </span>
+                    ))}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
         </div>
       </div>
       <div className="modal__footer">
@@ -133,7 +140,6 @@ export const FilePickModal: React.FC<FilePickModalProps> = ({ prompt, onPick, on
         </button>
         <button className="btn btn--primary" disabled={picked === null} onClick={() => picked !== null && onPick(picked)}>
           {prompt.isUpdate ? 'Update with this file' : 'Install this file'}
-          <ArrowRight />
         </button>
       </div>
     </Modal>

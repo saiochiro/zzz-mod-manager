@@ -101,6 +101,10 @@ export interface ModManifest extends NsfwReviewInfo {
   gamebanana_file_id?: number;
   /** When an update last replaced the files. */
   updated_at?: string;
+  /** A character GameBanana names that ZZMI doesn't know yet (e.g. a brand new one). */
+  unsupported_character?: string;
+  /** The GameBanana page was checked for such a character. */
+  unsupported_checked?: boolean;
 }
 
 export interface AgentHashes {
@@ -236,6 +240,8 @@ export interface GameBananaModItem extends NsfwReviewInfo {
   file_name: string;
   file_size: number;
   md5_checksum: string;
+  /** GameBanana's top category ("Skins", "UI", ...). */
+  root_category?: string;
   /** Which of the page's files download_url points at. */
   file_id?: number;
   /** Every file on the mod page (variants, optional parts). */

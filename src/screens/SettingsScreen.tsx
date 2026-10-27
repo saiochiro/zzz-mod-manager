@@ -1,7 +1,9 @@
 import { HeroDecor } from '../ui/HeroDecor';
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  Archive,
   ArrowDownToLine,
+  Bug,
   RefreshCw,
   Rocket,
   Eye,
@@ -24,8 +26,9 @@ import { normalizeNsfwFilter } from '../shared/nsfw';
 import type { ThemeDefinition } from '../themes/types';
 import { Motif } from '../themes/Motif';
 import { ThemeIcon } from '../components/ThemeIcon';
-import { fairyClient, AppUpdateStatus } from '../services/fairyClient';
-import { Segmented, Switch, shortVersion } from '../ui';
+import { fairyClient, AppUpdateStatus, type FullAppState } from '../services/fairyClient';
+import { BackupsPanel } from '../components/BackupsPanel';
+import { Segmented, Switch, shortVersion, useToast } from '../ui';
 
 interface SettingsScreenProps {
   appUpdate: AppUpdateStatus;
@@ -49,6 +52,8 @@ interface SettingsScreenProps {
   canUndoOrganize: boolean;
   onOpenImport: () => void;
   onOpenThemes: () => void;
+  /** After a backup was put back. */
+  onStateChange: (s: FullAppState) => void;
 }
 
 const SECTIONS = [
@@ -56,6 +61,7 @@ const SECTIONS = [
   { id: 'content', label: 'Content filter', icon: ShieldCheck },
   { id: 'mods', label: 'Mod behavior', icon: SlidersHorizontal },
   { id: 'library', label: 'Library tools', icon: Package },
+  { id: 'backups', label: 'Backups', icon: Archive },
   { id: 'appearance', label: 'Appearance', icon: Palette },
   { id: 'features', label: 'Features', icon: Hammer },
   { id: 'about', label: 'About', icon: Info },
@@ -366,6 +372,15 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = (p) => {
                 </div>
               </section>
 
+              <section id="settings-backups" className="card card--pad">
+                <h2 className="h3">Backups</h2>
+                <p className="small muted" style={{ marginBottom: 16 }}>
+                  Copies ProxyLaunch keeps when an update replaces a mod, when you delete one, and before Tidy keys changes keys. Put
+                  any of them back, or clean up the ones you don't need.
+                </p>
+                <BackupsPanel onStateChange={p.onStateChange} />
+              </section>
+
               <section id="settings-about" className="card card--pad">
                 <h2 className="h3" style={{ marginBottom: 12 }}>
                   About
@@ -431,10 +446,58 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = (p) => {
                   <dt>Characters known</dt>
                   <dd>{Object.keys(p.hashDb.agents).length}</dd>
                 </dl>
+                <ReportBug />
               </section>
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+};
+
+/** Saves a zip to send with a bug report; the user's Windows name and home folder are removed. */
+const ReportBug: React.FC = () => {
+  const notify = useToast();
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    setSaving(true);
+    try {
+      const res = await fairyClient.reportBug(note.trim() || undefined);
+      if (res.saved) {
+        notify({ tone: 'success', title: 'Bug report saved', message: `${res.fileName} is open in File Explorer. Send it on Discord: ghxty.` });
+        setNote('');
+      }
+    } catch (err) {
+      notify({ tone: 'error', title: 'Couldn’t save the bug report', message: (err as Error).message });
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="stack" style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+      <div>
+        <div className="setting__title">Report a bug</div>
+        <div className="setting__desc">
+          Saves a zip with the activity log, the app version, your settings and your mod list. Your Windows user name and home folder
+          are removed from everything in it.
+        </div>
+      </div>
+      <textarea
+        className="input"
+        rows={3}
+        style={{ height: 'auto', padding: '10px 12px', resize: 'vertical' }}
+        placeholder="What happened, and what did you expect? (optional)"
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        aria-label="What happened"
+      />
+      <div>
+        <button className="btn btn--secondary btn--sm" onClick={save} disabled={saving}>
+          {saving ? <Loader2 className="spin" /> : <Bug />}
+          Save bug report
+        </button>
       </div>
     </div>
   );

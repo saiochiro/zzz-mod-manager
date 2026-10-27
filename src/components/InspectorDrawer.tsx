@@ -15,6 +15,7 @@ import {
   Wand2,
   X,
   CloudDownload,
+  AlertTriangle,
 } from 'lucide-react';
 import type { AgentHashEntry, GameBananaModItem, ModManifest, ParsedIniDocument } from '../shared/types';
 import type { MotifKind } from '../themes/types';
@@ -221,6 +222,18 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                       Fix now
                     </button>
                   )}
+                </div>
+              )}
+              {mod.agent_id === 'uncategorized' && mod.unsupported_character && (
+                <div className="banner banner--warning" style={{ alignItems: 'flex-start' }}>
+                  <AlertTriangle />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 650 }}>Character not supported by ZZMI yet</div>
+                    <div className="muted">
+                      This mod is for {mod.unsupported_character}, who ZZMI doesn't know about yet, so it does nothing in game. Once ZZMI
+                      adds {mod.unsupported_character}, update ZZMI in the XXMI Launcher and sync Compatibility data.
+                    </div>
+                  </div>
                 </div>
               )}
               {isRepaired && (
