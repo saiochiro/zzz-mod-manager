@@ -38,8 +38,38 @@ let inflight: Promise<boolean> | null = null;
 let firstLoad: Promise<unknown> | null = null;
 const listeners = new Set<() => void>();
 
+/**
+ * Labels the app read from GameBanana itself for mods posted or changed since the downloaded
+ * list was made (GitHub only runs that job every few hours). Same rules as the list.
+ */
+const recent = new Map<string, NsfwVerdictEntry>();
+
 function load(file: NsfwVerdictFile): void {
   verdicts = new Map(Object.entries(file.mods));
+  // The new list covers what we looked up ourselves when it saw the same version of the mod.
+  for (const [id, e] of recent) {
+    const listed = verdicts.get(id);
+    if (listed && (listed.m ?? 0) >= (e.m ?? 0)) recent.delete(id);
+  }
+}
+
+/** The label known for a mod id: one looked up just now, else the downloaded list's. */
+export function knownNsfwLabel(id: number | string): NsfwVerdictEntry | undefined {
+  const key = String(id);
+  return recent.get(key) ?? verdicts.get(key);
+}
+
+/** Adds labels looked up from GameBanana since the list was made; Browse reloads when they change. */
+export function addRecentNsfwLabels(entries: Record<string, NsfwVerdictEntry>): number {
+  let changed = 0;
+  for (const [id, e] of Object.entries(entries)) {
+    const before = recent.get(id) ?? verdicts.get(id);
+    if (before && before.l === e.l && before.m === e.m && Boolean(before.k) === Boolean(e.k)) continue;
+    recent.set(id, e);
+    changed++;
+  }
+  if (changed) for (const fn of listeners) fn();
+  return changed;
 }
 
 export function initNsfwReview(appDataPath: string, opts: { fetch?: boolean } = {}): void {
@@ -120,7 +150,11 @@ export function onNsfwVerdictsUpdated(fn: () => void): () => void {
 export function getSfwCatalog(): any[] {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const out: any[] = [];
-  for (const v of verdicts.values()) if (v.l === 's' && v.k?._idRow) out.push(v.k);
+  for (const [id, v] of verdicts) {
+    if (recent.has(id)) continue; // looked up again since: the newer label wins
+    if (v.l === 's' && v.k?._idRow) out.push(v.k);
+  }
+  for (const v of recent.values()) if (v.l === 's' && v.k?._idRow) out.push(v.k);
   return out;
 }
 
@@ -130,6 +164,7 @@ export function nsfwVerdictCount(): number {
 
 /** For tests: use this list instead of the downloaded one. */
 export function setNsfwVerdictsForTest(file: NsfwVerdictFile): void {
+  recent.clear();
   load(file);
 }
 

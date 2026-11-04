@@ -158,6 +158,18 @@ export function upgradeGameBananaImageUrl(url?: string): string {
   return url;
 }
 
+/**
+ * GameBanana keeps each screenshot in several sizes; "530-90_<file>" is the one made for cards.
+ * Browse grids use it: the originals are often several MB each, and loading dozens at once makes
+ * GameBanana's image server drop some (the broken pictures in "Show everything").
+ */
+export function gbCardImageUrl(url?: string): string {
+  if (!url) return '';
+  const m = url.match(/^(https:\/\/images\.gamebanana\.com\/img\/ss\/[^?#]+\/)([^/?#]+)$/i);
+  if (!m || /^\d+-\d+_/.test(m[2])) return url;
+  return `${m[1]}530-90_${m[2]}`;
+}
+
 function buildGbImageUrl(img: any): string {
   if (!img || !img._sBaseUrl) return '';
   const baseUrl = String(img._sBaseUrl).replace(/\/+$/, '');
@@ -194,7 +206,7 @@ export function getAllModPreviewUrls(mod: any): string[] {
   return images.map((img: any) => buildGbImageUrl(img)).filter(Boolean);
 }
 
-import { applyNsfwReview, getSfwCatalog, nsfwVerdictsReady } from './nsfwReview';
+import { addRecentNsfwLabels, applyNsfwReview, getSfwCatalog, knownNsfwLabel, nsfwVerdictsReady } from './nsfwReview';
 
 /** Applies the pre-scanned labels, then drops NSFW items if asked. */
 function finalizeNsfw(items: GameBananaModItem[], hideNsfw: boolean): GameBananaModItem[] {
@@ -285,7 +297,8 @@ function recordToFeedItem(rec: any, idx: number, options: GameBananaFeedOptions)
       )
         .toISOString()
         .slice(0, 10),
-      thumbnail_url: thumbUrl,
+      // Cards use the card-sized picture; the full ones stay for the gallery and as a fallback.
+      thumbnail_url: primaryThumb ? gbCardImageUrl(primaryThumb) : thumbUrl,
       preview_images: allThumbnails.length > 0 ? allThumbnails : [thumbUrl],
       profile_url: rec._sProfileUrl || `https://gamebanana.com/mods/${modId}`,
       download_url: `https://gamebanana.com/mods/${modId}`,
@@ -1079,4 +1092,90 @@ export function gameBananaCharacterOf(meta: { category?: string | null; root_cat
   if (!name || name.split(/\s*[/&,+]\s*/).some((part) => NOT_A_CHARACTER.test(part))) return null;
   if (meta.root_category && !/skin|character/i.test(meta.root_category)) return null;
   return name;
+}
+
+/* ------------------------------------------------------------------ */
+/* Labels for mods posted since the downloaded list was made           */
+/* ------------------------------------------------------------------ */
+
+const LABEL_UA = { 'User-Agent': 'ProxyLaunch (github.com/saiochiro/zzz-mod-manager)' };
+
+async function getGbJson(url: string): Promise<any> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000);
+  try {
+    const res = await fetch(url, { headers: LABEL_UA, signal: ctrl.signal });
+    return res.ok ? await res.json() : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** The card Browse shows for a mod (same fields the label list keeps; scripts/nsfw-prescan.mjs). */
+function labelCardOf(p: any, rec: any): any {
+  const pick = (o: any, keys: string[]) => (o ? Object.fromEntries(keys.filter((k) => o[k] !== undefined).map((k) => [k, o[k]])) : undefined);
+  const images = (p._aPreviewMedia?._aImages ?? rec._aPreviewMedia?._aImages ?? [])
+    .slice(0, 10)
+    .map((img: any) => pick(img, ['_sBaseUrl', '_sFile', '_sFile530', '_sFile220']))
+    .filter((img: any) => img?._sBaseUrl && img?._sFile);
+  return {
+    _idRow: p._idRow ?? rec._idRow,
+    _sName: p._sName ?? rec._sName,
+    _sDescription: String(p._sDescription || '').slice(0, 200) || undefined,
+    _sProfileUrl: p._sProfileUrl ?? rec._sProfileUrl,
+    _aSubmitter: pick(p._aSubmitter ?? rec._aSubmitter, ['_idRow', '_sName', '_sAvatarUrl', '_sHdAvatarUrl', '_sProfileUrl']),
+    _aCategory: pick(p._aCategory ?? rec._aCategory, ['_idRow', '_sName']),
+    _aSubCategory: pick(rec._aSubCategory, ['_idRow', '_sName']),
+    _aRootCategory: pick(p._aRootCategory ?? rec._aRootCategory, ['_idRow', '_sName']),
+    _nLikeCount: rec._nLikeCount ?? p._nLikeCount ?? 0,
+    _nDownloadCount: p._nDownloadCount ?? rec._nDownloadCount ?? 0,
+    _nViewCount: rec._nViewCount ?? p._nViewCount ?? 0,
+    _tsDateAdded: p._tsDateAdded ?? rec._tsDateAdded,
+    _tsDateModified: p._tsDateModified ?? rec._tsDateModified,
+    _aPreviewMedia: { _aImages: images },
+  };
+}
+
+/**
+ * Looks at the newest and most recently changed mods on GameBanana and labels the ones the
+ * downloaded list doesn't know yet (or knows an older version of): GameBanana's own label from
+ * the listing, else from the mod's page (its content ratings), exactly like the list does.
+ * New SFW mods then show up in "SFW only" within minutes instead of hours. Returns how many
+ * labels changed.
+ */
+export async function refreshRecentLabels(maxPages = 40): Promise<number> {
+  const base = `https://gamebanana.com/apiv11/Mod/Index?_nPerpage=50&_aFilters[Generic_Game]=${ZZZ_GAMEBANANA_GAME_ID}`;
+  const lists = await Promise.all([
+    getGbJson(`${base}&_nPage=1&_sSort=Generic_Newest`),
+    getGbJson(`${base}&_nPage=2&_sSort=Generic_Newest`),
+    getGbJson(`${base}&_nPage=1&_sSort=Generic_LatestModified`),
+  ]);
+  const recs = new Map<number, any>();
+  for (const l of lists) for (const r of l?._aRecords ?? []) if (r?._idRow && !recs.has(Number(r._idRow))) recs.set(Number(r._idRow), r);
+
+  const labels: Record<string, { l: 's' | 'n'; f: 0 | 1; m: number; g: 1; k?: any }> = {};
+  const todo: any[] = [];
+  for (const [id, rec] of recs) {
+    const m = Number(rec._tsDateModified || rec._tsDateUpdated || rec._tsDateAdded || 0);
+    const known = knownNsfwLabel(id);
+    if (known && known.m === m && (known.l === 'n' || known.k)) continue; // already labeled this version
+    if (isModRecordNsfw(rec)) labels[String(id)] = { l: 'n', f: 1, m, g: 1 };
+    else todo.push({ rec, m });
+  }
+  // Not flagged in the listing: the mod's page has its content ratings. A few at a time.
+  const queue = todo.slice(0, maxPages);
+  await Promise.all(
+    Array.from({ length: 4 }, async () => {
+      for (let job = queue.shift(); job; job = queue.shift()) {
+        const p = await getGbJson(`https://gamebanana.com/apiv11/Mod/${job.rec._idRow}/ProfilePage`);
+        if (!p) continue; // try again next time
+        labels[String(job.rec._idRow)] = isModRecordNsfw(p)
+          ? { l: 'n', f: 1, m: job.m, g: 1 }
+          : { l: 's', f: 0, m: job.m, g: 1, k: labelCardOf(p, job.rec) };
+      }
+    })
+  );
+  return addRecentNsfwLabels(labels);
 }

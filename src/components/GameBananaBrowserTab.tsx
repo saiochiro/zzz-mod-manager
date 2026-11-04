@@ -783,7 +783,7 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
                     onClick={() => openGallery(spot)}
                     onKeyDown={(e) => e.key === 'Enter' && openGallery(spot)}
                   >
-                    <ThumbImage src={spot.thumbnail_url} alt={spot.title} motif={motif} loading="eager" />
+                    <ThumbImage src={spot.preview_images?.[0] || spot.thumbnail_url} fallbacks={[spot.thumbnail_url]} alt={spot.title} motif={motif} loading="eager" />
                     <div className="spotlight__shade" />
                     <div className="spotlight__info">
                       <div className="min-w-0" style={{ flex: 1 }}>
@@ -925,7 +925,7 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
                         onKeyDown={(e) => e.key === 'Enter' && openGallery(item)}
                       >
                         <div className="gb-card__thumb">
-                          <ThumbImage src={item.thumbnail_url} alt={item.title} motif={motif} />
+                          <ThumbImage src={item.thumbnail_url} fallbacks={item.preview_images} alt={item.title} motif={motif} />
                           {blurred && (
                             <button
                               className="nsfw-cover"

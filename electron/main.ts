@@ -4,7 +4,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { buildBugReport } from '../src/core/bugReport';
-import { fetchGameBananaModProfile } from '../src/core/gamebananaService';
+import { fetchGameBananaModProfile, refreshRecentLabels } from '../src/core/gamebananaService';
 import { applyNsfwReview, onNsfwVerdictsUpdated, refreshNsfwVerdicts } from '../src/core/nsfwReview';
 import { ModManagerService } from '../src/core/modManagerService';
 import { CommunityClient, type StoredSession } from '../src/core/communityClient';
@@ -648,6 +648,11 @@ app.whenReady().then(() => {
   // Get missing files: how far the download got, for the mod's button.
   modService.onDownloadProgress = (p) => mainWindow?.webContents.send('zzz:downloadProgress', p);
   setInterval(() => void refreshNsfwVerdicts(), 60 * 60 * 1000);
+  // The downloaded label list is only rebuilt every few hours: label GameBanana's newest and
+  // just-updated mods ourselves meanwhile, so new SFW mods show up in "SFW only" within minutes.
+  const labelRecent = () => void refreshRecentLabels().catch((err) => writeBootLog(`recent labels: ${(err as Error).message}`));
+  setTimeout(labelRecent, 15 * 1000);
+  setInterval(labelRecent, 10 * 60 * 1000);
   // Undo the Library edits 2.14.0 made to "Experimental" mods.
   setTimeout(() => {
     try {
