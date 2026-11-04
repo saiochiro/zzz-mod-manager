@@ -189,3 +189,26 @@ describe('Original keys', () => {
     expect(res.restored).toBe(2);
   });
 });
+
+describe('Syncing an unchanged mod', () => {
+  it('copies nothing when the game copy already matches, and notices a same-size key change', async () => {
+    const { mirrorModDir } = await import('../src/core/modManagerService');
+    const src = path.join(dir, 'a', 'M');
+    const dst = path.join(dir, 'b', 'M');
+    fs.mkdirSync(src, { recursive: true });
+    fs.writeFileSync(path.join(src, 'mod.ini'), '[KeyHair]\nkey = J\n');
+    fs.writeFileSync(path.join(src, 'tex.dds'), 'x'.repeat(100));
+    mirrorModDir(src, dst);
+    const before = fs.statSync(path.join(dst, 'mod.ini')).mtimeMs;
+    await new Promise((r) => setTimeout(r, 30));
+    mirrorModDir(src, dst);
+    expect(fs.statSync(path.join(dst, 'mod.ini')).mtimeMs).toBe(before); // untouched
+
+    // Same size, different key: still copied.
+    fs.writeFileSync(path.join(src, 'mod.ini'), '[KeyHair]\nkey = K\n');
+    const old = new Date(Date.now() - 60_000);
+    fs.utimesSync(path.join(src, 'mod.ini'), old, old);
+    mirrorModDir(src, dst);
+    expect(fs.readFileSync(path.join(dst, 'mod.ini'), 'utf-8')).toContain('key = K');
+  });
+});

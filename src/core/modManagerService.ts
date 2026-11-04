@@ -301,6 +301,22 @@ function modFolderSig(dir: string): string {
  * game's too (so removing a texture in File Explorer really removes it in game). The one thing
  * kept: an .ini XXMI renamed to DISABLED_<name> (its duplicate-file fix) isn't copied back.
  */
+/** How many files or folders the game-folder sync has changed (so a no-op sync can be told apart). */
+let gameSyncChanges = 0;
+
+/** Same file (size, and bytes for small text files)? */
+function sameFile(a: string, b: string): boolean {
+  try {
+    const sa = fs.statSync(a);
+    const sb = fs.statSync(b);
+    if (sa.size !== sb.size) return false;
+    if (sa.size < 2 * 1024 * 1024) return fs.readFileSync(a).equals(fs.readFileSync(b));
+    return sa.mtimeMs <= sb.mtimeMs + 1000;
+  } catch {
+    return false;
+  }
+}
+
 export function mirrorModDir(src: string, dst: string): void {
   fs.mkdirSync(dst, { recursive: true });
   const dstNames = new Map(fs.readdirSync(dst).map((n) => [n.toLowerCase(), n] as const));
@@ -320,16 +336,24 @@ export function mirrorModDir(src: string, dst: string): void {
       continue;
     }
     keep.add(lower);
-    let copy = !dstNames.has(lower) || /\.(ini|json)$/i.test(e.name);
+    let copy = !dstNames.has(lower);
     if (!copy) {
       const a = fs.statSync(s);
       const b = fs.statSync(d);
       copy = a.size !== b.size || a.mtimeMs > b.mtimeMs + 1000;
+      // Small text files (keys, settings) can change without changing size: compare them.
+      if (!copy && /\.(ini|json)$/i.test(e.name) && a.size < 2 * 1024 * 1024) copy = !fs.readFileSync(s).equals(fs.readFileSync(d));
     }
-    if (copy) fs.copyFileSync(s, d);
+    if (copy) {
+      fs.copyFileSync(s, d);
+      gameSyncChanges++;
+    }
   }
   for (const [lower, name] of dstNames) {
-    if (!keep.has(lower)) fs.rmSync(path.join(dst, name), { recursive: true, force: true });
+    if (!keep.has(lower)) {
+      fs.rmSync(path.join(dst, name), { recursive: true, force: true });
+      gameSyncChanges++;
+    }
   }
 }
 
@@ -344,8 +368,9 @@ function syncModFolders(srcDir: string, dstDir: string): number {
     const dstChild = path.join(dstDir, child.name);
     keep.add(child.name.toLowerCase());
     if (child.isFile()) {
-      if (!fs.existsSync(dstChild) || /\.(ini|json)$/i.test(child.name) || fs.statSync(srcChild).size !== fs.statSync(dstChild).size) {
+      if (!sameFile(srcChild, dstChild)) {
         fs.copyFileSync(srcChild, dstChild);
+        gameSyncChanges++;
       }
       continue;
     }
@@ -358,18 +383,23 @@ function syncModFolders(srcDir: string, dstDir: string): number {
     if (existingOpposite && !fs.existsSync(dstChild)) {
       try {
         renameWithRetry(path.join(dstDir, existingOpposite), dstChild);
+        gameSyncChanges++;
       } catch {
         // copied below
       }
     }
     if (!fs.existsSync(dstChild)) {
       copyDirRecursive(srcChild, dstChild);
+      gameSyncChanges++;
       continue;
     }
     mirrorModDir(srcChild, dstChild);
   }
   for (const d of fs.readdirSync(dstDir)) {
-    if (!keep.has(d.toLowerCase())) fs.rmSync(path.join(dstDir, d), { recursive: true, force: true });
+    if (!keep.has(d.toLowerCase())) {
+      fs.rmSync(path.join(dstDir, d), { recursive: true, force: true });
+      gameSyncChanges++;
+    }
   }
   return count;
 }
@@ -3453,6 +3483,7 @@ endif
    * folder names under _ZZZMM_Managed, or "_Uncategorized_UI_Audio". Without it, everything syncs.
    */
   public syncModsToXxmiLauncher(scope?: string[]): { synced: boolean; targetModsDir: string; syncedModsCount: number } {
+    const changesBefore = gameSyncChanges;
     const isTempTestDir = this.baseDir.toLowerCase().includes(os.tmpdir().toLowerCase());
     if (isTempTestDir || process.platform !== 'win32') {
       return { synced: false, targetModsDir: '', syncedModsCount: 0 };
@@ -3501,7 +3532,7 @@ endif
             continue;
           }
           if (fs.readdirSync(srcAgentDir).length === 0) {
-            fs.rmSync(dstAgentDir, { recursive: true, force: true });
+            fs.rmSync(dstAgentDir, { recursive: true, force: true }); gameSyncChanges++;
             continue;
           }
           keepAgents.add(name);
@@ -3510,7 +3541,7 @@ endif
         // Agent folders that no longer have mods
         for (const dstAgent of fs.readdirSync(dstManaged)) {
           if (!keepAgents.has(dstAgent.toLowerCase())) {
-            fs.rmSync(path.join(dstManaged, dstAgent), { recursive: true, force: true });
+            fs.rmSync(path.join(dstManaged, dstAgent), { recursive: true, force: true }); gameSyncChanges++;
           }
         }
       } catch (err) {
@@ -3525,7 +3556,7 @@ endif
       replaceSymlink(dstUncat);
       try {
         if (!fs.existsSync(srcUncat) || fs.readdirSync(srcUncat).length === 0) {
-          fs.rmSync(dstUncat, { recursive: true, force: true });
+          fs.rmSync(dstUncat, { recursive: true, force: true }); gameSyncChanges++;
         } else {
           syncedModsCount += syncModFolders(srcUncat, dstUncat);
         }
@@ -3535,9 +3566,10 @@ endif
     }
 
     // 3. Clear XXMI Launcher's stale Ini Optimizer cache so it freshly indexes physical mod paths
+    //    (only when something changed: an unneeded re-index makes the next game launch slower).
     try {
       const optimizerCache = path.join(xxmiRootDir, 'Resources', 'Cache', 'Ini Optimizer', 'ZZMI.json');
-      if (fs.existsSync(optimizerCache)) {
+      if (gameSyncChanges !== changesBefore && fs.existsSync(optimizerCache)) {
         fs.unlinkSync(optimizerCache);
       }
     } catch {

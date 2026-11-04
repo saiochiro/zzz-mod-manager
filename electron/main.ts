@@ -665,6 +665,12 @@ app.whenReady().then(() => {
     } catch (err) {
       writeBootLog(`repair mislabeled updates: ${(err as Error).message}`);
     }
+    // Make the game's mod folder match the Library: changes made while the app was closed (or
+    // straight in XXMI's folder) are put right. Then a quiet re-check every 15 minutes.
+    modService.scheduleXxmiSync('all');
+    setInterval(() => {
+      if (ownChangesInFlight === 0) modService.scheduleXxmiSync('all');
+    }, 15 * 60 * 1000);
     // Label older mods for characters ZZMI doesn't know yet (asks GameBanana, a few per start).
     modService
       .backfillUnsupportedCharacters()
