@@ -54,6 +54,9 @@ interface GameBananaBrowserTabProps {
 
 type QuickTab = 'featured' | 'popular' | 'updated' | 'character';
 
+/** A remembered Browse page newer than this is shown as is; an older one is shown and then reloaded. */
+const FEED_FRESH_MS = 2 * 60 * 1000;
+
 export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
   feed: initialFeed,
   installedMods,
@@ -192,6 +195,8 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
 
   // Layer 2 AI/Canvas Vision Moderation Cache by Mod ID (persisted in localStorage + backend cache)
   const feedCacheRef = React.useRef<Map<string, GameBananaModItem[]>>(new Map());
+  /** When each remembered page was loaded: one older than FEED_FRESH_MS is shown, then reloaded. */
+  const feedSavedAtRef = React.useRef<Map<string, number>>(new Map());
   // The latest list, for code that runs after an await (state captured at the start may be old).
   const modsListRef = React.useRef<GameBananaModItem[]>([]);
   modsListRef.current = modsList;
@@ -200,7 +205,12 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
     const cache = feedCacheRef.current;
     cache.delete(key);
     cache.set(key, items);
-    while (cache.size > 40) cache.delete(cache.keys().next().value as string);
+    feedSavedAtRef.current.set(key, Date.now());
+    while (cache.size > 40) {
+      const oldest = cache.keys().next().value as string;
+      cache.delete(oldest);
+      feedSavedAtRef.current.delete(oldest);
+    }
   };
 
   const makeClientCacheKey = (
@@ -387,14 +397,16 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
 
     // Render prefetched / cached items immediately with zero loading spinner delay
     const prefetched = feedCacheRef.current.get(cacheKey);
-    if (prefetched && prefetched.length > 0 && page === 1) {
-      setModsList(applyCachedVisionFlags(prefetched));
+    const showingSaved = Boolean(prefetched && prefetched.length > 0 && page === 1);
+    if (showingSaved) {
+      setModsList(applyCachedVisionFlags(prefetched!));
       setIsLoading(false);
       setLoadingAgent(null);
-      return;
+      // Fresh enough: done. Older: keep it on screen and quietly load the current one.
+      if (Date.now() - (feedSavedAtRef.current.get(cacheKey) ?? 0) < FEED_FRESH_MS) return;
     }
 
-    setIsLoading(true);
+    if (!showingSaved) setIsLoading(true);
     setFeedError(null);
     if (page === 1) {
       setMoreState('idle');
@@ -488,7 +500,8 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
       }
     } catch (err) {
       console.warn('Failed to fetch GameBanana feed:', err);
-      if (requestId === feedRequestIdRef.current) {
+      // A saved page is already on screen: keep it rather than swap it for an error.
+      if (requestId === feedRequestIdRef.current && !showingSaved) {
         setFeedError((err as Error)?.message || 'The mod site did not respond.');
         if (page > 1) setMoreState('error');
       }

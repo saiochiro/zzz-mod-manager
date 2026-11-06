@@ -206,12 +206,24 @@ export function getAllModPreviewUrls(mod: any): string[] {
   return images.map((img: any) => buildGbImageUrl(img)).filter(Boolean);
 }
 
-import { addRecentNsfwLabels, applyNsfwReview, getSfwCatalog, knownNsfwLabel, nsfwVerdictsReady } from './nsfwReview';
+import { addRecentNsfwLabels, applyNsfwReview, getSfwCatalog, knownNsfwLabel, nsfwVerdictCount, nsfwVerdictsReady } from './nsfwReview';
 
-/** Applies the pre-scanned labels, then drops NSFW items if asked. */
+/**
+ * Puts the same label on a mod in every view: GameBanana's label from the label list (or one
+ * looked up since), else what the listing itself says. GameBanana's listings leave out content
+ * ratings, so a mod can look safe there while its page rates it NSFW; the list knows better.
+ * "SFW only" keeps only mods known to be safe (once the list is in), so a mod never shows there
+ * before its page has been checked, and never shows as safe in one view but missing in the other.
+ */
 function finalizeNsfw(items: GameBananaModItem[], hideNsfw: boolean): GameBananaModItem[] {
-  const out = items.map((m) => applyNsfwReview(m, `gb:${m.id}`));
-  return hideNsfw ? out.filter((m) => !m.is_nsfw) : out;
+  const out = items.map((m) => {
+    const known = knownNsfwLabel(m.id);
+    const nsfw = Boolean(m.is_nsfw) || known?.l === 'n';
+    return applyNsfwReview({ ...m, is_nsfw: nsfw, nsfw_flagged: nsfw, is_featured: Boolean(m.is_featured) && !nsfw }, `gb:${m.id}`);
+  });
+  if (!hideNsfw) return out;
+  const haveList = nsfwVerdictCount() > 0;
+  return out.filter((m) => !m.is_nsfw && (!haveList || knownNsfwLabel(m.id)?.l === 's'));
 }
 
 export { isModRecordNsfw, NSFW_KEYWORD_REGEX } from '../shared/nsfw';
@@ -318,11 +330,9 @@ function recordToFeedItem(rec: any, idx: number, options: GameBananaFeedOptions)
     };
 }
 
-/** The SFW view of Browse from the pre-scanned catalog. Null when there's no catalog yet. */
+/** Every safe mod in the label list, filtered and sorted for Browse. Null when there's no list yet. */
 function sfwFeedFromCatalog(
   options: GameBananaFeedOptions,
-  page: number,
-  perPage: number,
   sort: string,
   searchQuery: string,
   catFilter: string
@@ -360,13 +370,46 @@ function sfwFeedFromCatalog(
     alphabetical: (a, b) => a.title.localeCompare(b.title),
   };
   items.sort(by[sort] || ((a, b) => trend(b) - trend(a)));
+  return items;
+}
+
+/** How many of GameBanana's own pages (50 mods each) lead the SFW view before the rest of the list. */
+const SFW_LIVE_PAGES = 6;
+
+/**
+ * "SFW only" for Featured, Recently updated and Newest: the same mods, in the same order, that
+ * GameBanana shows right now (what the NSFW and Show everything views list), minus the NSFW
+ * ones, and then every other safe mod from the label list. So the top is always current, and a
+ * safe mod in the other views is in this one too. Offline, it's just the list.
+ */
+async function sfwFeedWithLiveHead(
+  options: GameBananaFeedOptions,
+  page: number,
+  perPage: number,
+  sort: string,
+  catFilter: string
+): Promise<GameBananaModItem[] | null> {
+  const catalog = sfwFeedFromCatalog(options, sort, '', catFilter);
+  const pages = await Promise.allSettled(
+    Array.from({ length: SFW_LIVE_PAGES }, (_, i) =>
+      fetchLiveGameBananaFeed({ ...options, page: i + 1, perPage: 24, hideNsfw: false })
+    )
+  );
+  const seen = new Set<number>();
+  const head: GameBananaModItem[] = [];
+  for (const p of pages) {
+    if (p.status !== 'fulfilled') continue;
+    for (const m of finalizeNsfw(p.value, true)) if (!seen.has(m.id)) (seen.add(m.id), head.push(m));
+  }
+  if (!catalog && head.length === 0) return null;
+  const items = [...head, ...(catalog ?? []).filter((m) => !seen.has(m.id))];
   const start = (page - 1) * perPage;
   return items.slice(start, start + perPage).map((m, i) => ({ ...m, is_featured: page === 1 && i < 6 }));
 }
 
 const feedResponseCache = new Map<string, { timestamp: number; items: GameBananaModItem[] }>();
 const inflightFeedRequests = new Map<string, Promise<GameBananaModItem[]>>();
-const FEED_CACHE_TTL_MS = 5 * 60 * 1000;
+const FEED_CACHE_TTL_MS = 2 * 60 * 1000;
 let initialPopularPrefetchTriggered = false;
 
 /**
@@ -408,8 +451,20 @@ export async function fetchLiveGameBananaFeed(
   // paging through GameBanana where ~90% of mods would be hidden.
   if (hideNsfw) {
     await nsfwVerdictsReady();
-    const local = sfwFeedFromCatalog(options, page, targetCount, sort, searchQuery, catFilter);
-    if (local) return finalizeNsfw(local, true);
+    const followsGameBanana =
+      !searchQuery && !options.characterSubcatId && !options.submitterId && !options.authorName &&
+      ['featured', 'default', 'new', 'updated'].includes(sort);
+    if (followsGameBanana) {
+      const mixed = await sfwFeedWithLiveHead(options, page, targetCount, sort, catFilter);
+      if (mixed) return finalizeNsfw(mixed, true);
+    } else {
+      const local = sfwFeedFromCatalog(options, sort, searchQuery, catFilter);
+      if (local) {
+        const start = (page - 1) * targetCount;
+        const slice = local.slice(start, start + targetCount).map((m, i) => ({ ...m, is_featured: page === 1 && i < 6 }));
+        return finalizeNsfw(slice, true);
+      }
+    }
   }
 
   const cached = feedResponseCache.get(cacheKey);
@@ -555,6 +610,7 @@ export async function fetchLiveGameBananaFeed(
       }
 
       if (records.length > 0) {
+        labelInBackground(records);
         let liveItems: GameBananaModItem[] = records.map((rec: any, idx: number) => recordToFeedItem(rec, idx, options));
 
         if (options.authorName && !options.submitterId) {
@@ -1151,26 +1207,45 @@ export async function refreshRecentLabels(maxPages = 40): Promise<number> {
     getGbJson(`${base}&_nPage=1&_sSort=Generic_Newest`),
     getGbJson(`${base}&_nPage=2&_sSort=Generic_Newest`),
     getGbJson(`${base}&_nPage=1&_sSort=Generic_LatestModified`),
+    getGbJson(`${base}&_nPage=2&_sSort=Generic_LatestModified`),
+    getGbJson(`${base}&_nPage=3&_sSort=Generic_LatestModified`),
   ]);
+  const recs: any[] = [];
+  for (const l of lists) recs.push(...(l?._aRecords ?? []));
+  return labelRecords(recs, maxPages);
+}
+
+/** When each mod was last sent for a page lookup, so a mod GameBanana won't answer for isn't asked every reload. */
+const labelTried = new Map<number, number>();
+const LABEL_RETRY_MS = 10 * 60 * 1000;
+
+/**
+ * Labels the given listing records the label list doesn't know (or knows an older version of):
+ * GameBanana's flag from the listing, else the mod page's content ratings. Returns how many labels
+ * changed; Browse reloads when any did.
+ */
+async function labelRecords(records: any[], maxPages: number): Promise<number> {
   const recs = new Map<number, any>();
-  for (const l of lists) for (const r of l?._aRecords ?? []) if (r?._idRow && !recs.has(Number(r._idRow))) recs.set(Number(r._idRow), r);
+  for (const r of records) if (r?._idRow && !recs.has(Number(r._idRow))) recs.set(Number(r._idRow), r);
 
   const labels: Record<string, { l: 's' | 'n'; f: 0 | 1; m: number; g: 1; k?: any }> = {};
   const todo: any[] = [];
   for (const [id, rec] of recs) {
-    const m = Number(rec._tsDateModified || rec._tsDateUpdated || rec._tsDateAdded || 0);
+    const stamp = rec._tsDateModified || rec._tsDateUpdated;
+    const m = Number(stamp || rec._tsDateAdded || 0);
     const known = knownNsfwLabel(id);
-    if (known && known.m === m && (known.l === 'n' || known.k)) continue; // already labeled this version
+    if (known && (known.l === 'n' || known.k) && (known.m === m || !stamp)) continue; // already labeled this version
     if (isModRecordNsfw(rec)) labels[String(id)] = { l: 'n', f: 1, m, g: 1 };
-    else todo.push({ rec, m });
+    else if (Date.now() - (labelTried.get(id) ?? 0) > LABEL_RETRY_MS) todo.push({ rec, m });
   }
   // Not flagged in the listing: the mod's page has its content ratings. A few at a time.
   const queue = todo.slice(0, maxPages);
+  for (const job of queue) labelTried.set(Number(job.rec._idRow), Date.now());
   await Promise.all(
     Array.from({ length: 4 }, async () => {
       for (let job = queue.shift(); job; job = queue.shift()) {
         const p = await getGbJson(`https://gamebanana.com/apiv11/Mod/${job.rec._idRow}/ProfilePage`);
-        if (!p) continue; // try again next time
+        if (!p) continue; // try again later
         labels[String(job.rec._idRow)] = isModRecordNsfw(p)
           ? { l: 'n', f: 1, m: job.m, g: 1 }
           : { l: 's', f: 0, m: job.m, g: 1, k: labelCardOf(p, job.rec) };
@@ -1178,4 +1253,9 @@ export async function refreshRecentLabels(maxPages = 40): Promise<number> {
     })
   );
   return addRecentNsfwLabels(labels);
+}
+
+/** Labels what a Browse list just showed, without making Browse wait. */
+function labelInBackground(records: any[]): void {
+  labelRecords(records, 60).catch(() => {});
 }

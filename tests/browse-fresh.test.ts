@@ -49,3 +49,45 @@ describe('Browse card pictures', () => {
     expect(gbCardImageUrl('data:image/svg+xml;utf8,x')).toBe('data:image/svg+xml;utf8,x');
   });
 });
+
+describe('Featured in SFW only matches what the other views show', () => {
+  it('leads with GameBanana\'s current mods minus NSFW ones, labels the rest, then the list', async () => {
+    vi.resetModules();
+    const gb = await import('../src/core/gamebananaService');
+    const review = await import('../src/core/nsfwReview');
+    review.setNsfwVerdictsForTest({
+      version: 1,
+      generatedAt: '2026-11-01T00:00:00Z',
+      mods: {
+        '20': { l: 's', f: 0, m: 10, k: card(20, 'Old safe favourite') },
+        '21': { l: 's', f: 0, m: 500, k: card(21, 'Current safe') },
+        '22': { l: 'n', f: 1, m: 500 }, // the listing looks safe; its page is rated NSFW
+      },
+    } as never);
+    const live = {
+      _aRecords: [
+        { _idRow: 23, _sName: 'Brand new, not labeled yet', _tsDateModified: 900 },
+        { _idRow: 22, _sName: 'Looks safe in the listing', _tsDateModified: 500 },
+        { _idRow: 21, _sName: 'Current safe', _tsDateModified: 500 },
+      ],
+    };
+    vi.stubGlobal('fetch', async (url: string) => {
+      const u = String(url);
+      if (u.includes('/Subfeed') && u.includes('_nPage=1&')) return new Response(JSON.stringify(live));
+      if (u.includes('/Subfeed')) return new Response(JSON.stringify({ _aRecords: [] }));
+      const id = u.match(/Mod\/(\d+)\/ProfilePage/)?.[1];
+      if (id) return new Response(JSON.stringify({ _idRow: Number(id), _sName: `Mod ${id}` }));
+      return new Response('{}', { status: 404 });
+    });
+
+    // Show everything: the NSFW label from the list wins over the listing.
+    const all = await gb.fetchLiveGameBananaFeed({ page: 1, perPage: 24, sort: 'featured' });
+    expect(all.find((m) => m.id === 22)?.is_nsfw).toBe(true);
+    expect(all.find((m) => m.id === 21)?.is_nsfw).toBe(false);
+
+    // The unlabeled new mod gets its page checked in the background, then shows in SFW too.
+    await vi.waitFor(() => expect(review.knownNsfwLabel(23)?.l).toBe('s'));
+    const sfw = await gb.fetchLiveGameBananaFeed({ page: 1, perPage: 24, sort: 'featured', hideNsfw: true });
+    expect(sfw.map((m) => m.id)).toEqual([23, 21, 20]);
+  });
+});
