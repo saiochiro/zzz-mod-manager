@@ -101,11 +101,13 @@ import {
 import {
   classifyMeshPartsFromTokens,
   formatReadableKey,
+  filesInUse,
   parseIniContent,
   restoreIniOriginalKeys,
   rewriteIniKeybind,
 } from './iniParser';
 import { repairModOnDisk, undoModRepairOnDisk } from './repairEngine';
+import { GameReloader } from './gameReload';
 import {
   formatDisabledFolderName,
   isFolderDisabled,
@@ -1799,20 +1801,16 @@ endif
       missingResources.push('mod.ini (No .ini file found in mod directory)');
     }
 
-    for (const iniFile of iniFiles) {
-      const content = fs.readFileSync(path.join(modAbsDir, iniFile), 'utf-8');
-      const parsed = parseIniContent(content, iniFile);
+    const parsedInis = iniFiles.map((iniFile) => parseIniContent(fs.readFileSync(path.join(modAbsDir, iniFile), 'utf-8'), iniFile));
+    for (const parsed of parsedInis) {
       parsed.detectedHashes.forEach((h) => allHashes.add(h));
       allSubToggles.push(...parsed.subToggles);
       parsed.detectedParts.forEach((p) => allParts.add(p));
       if (parsed.hasLegacyShaderSlots) hasLegacySlots = true;
-
-      for (const refFile of parsed.referencedFiles) {
-        const refAbs = path.resolve(path.dirname(path.join(modAbsDir, iniFile)), refFile);
-        if (!fs.existsSync(refAbs)) {
-          missingResources.push(refFile);
-        }
-      }
+    }
+    // Only files the game will load: unused [Resource...] entries don't count as missing.
+    for (const { doc, file } of filesInUse(parsedInis)) {
+      if (!fs.existsSync(path.resolve(path.dirname(path.join(modAbsDir, doc.filePath)), file))) missingResources.push(file);
     }
 
     const hashesArr = Array.from(allHashes);
@@ -3612,12 +3610,16 @@ endif
       const job = this.pendingSync;
       this.pendingSync = null;
       if (!job) return;
+      const changesBefore = gameSyncChanges;
       try {
         this.syncModsToXxmiLauncher(job.scope === 'all' ? undefined : [...job.scope]);
       } catch (err) {
         this.addLog('warning', 'ZZMI_HOOK', `XXMI sync warning: ${(err as Error).message}`);
       }
-      if (job.reload) void this.sendLiveReloadF10({ skipSync: true });
+      // Anything that changed what the game loads (a switch, a skin swap, an update, a fix, a
+      // File Explorer edit) reloads in game, when that's turned on.
+      const changed = gameSyncChanges !== changesBefore;
+      if (job.reload || (changed && this.getConfig().autoSendF10OnToggle)) void this.sendLiveReloadF10({ skipSync: true });
     }, 120);
     this.pendingSync = { scope, reload: Boolean(prev?.reload) || reload, timer };
   }
@@ -3944,6 +3946,12 @@ endif
    * Presses F10 in the running game so ZZMI reloads mods. Runs PowerShell in the background
    * (it takes a second or two to start), so the app never waits on it.
    */
+  private gameReloader: GameReloader | null = null;
+
+  /**
+   * Reloads mods in the running game: F10 is pressed for you the moment you're back in the game
+   * (XXMI only reads keys while the game is in front). See gameReload.ts.
+   */
   public async sendLiveReloadF10(opts: { skipSync?: boolean } = {}): Promise<{
     success: boolean;
     hwndFound: boolean;
@@ -3951,37 +3959,20 @@ endif
     message: string;
   }> {
     if (!opts.skipSync) this.syncModsToXxmiLauncher();
-    let hwndFound = false;
-    if (process.platform === 'win32') {
-      const psScript = [
-        `$p = Get-Process -Name 'ZenlessZoneZero' -ErrorAction SilentlyContinue | Select-Object -First 1;`,
-        `if ($p -and $p.MainWindowHandle -ne 0) {`,
-        `  Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class Win32 { [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam); }';`,
-        `  [Win32]::PostMessage($p.MainWindowHandle, 0x0100, [IntPtr]0x79, [IntPtr]0) | Out-Null;`,
-        `  Start-Sleep -Milliseconds 35;`,
-        `  [Win32]::PostMessage($p.MainWindowHandle, 0x0101, [IntPtr]0x79, [IntPtr]0) | Out-Null;`,
-        `  Write-Output $p.MainWindowHandle;`,
-        `}`,
-      ].join(' ');
-      const out = await new Promise<string>((resolve) => {
-        execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', psScript], { windowsHide: true, timeout: 6000 }, (_err, stdout) =>
-          resolve(String(stdout || '').trim())
-        );
-      });
-      hwndFound = Boolean(out && out !== '0');
+    this.gameReloader ??= new GameReloader(path.join(this.appDataPath, 'cache'), (m) => this.addLog('cyan', 'ZZMI_HOOK', m));
+    let res = { gameRunning: false, queued: false };
+    try {
+      res = await this.gameReloader.request();
+    } catch (err) {
+      this.addLog('warning', 'ZZMI_HOOK', `Couldn't reload in game: ${(err as Error).message}`);
     }
-
-    const msg = hwndFound
-      ? 'Mid-Game Hot-Reload: Dispatched virtual VK_F10 (0x79) directly to running ZenlessZoneZero.exe HWND!'
-      : 'Mid-Game Hot-Reload: Queued virtual VK_F10 reload signal on ZZMI hook (ZenlessZoneZero.exe on standby).';
+    const msg = !res.gameRunning
+      ? 'The game isn\'t running; it loads your current mods when it starts.'
+      : res.queued
+      ? 'Mods reload in game as soon as you switch back to it.'
+      : 'Press F10 in game to see the changes.';
     this.addLog('cyan', 'ZZMI_HOOK', msg);
-
-    return {
-      success: true,
-      hwndFound,
-      gameRunning: hwndFound,
-      message: msg,
-    };
+    return { success: res.gameRunning, hwndFound: res.gameRunning, gameRunning: res.gameRunning, message: msg };
   }
 
   /**
@@ -4426,15 +4417,13 @@ endif
     const modDir = path.join(this.getConfig().zzmiRootPath, mod.install_path);
     // Missing paths relative to the mod's folder (the .ini lists them relative to itself).
     const wanted = new Map<string, string>(); // rel (lowercase, "/") -> rel as written
-    for (const iniAbs of listModInis(modDir)) {
-      const parsed = parseIniContent(fs.readFileSync(iniAbs, 'utf-8'), path.relative(modDir, iniAbs));
-      for (const ref of parsed.referencedFiles) {
-        const abs = path.resolve(path.dirname(iniAbs), ref);
-        const rel = path.relative(modDir, abs);
-        if (!rel || rel.startsWith('..') || path.isAbsolute(rel) || fs.existsSync(abs)) continue;
-        const norm = rel.split(path.sep).join('/');
-        wanted.set(norm.toLowerCase(), norm);
-      }
+    const docs = listModInis(modDir).map((iniAbs) => parseIniContent(fs.readFileSync(iniAbs, 'utf-8'), path.relative(modDir, iniAbs)));
+    for (const { doc, file: ref } of filesInUse(docs)) {
+      const abs = path.resolve(path.dirname(path.join(modDir, doc.filePath)), ref);
+      const rel = path.relative(modDir, abs);
+      if (!rel || rel.startsWith('..') || path.isAbsolute(rel) || fs.existsSync(abs)) continue;
+      const norm = rel.split(path.sep).join('/');
+      wanted.set(norm.toLowerCase(), norm);
     }
     if (!wanted.size) return { restored: [], stillMissing: [] };
 

@@ -146,11 +146,16 @@ const AppInner: React.FC = () => {
   const [filePrompts, setFilePrompts] = useState<Array<{ title: string; files: GameBananaFile[]; isUpdate: boolean; retry: (fileId: number) => void }>>([]);
   const askForFile = (p: NonNullable<IngestionResult['filePrompt']>, retry: (fileId: number) => void) =>
     setFilePrompts((prev) => [...prev, { title: p.title, files: p.files, isUpdate: Boolean(p.replaceModUuid), retry }]);
-  const [multiAgentPrompt, setMultiAgentPrompt] = useState<{
+  /** Packs waiting for the split prompt, one after another (Update all can bring several). */
+  const [multiAgentQueue, setMultiAgentQueue] = useState<Array<{
     stagingId: string;
     archiveName: string;
     candidates: MultiAgentCandidate[];
-  } | null>(null);
+  }>>([]);
+  const multiAgentPrompt = multiAgentQueue[0] ?? null;
+  /** A prompt joins the end of the line; null closes the one on screen and shows the next. */
+  const setMultiAgentPrompt = (p: (typeof multiAgentQueue)[number] | null) =>
+    setMultiAgentQueue((prev) => (p ? (prev.some((q) => q.stagingId === p.stagingId) ? prev : [...prev, p]) : prev.slice(1)));
   const [lastSeenLogId, setLastSeenLogId] = useState<string | null>(null);
 
   // Updates
@@ -886,7 +891,7 @@ const AppInner: React.FC = () => {
   /* Mod updates                                                      */
   /* ---------------------------------------------------------------- */
   /** True when updated; 'split' when it's a several-character pack waiting for the split prompt. */
-  const handleUpdateMod = async (uuid: string, opts: { quiet?: boolean; fileId?: number } = {}): Promise<boolean | 'split'> => {
+  const handleUpdateMod = async (uuid: string, opts: { quiet?: boolean; fileId?: number } = {}): Promise<boolean | 'split' | 'pick'> => {
     const profile = modUpdates.updates[uuid];
     const old = appState?.mods.find((m) => m.mod_uuid === uuid);
     if (!profile || !old) return false;
@@ -904,7 +909,7 @@ const AppInner: React.FC = () => {
       if (res.filePrompt) {
         // A page with several files and no remembered choice: the current version stays until one is picked.
         askForFile(res.filePrompt, (id) => handleUpdateMod(uuid, { ...opts, fileId: id }));
-        return false;
+        return 'pick';
       }
       if (res.multiAgentPrompt) {
         setMultiAgentPrompt(res.multiAgentPrompt);
@@ -976,16 +981,29 @@ const AppInner: React.FC = () => {
     let ok = 0;
     // A pack split into one mod per character is updated once (the split prompt does all parts).
     const splitPages = new Set<number>();
+    let waiting = 0;
+    let failed = 0;
     for (const id of ids) {
       const page = modUpdates.updates[id]?.id;
       if (page && splitPages.has(page)) continue;
       const res = await handleUpdateMod(id, { quiet: true });
-      if (res === 'split' && page) splitPages.add(page);
+      if (res === 'split') {
+        waiting++;
+        if (page) splitPages.add(page);
+      } else if (res === 'pick') waiting++;
       else if (res === true) ok++;
+      else failed++;
     }
-    if (ok > 0) {
-      notify({ tone: 'success', title: `Updated ${ok} mod${ok === 1 ? '' : 's'}`, message: 'Previous versions are saved in backups.' });
-    }
+    const parts = [
+      ok ? 'Previous versions are saved in backups.' : '',
+      waiting ? `${waiting} need${waiting === 1 ? 's' : ''} you to choose a file or how to split the pack; ${waiting === 1 ? 'it’s' : 'they’re'} shown one at a time.` : '',
+      failed ? `${failed} couldn’t be updated (see the messages above).` : '',
+    ].filter(Boolean);
+    notify({
+      tone: failed ? 'warning' : 'success',
+      title: ok ? `Updated ${ok} mod${ok === 1 ? '' : 's'}` : waiting ? 'Almost there' : 'Nothing was updated',
+      message: parts.join(' '),
+    });
   };
 
   const handleCheckModUpdates = async () => {
@@ -1038,8 +1056,8 @@ const AppInner: React.FC = () => {
       setAppState(res.state);
       notify({
         tone: res.success ? 'success' : 'warning',
-        title: res.success ? 'Reloaded in game' : 'Game isn’t running',
-        message: res.success ? undefined : 'Start the game first, then reload.',
+        title: res.success ? 'Reload ready' : 'Game isn’t running',
+        message: res.success ? res.message : 'Start the game first, then reload.',
       });
     } catch (err) {
       notify({ tone: 'error', title: 'Couldn’t reload in game', message: errMsg(err) });

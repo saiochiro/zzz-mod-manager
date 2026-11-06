@@ -200,6 +200,10 @@ export interface ParsedIniDocument {
   subToggles: SubToggle[];
   hasLegacyShaderSlots: boolean;
   referencedFiles: string[];
+  /** Lowercase section name for each `filename =` file (its [Resource...] section). */
+  fileSections?: Record<string, string>;
+  /** Lowercase words used on this file's setting lines: shows which [Resource...] sections are used. */
+  usedNames?: string[];
   detectedParts: string[];
   rawContent: string;
 }

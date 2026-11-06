@@ -111,6 +111,8 @@ export function parseIniDocument(
   const sections: ParsedIniSection[] = [];
   const detectedHashesSet = new Set<string>();
   const referencedFilesSet = new Set<string>();
+  const fileSections: Record<string, string> = {};
+  const usedNames = new Set<string>();
   const partTokens: string[] = [resolvedFileName];
   let hasLegacyShaderSlots = false;
 
@@ -161,6 +163,9 @@ export function parseIniDocument(
         const key = kvMatch[1].trim();
         const val = kvMatch[2].trim();
         currentSection.entries[key] = val;
+        if (key.toLowerCase() !== 'filename') {
+          for (const w of trimmed.toLowerCase().split(/[^a-z0-9_.]+/)) if (w) usedNames.add(w);
+        }
 
         if (key.toLowerCase() === 'key' && pendingOrigKeyComment) {
           currentSection.entries['__zzzmgr_orig_key'] = pendingOrigKeyComment;
@@ -178,6 +183,7 @@ export function parseIniDocument(
           const cleanFile = val.replace(/^["']|["']$/g, '').trim();
           if (cleanFile) {
             referencedFilesSet.add(cleanFile);
+            fileSections[cleanFile] = currentSection.name.toLowerCase();
             partTokens.push(cleanFile);
           }
         }
@@ -233,6 +239,8 @@ export function parseIniDocument(
     subToggles,
     hasLegacyShaderSlots,
     referencedFiles: Array.from(referencedFilesSet),
+    fileSections,
+    usedNames: Array.from(usedNames),
     detectedParts: classifyMeshPartsFromTokens(partTokens),
     rawContent,
   };
@@ -240,6 +248,26 @@ export function parseIniDocument(
 
 export function parseIniContent(rawContent: string, filePath = 'mod.ini'): ParsedIniDocument {
   return parseIniDocument(rawContent, filePath);
+}
+
+/**
+ * The files a mod's .ini files actually need. A file in a [Resource...] section that nothing in
+ * the mod uses (no `ref ResourceX`, `ps-t0 = ResourceX`, ...) is never loaded by the game, so a
+ * missing one is harmless: authors often leave unused declarations behind. Files outside a
+ * Resource section always count.
+ */
+export function filesInUse(docs: ParsedIniDocument[]): Array<{ doc: ParsedIniDocument; file: string }> {
+  const used = new Set<string>();
+  for (const d of docs) for (const w of d.usedNames ?? []) used.add(w);
+  const out: Array<{ doc: ParsedIniDocument; file: string }> = [];
+  for (const doc of docs) {
+    for (const file of doc.referencedFiles) {
+      const section = doc.fileSections?.[file];
+      if (section && section.startsWith('resource') && !used.has(section)) continue;
+      out.push({ doc, file });
+    }
+  }
+  return out;
 }
 
 /**

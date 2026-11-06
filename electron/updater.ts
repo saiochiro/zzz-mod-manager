@@ -142,13 +142,14 @@ export function setupUpdater(getWindow: () => BrowserWindow | null, log: (msg: s
       } catch {
         // keep going
       }
-      // Close every window first so nothing holds the app open, then run the
-      // installer silently (no wizard) and reopen ProxyLaunch when it's done.
-      for (const w of BrowserWindow.getAllWindows()) {
-        w.removeAllListeners('close');
-        w.destroy();
-      }
+      // Start the installer first: silently (no wizard), and reopen ProxyLaunch when it's done.
+      // Closing the windows first would quit the app, and electron-updater's "install on quit"
+      // would then run the installer without reopening the app (and ignore this call).
+      updater.autoInstallOnAppQuit = false;
+      for (const w of BrowserWindow.getAllWindows()) w.removeAllListeners('close');
       updater.quitAndInstall(true, true);
+      // quitAndInstall quits on the next tick; close the windows so nothing holds the app open.
+      for (const w of BrowserWindow.getAllWindows()) w.destroy();
     }, 600);
   }
 }
