@@ -1,6 +1,8 @@
-What's new in 2.14.19
+What's new in 2.14.20
 
-- New mods show up in "SFW only" within minutes. Before, they only appeared once the label list was rebuilt, which could take hours, so some safe mods only showed when you switched to Show all. ProxyLaunch now checks GameBanana's newest and just-updated mods itself every 10 minutes, using GameBanana's own labels as before.
-- Browse pictures load reliably. Cards now use GameBanana's card-sized pictures instead of the full-size originals, so Show all no longer ends up with broken images, and Browse scrolls faster. The full pictures are still used in a mod's gallery.
+- Featured in "SFW only" is now current. It shows the same mods GameBanana is showing right now, in the same order as the other views, with the NSFW ones taken out. Older safe mods follow after them.
+- The same mod no longer looks safe in one view and goes missing in another. Every view now uses GameBanana's own label for a mod, so a mod rated NSFW on its page is marked 18+ everywhere, and a safe mod you see in Show all is also in SFW only.
+- Brand new mods are checked the moment Browse lists them, so safe ones join SFW only within seconds.
+- Browse refreshes itself. A page you already opened is shown right away and then quietly reloaded if it's more than 2 minutes old.
 
 Requires XXMI Launcher with ZZMI set up. Questions or bugs? Reach out on Discord: ghxty
