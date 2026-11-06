@@ -229,7 +229,7 @@ describe('Downloading missing files', () => {
     const service = new ModManagerService(dir);
     const src = path.join(dir, 'src', 'Cool Skin');
     fs.mkdirSync(path.join(src, 'Textures'), { recursive: true });
-    const ini = '[TextureOverrideBody]\nhash = 1a2b3c4d\n[ResourceA]\nfilename = Textures/a.dds\n[ResourceB]\nfilename = b.buf\n[ResourceC]\nfilename = gone.dds\n';
+    const ini = '[TextureOverrideBody]\nhash = 1a2b3c4d\nResource\\ZZMI\\Diffuse = ref ResourceA\nvb0 = ResourceB\nResource\\ZZMI\\LightMap = ref ResourceC\n[ResourceA]\nfilename = Textures/a.dds\n[ResourceB]\nfilename = b.buf\n[ResourceC]\nfilename = gone.dds\n';
     fs.writeFileSync(path.join(src, 'mod.ini'), ini);
     fs.writeFileSync(path.join(src, 'Textures', 'a.dds'), 'a');
     fs.writeFileSync(path.join(src, 'b.buf'), 'b');

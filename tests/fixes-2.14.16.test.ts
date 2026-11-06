@@ -112,7 +112,7 @@ describe('Get missing files is quick', () => {
     const service = new ModManagerService(dir);
     const src = path.join(dir, 'src', 'Cool Skin');
     fs.mkdirSync(src, { recursive: true });
-    const ini = '[TextureOverrideBody]\nhash = 1a2b3c4d\n[ResourceA]\nfilename = a.dds\n[ResourceB]\nfilename = gone.dds\n';
+    const ini = '[TextureOverrideBody]\nhash = 1a2b3c4d\nResource\\ZZMI\\Diffuse = ref ResourceA\nResource\\ZZMI\\LightMap = ref ResourceB\n[ResourceA]\nfilename = a.dds\n[ResourceB]\nfilename = gone.dds\n';
     fs.writeFileSync(path.join(src, 'mod.ini'), ini);
     fs.writeFileSync(path.join(src, 'a.dds'), 'a');
     const mod = (await service.ingestPackage(src)).installedMods[0];
