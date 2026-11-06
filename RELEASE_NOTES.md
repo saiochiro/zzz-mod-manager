@@ -1,8 +1,8 @@
-What's new in 2.14.20
+What's new in 2.14.21
 
-- Featured in "SFW only" is now current. It shows the same mods GameBanana is showing right now, in the same order as the other views, with the NSFW ones taken out. Older safe mods follow after them.
-- The same mod no longer looks safe in one view and goes missing in another. Every view now uses GameBanana's own label for a mod, so a mod rated NSFW on its page is marked 18+ everywhere, and a safe mod you see in Show all is also in SFW only.
-- Brand new mods are checked the moment Browse lists them, so safe ones join SFW only within seconds.
-- Browse refreshes itself. A page you already opened is shown right away and then quietly reloaded if it's more than 2 minutes old.
+- ProxyLaunch opens again by itself after an update. Before, the update installed but the app stayed closed.
+- Far fewer mods marked as missing files. Many mods list files they never actually use, and ProxyLaunch counted those as missing even though the game never loads them. Only files the game really needs count now, so most of those warnings are gone and "Download missing files" only goes after files that matter.
+- Update all handles packs and multi-file mods properly. When several updates need you to pick a file or split a pack, the choices now come one after another instead of only the last one showing, and you get a summary of what was updated, what's waiting on you, and what failed.
+- Changes you make in ProxyLaunch now show in game. When the game is running, ProxyLaunch reloads your mods the moment you switch back to the game. If the game runs as administrator, Windows asks once per game session to allow this.
 
 Requires XXMI Launcher with ZZMI set up. Questions or bugs? Reach out on Discord: ghxty
