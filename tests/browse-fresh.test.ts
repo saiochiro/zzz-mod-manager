@@ -91,3 +91,59 @@ describe('Featured in SFW only matches what the other views show', () => {
     expect(sfw.map((m) => m.id)).toEqual([23, 21, 20]);
   });
 });
+
+describe('SFW only opens complete', () => {
+  it('checks brand-new mods before showing, so switching views back and forth adds nothing', async () => {
+    vi.resetModules();
+    const gb = await import('../src/core/gamebananaService');
+    const review = await import('../src/core/nsfwReview');
+    review.setNsfwVerdictsForTest({ version: 1, generatedAt: '2026-11-01T00:00:00Z', mods: { '40': { l: 's', f: 0, m: 10, k: card(40, 'Listed safe') } } } as never);
+    const live = {
+      _aRecords: [
+        { _idRow: 41, _sName: 'New safe one', _tsDateModified: 900 },
+        { _idRow: 42, _sName: 'New, page is rated NSFW', _tsDateModified: 900 },
+        { _idRow: 43, _sName: 'Another new safe one', _tsDateModified: 901 },
+      ],
+    };
+    let lookups = 0;
+    vi.stubGlobal('fetch', async (url: string) => {
+      const u = String(url);
+      if (u.includes('/Subfeed') && u.includes('_nPage=1&')) return new Response(JSON.stringify(live));
+      if (u.includes('/Subfeed')) return new Response(JSON.stringify({ _aRecords: [] }));
+      const id = u.match(/Mod\/(\d+)\/ProfilePage/)?.[1];
+      if (id) {
+        lookups++;
+        const rated = id === '42' ? { _aContentRatings: { sa: 'Sexual Themes' } } : {};
+        return new Response(JSON.stringify({ _idRow: Number(id), _sName: `Mod ${id}`, ...rated }));
+      }
+      return new Response('{}', { status: 404 });
+    });
+
+    // The very first SFW load already has the new safe mods, and not the NSFW one.
+    const first = await gb.fetchLiveGameBananaFeed({ page: 1, perPage: 24, sort: 'featured', hideNsfw: true });
+    expect(first.map((m) => m.id)).toEqual([41, 43, 40]);
+    // Show everything, then SFW again: the same list, and nothing is looked up again.
+    const before = lookups;
+    await gb.fetchLiveGameBananaFeed({ page: 1, perPage: 24, sort: 'featured' });
+    const again = await gb.fetchLiveGameBananaFeed({ page: 1, perPage: 24, sort: 'featured', hideNsfw: true });
+    expect(again.map((m) => m.id)).toEqual([41, 43, 40]);
+    expect(lookups).toBe(before);
+  });
+
+  it('remembers labels it looked up after a restart', async () => {
+    const fs = await import('fs');
+    const os = await import('os');
+    const path = await import('path');
+    vi.resetModules();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'labels-'));
+    const review = await import('../src/core/nsfwReview');
+    review.initNsfwReview(dir, { fetch: false });
+    review.addRecentNsfwLabels({ '777': { l: 's', f: 0, m: 5 } as never });
+    await vi.waitFor(() => expect(fs.existsSync(path.join(dir, 'cache', 'nsfw_recent.json'))).toBe(true), { timeout: 4000 });
+    vi.resetModules();
+    const restarted = await import('../src/core/nsfwReview');
+    restarted.initNsfwReview(dir, { fetch: false });
+    expect(restarted.knownNsfwLabel(777)?.l).toBe('s');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});

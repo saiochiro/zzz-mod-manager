@@ -395,12 +395,11 @@ async function sfwFeedWithLiveHead(
       fetchLiveGameBananaFeed({ ...options, page: i + 1, perPage: 24, hideNsfw: false })
     )
   );
+  const live = pages.flatMap((p) => (p.status === 'fulfilled' ? p.value : []));
+  await labelBeforeShowing(live);
   const seen = new Set<number>();
   const head: GameBananaModItem[] = [];
-  for (const p of pages) {
-    if (p.status !== 'fulfilled') continue;
-    for (const m of finalizeNsfw(p.value, true)) if (!seen.has(m.id)) (seen.add(m.id), head.push(m));
-  }
+  for (const m of finalizeNsfw(live, true)) if (!seen.has(m.id)) (seen.add(m.id), head.push(m));
   if (!catalog && head.length === 0) return null;
   const items = [...head, ...(catalog ?? []).filter((m) => !seen.has(m.id))];
   const start = (page - 1) * perPage;
@@ -1224,7 +1223,16 @@ const LABEL_RETRY_MS = 10 * 60 * 1000;
  * GameBanana's flag from the listing, else the mod page's content ratings. Returns how many labels
  * changed; Browse reloads when any did.
  */
-async function labelRecords(records: any[], maxPages: number): Promise<number> {
+/** Label lookups running now: the SFW view waits for these too (they may cover what it shows). */
+const labelRuns = new Set<Promise<number>>();
+
+function labelRecords(records: any[], maxPages: number): Promise<number> {
+  const run = lookUpLabels(records, maxPages).finally(() => labelRuns.delete(run));
+  labelRuns.add(run);
+  return run;
+}
+
+async function lookUpLabels(records: any[], maxPages: number): Promise<number> {
   const recs = new Map<number, any>();
   for (const r of records) if (r?._idRow && !recs.has(Number(r._idRow))) recs.set(Number(r._idRow), r);
 
@@ -1242,7 +1250,7 @@ async function labelRecords(records: any[], maxPages: number): Promise<number> {
   const queue = todo.slice(0, maxPages);
   for (const job of queue) labelTried.set(Number(job.rec._idRow), Date.now());
   await Promise.all(
-    Array.from({ length: 4 }, async () => {
+    Array.from({ length: 8 }, async () => {
       for (let job = queue.shift(); job; job = queue.shift()) {
         const p = await getGbJson(`https://gamebanana.com/apiv11/Mod/${job.rec._idRow}/ProfilePage`);
         if (!p) continue; // try again later
@@ -1255,7 +1263,29 @@ async function labelRecords(records: any[], maxPages: number): Promise<number> {
   return addRecentNsfwLabels(labels);
 }
 
+/** The latest listing record for each mod Browse has listed, so the SFW view can label them. */
+const listedRecords = new Map<number, any>();
+
 /** Labels what a Browse list just showed, without making Browse wait. */
 function labelInBackground(records: any[]): void {
+  for (const r of records) if (r?._idRow) listedRecords.set(Number(r._idRow), r);
+  while (listedRecords.size > 3000) listedRecords.delete(listedRecords.keys().next().value as number);
   labelRecords(records, 60).catch(() => {});
+}
+
+/** How long the SFW view waits for new mods to be checked before showing what it has. */
+const SFW_LABEL_WAIT_MS = 6000;
+
+/**
+ * Checks the not-yet-labeled mods the SFW view is about to show, before showing it, so it
+ * opens complete instead of filling in a few more every time Browse reloads. Anything not done
+ * within a few seconds carries on in the background and appears in place when ready.
+ */
+async function labelBeforeShowing(items: GameBananaModItem[]): Promise<void> {
+  const recs = items
+    .filter((m) => !m.is_nsfw && !knownNsfwLabel(m.id) && listedRecords.has(m.id))
+    .map((m) => listedRecords.get(m.id));
+  if (recs.length === 0) return;
+  const work = Promise.all([labelRecords(recs, recs.length), ...labelRuns]).catch(() => 0);
+  await Promise.race([work, new Promise((r) => setTimeout(r, SFW_LABEL_WAIT_MS))]);
 }

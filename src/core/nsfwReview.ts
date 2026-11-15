@@ -43,6 +43,24 @@ const listeners = new Set<() => void>();
  * list was made (GitHub only runs that job every few hours). Same rules as the list.
  */
 const recent = new Map<string, NsfwVerdictEntry>();
+/** Where `recent` is saved, so labels looked up once aren't looked up again after a restart. */
+let recentPath: string | null = null;
+let recentSaveTimer: ReturnType<typeof setTimeout> | null = null;
+const RECENT_MAX = 5000;
+
+function saveRecentSoon(): void {
+  if (!recentPath || recentSaveTimer) return;
+  recentSaveTimer = setTimeout(() => {
+    recentSaveTimer = null;
+    try {
+      // Newest last; keep the latest few thousand.
+      const entries = [...recent.entries()].slice(-RECENT_MAX);
+      fs.writeFileSync(recentPath!, JSON.stringify(Object.fromEntries(entries)), 'utf-8');
+    } catch {
+      // ignore disk errors: it's only a speed-up
+    }
+  }, 1500);
+}
 
 function load(file: NsfwVerdictFile): void {
   verdicts = new Map(Object.entries(file.mods));
@@ -51,6 +69,7 @@ function load(file: NsfwVerdictFile): void {
     const listed = verdicts.get(id);
     if (listed && (listed.m ?? 0) >= (e.m ?? 0)) recent.delete(id);
   }
+  saveRecentSoon();
 }
 
 /** The label known for a mod id: one looked up just now, else the downloaded list's. */
@@ -65,10 +84,14 @@ export function addRecentNsfwLabels(entries: Record<string, NsfwVerdictEntry>): 
   for (const [id, e] of Object.entries(entries)) {
     const before = recent.get(id) ?? verdicts.get(id);
     if (before && before.l === e.l && before.m === e.m && Boolean(before.k) === Boolean(e.k)) continue;
+    recent.delete(id); // re-insert so the newest stay when the file is trimmed
     recent.set(id, e);
     changed++;
   }
-  if (changed) for (const fn of listeners) fn();
+  if (changed) {
+    saveRecentSoon();
+    for (const fn of listeners) fn();
+  }
   return changed;
 }
 
@@ -80,6 +103,14 @@ export function initNsfwReview(appDataPath: string, opts: { fetch?: boolean } = 
     const dir = path.join(appDataPath, 'cache');
     fs.mkdirSync(dir, { recursive: true });
     cachePath = path.join(dir, 'nsfw_verdicts.json');
+    recentPath = path.join(dir, 'nsfw_recent.json');
+    recent.clear();
+    try {
+      const saved = JSON.parse(fs.readFileSync(recentPath, 'utf-8')) as Record<string, NsfwVerdictEntry>;
+      for (const [id, e] of Object.entries(saved)) if (e && (e.l === 's' || e.l === 'n')) recent.set(id, e);
+    } catch {
+      // none saved yet
+    }
     // Results of the old on-device scan aren't used any more.
     for (const old of ['nsfw_review.json', 'nsfw_review_log.jsonl', 'nsfw_review_log.jsonl.1']) {
       fs.rmSync(path.join(dir, old), { force: true });

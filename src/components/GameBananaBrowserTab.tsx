@@ -513,15 +513,23 @@ export const GameBananaBrowserTab: React.FC<GameBananaBrowserTabProps> = ({
     }
   };
 
-  // Labels are pre-scanned on GitHub. When a newer list arrives, quietly reload what's on screen.
-  useEffect(
-    () =>
-      fairyClient.onNsfwVerdictsUpdated(() => {
-        feedCacheRef.current.clear();
+  // When new labels arrive (a newer list, or new mods just checked), quietly refresh what's on
+  // screen: the current cards stay up while the updated list loads, with no loading screen.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null; // several batches close together: one refresh
+    const off = fairyClient.onNsfwVerdictsUpdated(() => {
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = null;
+        feedSavedAtRef.current.clear(); // every saved page counts as old: shown, then reloaded
         setReloadTick((t) => t + 1);
-      }),
-    []
-  );
+      }, 1500);
+    });
+    return () => {
+      off();
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
 
   // No internet: say so plainly instead of showing a network error.
   const offline = !online || (feedError !== null && isOfflineError(feedError));
