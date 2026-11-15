@@ -306,6 +306,22 @@ function signature(theme: ThemeDefinition): Signature {
           }),
         ],
       };
+    case 'iron-warrant': // a drawn sword trailing a gust, and a cuff ring
+      return {
+        shine: `${SHINE}<path d="M11 16 L16.6 20.4" stroke="#c9d6e3" stroke-width="1.2" stroke-linecap="round"/>`,
+        aura: `<path d="M24 30 C30 33 35 33 40 29" stroke="#3ee6b5" stroke-opacity=".55" stroke-width="1.3" fill="none" stroke-linecap="round"/><path d="M22 34 C27 37.5 31 38 35 36" stroke="#3ee6b5" stroke-opacity=".35" stroke-width="1" fill="none" stroke-linecap="round"/>`,
+        features: [
+          F(0.78, [17.4, 25.6], {
+            back: [
+              { d: 'M18.6 26.6 L35.2 42.2 L36.6 40.8 Z', fill: '#e6eef5' },
+              { d: 'M18.6 26.6 L35.2 42.2', line: 0.6, color: '#7f93a3' },
+              { d: 'M15.6 27.6 L20.4 23.2', line: 2.2, color: '#ff4d5e' },
+              { d: 'M14.6 29.6 L17.6 26.6', line: 2.4, color: '#2a3642' },
+            ],
+          }),
+          F(0.9, [12.6, 31.4], { back: [{ d: 'M12.6 28.4 a3 3 0 1 0 0.01 0', line: 1.4, color: '#c9d6e3' }] }),
+        ],
+      };
     case 'hard-hat': // a hard hat and a sledgehammer
       return {
         shine: '<path d="M9 14 L9 24" stroke="#fff" stroke-opacity=".7" stroke-width="1.2" stroke-linecap="round"/>',

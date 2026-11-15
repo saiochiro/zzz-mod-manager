@@ -43,10 +43,10 @@ function makeAgentPortraitSvg(
 
 export const DEFAULT_HASH_DB: HashDatabase = {
   schema_version: '3.3',
-  game_patch: 'ZZZ 3.3 // ZZMI ASSETS HASHES // PHOENIX ADDED',
-  last_synced: '2026-10-22T00:00:00Z',
+  game_patch: 'ZZZ 3.3 // ZZMI ASSETS HASHES // PHOENIX + SEVERIAN ADDED',
+  last_synced: '2026-11-15T00:00:00Z',
   // Raise when built-in hashes change so installed apps refresh their stored copy.
-  builtin_revision: 2,
+  builtin_revision: 3,
   agents: {
     von_lycaon: {
       agent_id: 'von_lycaon',
@@ -949,11 +949,29 @@ export const DEFAULT_HASH_DB: HashDatabase = {
       element: 'Fire',
       accent_color: '#F97316',
       portrait_svg: makeAgentPortraitSvg('PH', '#F97316', '#E11D48', '🔥', 'KCA-02'),
+      gb_category_id: 50547,
+      gb_icon_url: 'https://images.gamebanana.com/img/ico/ModCategory/6ad824fcd2d32.png',
       // ZZMI hasn't published Phoenix yet (new in 3.3). These hashes come from a working 3.3
       // Phoenix mod (body, hair, accessories, weapon, face). Replace with ZZMI's once published.
       current_hashes: {"position_vb":"","blend_vb":"0fc8027f","texcoord_vb":"5174be85","ib":"9040e2c4"},
       legacy_hash_migrations: {},
       component_hashes: ["0fc8027f","5174be85","4ac4d074","9040e2c4","efc69729","e982ac3d","672c5dc6","ad90e710","fe38014f","68b29826","202db56f","b11ff137","05d7f849","467f7bd4","8bf0357a","0bcb1cb4","dbbf0aee","d58b6350","f15548c2"],
+    },
+    severian_lowell: {
+      agent_id: 'severian_lowell',
+      display_name: 'Severian Lowell',
+      folder_name: 'Severian',
+      faction: 'Metropolitan Order Division',
+      element: 'Wind',
+      accent_color: '#2DD4BF',
+      portrait_svg: makeAgentPortraitSvg('SV', '#2DD4BF', '#0F766E', '⚔️', 'MOD-01'),
+      gb_category_id: 50548,
+      gb_icon_url: 'https://images.gamebanana.com/img/ico/ModCategory/6ad8256e398be.png',
+      // ZZMI hasn't published Severian yet (new in 3.3). These hashes come from a working 3.3
+      // Severian mod (body, coat, ears, hair, eyebrows, handcuffs, arms). Replace with ZZMI's once published.
+      current_hashes: {"position_vb":"","blend_vb":"cff0d638","texcoord_vb":"8b6c4fbd","ib":"1a786493"},
+      legacy_hash_migrations: {},
+      component_hashes: ["cff0d638","8b6c4fbd","5e5ca9a0","1a786493","804fffa7","b16bb167","65fdcbab","b12e74cc","0087bea2","09f672f0","6641252c","8ff324f1","d82ee988","68708848","2a6a2bc1","dfc9cd38","b8f29b7c","e05a094d","63552833","65e63a74","3cbd2e7c","5b11a7ca","05a2e40d","b95f6269","21d53f78","fe0d2d9b","7449d16f","425e096c","20b505f8","5374f505","117fd2d1","c1196eee"],
     },
   },
 };

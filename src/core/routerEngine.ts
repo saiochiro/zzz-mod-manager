@@ -101,6 +101,7 @@ export const AGENT_ALIASES: Record<string, string> = {
   aria: 'aria',
   roxy: 'roxy_ifrita_pryce',
   phoenix: 'phoenix_reffaella',
+  severian: 'severian_lowell',
   ifrita: 'roxy_ifrita_pryce',
   lucia: 'lucia_elowen',
   alice: 'alice_thymefield',

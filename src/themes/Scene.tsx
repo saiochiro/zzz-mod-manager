@@ -984,6 +984,42 @@ function sceneFor(t: ThemeDefinition): React.ReactNode {
         </>
       );
 
+    /* Severian: the city at night under patrol searchlights, a red warning light, wind tearing through */
+    case 'iron-warrant':
+      return (
+        <>
+          <Stage>
+            <defs>
+              <VGrad id={`${id}-sky`} stops={[[0, '#05080c'], [0.55, '#0c1b22'], [1, '#12302e']]} />
+              <VGrad id={`${id}-far`} stops={[[0, '#16303a'], [1, '#0c1a20']]} />
+              <VGrad id={`${id}-near`} stops={[[0, '#0a1218'], [1, '#04070a']]} />
+            </defs>
+            <rect width="1600" height="900" fill={u('sky')} />
+            <Stars seed={id} count={45} maxY={320} />
+            <path d="M260 150 a62 62 0 1 0 54 94 a52 52 0 1 1 -54 -94 Z" fill="#e8f4f2" opacity="0.8" />
+            <Clouds seed={id + 'c1'} y={210} h={46} fill="#1f4a4a" opacity={0.35} speed={52} blur={8} />
+            <Spot x={980} y={900} color={c.primary} length={-900} width={230} duration={12} from={-20} to={16} />
+            <Spot x={1360} y={900} color={c.accent} length={-900} width={190} duration={9} delay={-3} from={16} to={-22} opacity={0.16} />
+            <path d={city(id + 'far', 650, 110, 360, 0.4)} fill={u('far')} />
+            <CityLights seed={id + 'far'} base={650} height={340} colors={[c.primary, c.secondary, '#ffd166']} count={100} size={4} />
+            <path d={city(id + 'near', 810, 60, 230, 0.15)} fill={u('near')} />
+            <CityLights seed={id + 'near'} base={810} height={210} colors={[c.secondary, c.accent]} count={44} size={6} />
+            {/* rooftop warning light */}
+            <g transform="translate(1230 588)">
+              <rect x="-6" y="0" width="12" height="40" fill="#04070a" />
+              <circle r="9" fill={c.accent} className="sx-breathe" style={{ filter: `drop-shadow(0 0 14px ${c.accent})` }} />
+            </g>
+          </Stage>
+          <div className="scene-wind">
+            {Array.from({ length: 12 }, (_, i) => (
+              <span key={i} style={{ top: `${5 + i * 8}%`, animationDelay: `${-i * 0.9}s`, animationDuration: `${2.2 + (i % 3) * 0.8}s`, background: `linear-gradient(90deg, transparent, ${i % 3 ? c.primary : '#ffffff'}, transparent)` }} />
+            ))}
+          </div>
+          <Particles glyph="leaf" count={12} colors={[c.primary, '#9ff5d9', c.secondary]} motion="drift" size={[10, 18]} speed={[8, 16]} opacity={[0.3, 0.65]} seed={id} />
+          <Particles glyph="dot" count={20} colors={['#ffffff']} motion="drift" size={[2, 5]} speed={[18, 30]} opacity={[0.15, 0.4]} seed={id + 'd'} />
+        </>
+      );
+
     /* Koleda: a site at dusk, tower cranes, floodlights, welding sparks */
     case 'hard-hat':
       return (
