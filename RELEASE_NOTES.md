@@ -1,8 +1,8 @@
-What's new in 2.14.21
+What's new in 2.14.22
 
-- ProxyLaunch opens again by itself after an update. Before, the update installed but the app stayed closed.
-- Far fewer mods marked as missing files. Many mods list files they never actually use, and ProxyLaunch counted those as missing even though the game never loads them. Only files the game really needs count now, so most of those warnings are gone and "Download missing files" only goes after files that matter.
-- Update all handles packs and multi-file mods properly. When several updates need you to pick a file or split a pack, the choices now come one after another instead of only the last one showing, and you get a summary of what was updated, what's waiting on you, and what failed.
-- Changes you make in ProxyLaunch now show in game. When the game is running, ProxyLaunch reloads your mods the moment you switch back to the game. If the game runs as administrator, Windows asks once per game session to allow this.
+- Severian is here. Severian mods are recognized and sorted under him, whether you get them from Browse or add them yourself, and he has his own character filter in Browse. The Mod Workshop knows his parts (body, hair, face, accessories, arms).
+- Phoenix now has her own character filter in Browse too, and her mods from GameBanana are always sorted under her.
+- New theme: Iron Warrant. A night city under patrol searchlights, wind tearing through, and a sword cursor.
+- Severian and Phoenix use ProxyLaunch's own character data until XXMI adds them, and switch over to XXMI's once it does.
 
 Requires XXMI Launcher with ZZMI set up. Questions or bugs? Reach out on Discord: ghxty
